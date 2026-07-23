@@ -1,0 +1,9 @@
+# Esta carpeta contiene credenciales de BD y lógica de negocio: nunca debe ser accesible por HTTP.
+# El código en /public la referencia solo por ruta de archivo (require), no por URL.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

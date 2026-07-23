@@ -1,0 +1,20 @@
+# Entornos y secretos
+backend/.env
+.env
+*.env
+!backend/.env.example
+
+# Configuración local de Claude Code (específica de este equipo, no del proyecto)
+.claude/settings.local.json
+
+# Dependencias (cuando existan frontend React y/o paquetes PHP via Composer)
+node_modules/
+vendor/
+
+# Builds
+frontend/build/
+frontend/dist/
+
+# Sistema
+Thumbs.db
+.DS_Store
