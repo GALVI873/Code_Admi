@@ -4,8 +4,9 @@ backend/.env
 *.env
 !backend/.env.example
 
-# Configuración local de Claude Code (específica de este equipo, no del proyecto)
+# Configuración y estado local de Claude Code (específicos de este equipo, no del proyecto)
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Dependencias (cuando existan frontend React y/o paquetes PHP via Composer)
 node_modules/

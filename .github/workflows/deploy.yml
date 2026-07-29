@@ -1,0 +1,49 @@
+name: Deploy a producción (subdominio Galvi)
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar y compilar frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Armar carpeta pública (API + build de React)
+        run: |
+          mkdir -p deploy_public
+          cp -r public/. deploy_public/
+          cp -r frontend/dist/. deploy_public/
+
+      - name: Deploy backend (fuera del document root del subdominio)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: ./backend/
+          server-dir: ${{ secrets.FTP_BACKEND_DIR }}
+
+      - name: Deploy público (API + frontend compilado)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: ./deploy_public/
+          server-dir: ${{ secrets.FTP_PUBLIC_DIR }}
