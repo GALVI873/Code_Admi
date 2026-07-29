@@ -22,28 +22,21 @@ jobs:
           npm ci
           npm run build
 
-      - name: Armar carpeta pública (API + build de React)
+      - name: Armar carpeta de despliegue (misma estructura que la raíz FTP)
         run: |
-          mkdir -p deploy_public
-          cp -r public/. deploy_public/
-          cp -r frontend/dist/. deploy_public/
+          mkdir -p deploy_root/administracion.galvi.es
+          mkdir -p deploy_root/backend
+          cp -r public/. deploy_root/administracion.galvi.es/
+          cp -r frontend/dist/. deploy_root/administracion.galvi.es/
+          cp -r backend/. deploy_root/backend/
 
-      - name: Deploy backend (fuera del document root del subdominio)
+      - name: Deploy por FTP (una sola conexión)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           protocol: ftps
-          local-dir: ./backend/
-          server-dir: ${{ secrets.FTP_BACKEND_DIR }}
-
-      - name: Deploy público (API + frontend compilado)
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftps
-          local-dir: ./deploy_public/
-          server-dir: ${{ secrets.FTP_PUBLIC_DIR }}
+          local-dir: ./deploy_root/
+          server-dir: ./
+          log-level: verbose
