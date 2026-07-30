@@ -77,7 +77,8 @@ CREATE TABLE auditoria (
 -- cuando se construya cada módulo, sin tocar esta estructura.
 INSERT INTO roles (nombre, descripcion) VALUES
   ('admin', 'Acceso total; aprueba y supervisa todos los departamentos'),
-  ('presupuestos', 'Gestiona el ciclo de presupuestos');
+  ('presupuestos', 'Gestiona el ciclo de presupuestos'),
+  ('gestion_obras', 'Gestión de Obras — sin permisos propios todavía, se agregan cuando se construya ese módulo');
 
 INSERT INTO permisos (clave, descripcion) VALUES
   ('presupuestos.crear', 'Crear un nuevo presupuesto'),
