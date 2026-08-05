@@ -100,6 +100,7 @@ INSERT OR IGNORE INTO permisos (clave, descripcion) VALUES
   ('presupuestos.enviar', 'Enviar el presupuesto al cliente'),
   ('presupuestos.aprobar', 'Aprobar en la reunión gerencial (paso 6)'),
   ('presupuestos.reemplazar_version', 'Crear una nueva versión tras modificación post-aceptación'),
+  ('presupuestos.gestionar_prioridad', 'Cambiar la prioridad de un presupuesto en estudio'),
   ('usuarios.gestionar', 'Crear/editar usuarios, roles y permisos');
 
 INSERT OR IGNORE INTO rol_permisos (rol_id, permiso_id)

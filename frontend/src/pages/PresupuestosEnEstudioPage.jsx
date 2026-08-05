@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { presupuestosEnEstudio } from '../api/client.js'
+import { presupuestosEnEstudio, actualizarPrioridad } from '../api/client.js'
 
 function formatoMoneda(valor) {
   if (valor === null || valor === undefined) return '—'
@@ -13,10 +13,11 @@ function formatoPorcentaje(valor) {
 }
 
 export default function PresupuestosEnEstudioPage() {
-  const { accessToken } = useAuth()
+  const { accessToken, tienePermiso } = useAuth()
   const [filas, setFilas] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
+  const puedeCambiarPrioridad = tienePermiso('presupuestos.gestionar_prioridad')
 
   useEffect(() => {
     presupuestosEnEstudio(accessToken)
@@ -25,8 +26,19 @@ export default function PresupuestosEnEstudioPage() {
       .finally(() => setCargando(false))
   }, [accessToken])
 
+  async function handlePrioridadChange(id, prioridad) {
+    const anteriores = filas
+    setFilas((f) => f.map((p) => (p.id === id ? { ...p, prioridad } : p)))
+    try {
+      await actualizarPrioridad(accessToken, id, prioridad)
+    } catch (err) {
+      setFilas(anteriores)
+      setError(err.message)
+    }
+  }
+
   return (
-    <div className="dashboard">
+    <div className="dashboard dashboard-ancho">
       <header className="dashboard-header">
         <div>
           <h1>Presupuestos en Estudio</h1>
@@ -42,38 +54,57 @@ export default function PresupuestosEnEstudioPage() {
       )}
 
       {!cargando && !error && filas.length > 0 && (
-        <table className="tabla-presupuestos">
-          <thead>
-            <tr>
-              <th>Obra</th>
-              <th>Cliente</th>
-              <th>Estatus</th>
-              <th>Nº Ventanas</th>
-              <th>Precio/m²</th>
-              <th>RAL</th>
-              <th>Persiana</th>
-              <th>Vidrio</th>
-              <th>Precio último ppto.</th>
-              <th>% Ganancia</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filas.map((p) => (
-              <tr key={p.id}>
-                <td>{p.obra}</td>
-                <td>{p.cliente || '—'}</td>
-                <td><span className="badge badge-borrador">{p.estatus}</span></td>
-                <td>{p.no_ventanas ?? '—'}</td>
-                <td>{formatoMoneda(p.precio_m2)}</td>
-                <td>{p.ral || '—'}</td>
-                <td>{p.persiana || '—'}</td>
-                <td>{p.vidrio || '—'}</td>
-                <td>{formatoMoneda(p.precio_ultimo_presupuesto)}</td>
-                <td>{formatoPorcentaje(p.porcentaje_ganancia)}</td>
+        <div className="tabla-scroll">
+          <table className="tabla-presupuestos tabla-presupuestos-ancha">
+            <thead>
+              <tr>
+                <th>Obra</th>
+                <th>Cliente</th>
+                <th>Estatus</th>
+                <th>Prioridad</th>
+                <th>Nº Ventanas</th>
+                <th>Precio/m²</th>
+                <th>RAL / Color</th>
+                <th>Persiana</th>
+                <th>Vidrio</th>
+                <th>Precio último ppto.</th>
+                <th>% Ganancia</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filas.map((p) => (
+                <tr key={p.id}>
+                  <td>{p.obra}</td>
+                  <td>{p.cliente || '—'}</td>
+                  <td><span className="badge badge-borrador">{p.estatus}</span></td>
+                  <td>
+                    {puedeCambiarPrioridad ? (
+                      <select
+                        className="select-prioridad"
+                        value={p.prioridad}
+                        onChange={(e) => handlePrioridadChange(p.id, e.target.value)}
+                      >
+                        <option value="Normal">Normal</option>
+                        <option value="Alta">Alta</option>
+                      </select>
+                    ) : (
+                      <span className={`badge ${p.prioridad === 'Alta' ? 'badge-rechazado' : 'badge-borrador'}`}>
+                        {p.prioridad}
+                      </span>
+                    )}
+                  </td>
+                  <td>{p.no_ventanas ?? '—'}</td>
+                  <td>{formatoMoneda(p.precio_m2)}</td>
+                  <td>{p.ral || '—'}</td>
+                  <td>{p.persiana || '—'}</td>
+                  <td>{p.vidrio || '—'}</td>
+                  <td>{formatoMoneda(p.precio_ultimo_presupuesto)}</td>
+                  <td>{formatoPorcentaje(p.porcentaje_ganancia)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )

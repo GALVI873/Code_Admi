@@ -14,19 +14,37 @@ async function buscarPdfEnviado(drive, enviadosFolderId, obra) {
   return res.data.files[0] || null;
 }
 
+// Resume la descripción larga del "Compacto" (cajón + color + motor) a lo
+// esencial: tipo de cajón y tipo de motor, sin todo el detalle de colores
+// repetido línea por línea.
+function resumirPersiana(texto) {
+  if (!texto) return null;
+  const cajonMatch = texto.match(/^([^,]+)/);
+  const motorMatch = texto.match(/motor\s+(vía?\s*radio|mec[aá]nico)/i);
+  const partes = [];
+  if (cajonMatch) partes.push(cajonMatch[1].trim());
+  if (motorMatch) partes.push(`Motor ${motorMatch[1].trim()}`);
+  return partes.length > 0 ? partes.join(' — ') : texto;
+}
+
 function parseTextoPresupuestoEnviado(text) {
   const clienteMatch = text.match(/OBRA:.*\n(.+)\n/);
   const cliente = clienteMatch ? clienteMatch[1].trim() : null;
 
+  const colorMatch = text.match(/Color:\s*(.+)/);
+  const color = colorMatch ? colorMatch[1].trim() : null;
+
   const ralMatch = text.match(/Ral:\s*(.+)/);
   let ral = ralMatch ? ralMatch[1].trim() : null;
-  if (ral === '.' || ral === '') ral = null;
+  // "Ral: ." es como se marca "sin RAL" en proyectos de PVC/lacado — en ese
+  // caso el color (ej. "LACADO BLANCO") es el dato útil que sí existe.
+  if (ral === '.' || ral === '') ral = color;
 
   const vidrioMatch = text.match(/Superficie:\s*(.+)/);
   const vidrio = vidrioMatch ? vidrioMatch[1].trim() : null;
 
   const persianaMatch = text.match(/Compacto:\s*([\s\S]*?)Metros Cuadrados:/);
-  const persiana = persianaMatch ? persianaMatch[1].replace(/\s+/g, ' ').trim() : null;
+  const persiana = persianaMatch ? resumirPersiana(persianaMatch[1].replace(/\s+/g, ' ').trim()) : null;
 
   return { cliente, ral, vidrio, persiana };
 }

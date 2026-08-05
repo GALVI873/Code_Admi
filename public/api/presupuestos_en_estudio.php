@@ -4,6 +4,8 @@ declare(strict_types=1);
 // GET: lista los presupuestos en estudio (requiere sesión + permiso presupuestos.ver_todos).
 // POST: upsert de un registro, usado por el proceso de sincronización con Drive
 // (protegido por SYNC_TOKEN, no por sesión de usuario — es máquina a máquina).
+// PATCH: cambia la prioridad (Alta/Normal) — requiere sesión + permiso
+// presupuestos.gestionar_prioridad (solo admin).
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
 
@@ -26,8 +28,25 @@ try {
           vidrio TEXT,
           precio_ultimo_presupuesto REAL,
           porcentaje_ganancia REAL,
+          prioridad TEXT NOT NULL DEFAULT 'Normal',
           actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
+    ");
+
+    // Migración idempotente: si la tabla ya existía de antes sin la columna
+    // "prioridad" (producción), se agrega sin tocar los datos existentes.
+    $columnas = array_column($db->query('PRAGMA table_info(presupuestos_en_estudio)')->fetchAll(), 'name');
+    if (!in_array('prioridad', $columnas, true)) {
+        $db->exec("ALTER TABLE presupuestos_en_estudio ADD COLUMN prioridad TEXT NOT NULL DEFAULT 'Normal'");
+    }
+
+    // Igual de idempotente para el permiso nuevo: se crea y se asigna solo a
+    // admin si todavía no existe (no rompe nada si ya corrió antes).
+    $db->exec("INSERT OR IGNORE INTO permisos (clave, descripcion) VALUES ('presupuestos.gestionar_prioridad', 'Cambiar la prioridad de un presupuesto en estudio')");
+    $db->exec("
+        INSERT OR IGNORE INTO rol_permisos (rol_id, permiso_id)
+        SELECT r.id, p.id FROM roles r, permisos p
+        WHERE r.nombre = 'admin' AND p.clave = 'presupuestos.gestionar_prioridad'
     ");
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -36,6 +55,27 @@ try {
 
         $stmt = $db->query('SELECT * FROM presupuestos_en_estudio ORDER BY actualizado_en DESC');
         Response::json(['presupuestos' => $stmt->fetchAll()]);
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'PATCH') {
+        $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
+        AuthMiddleware::requierePermiso($usuario, 'presupuestos.gestionar_prioridad');
+
+        $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
+        $id = (int) ($body['id'] ?? 0);
+        $prioridad = trim((string) ($body['prioridad'] ?? ''));
+
+        if ($id <= 0) {
+            Response::error('Falta "id"', 422);
+        }
+        if (!in_array($prioridad, ['Alta', 'Normal'], true)) {
+            Response::error('"prioridad" debe ser "Alta" o "Normal"', 422);
+        }
+
+        $db->prepare("UPDATE presupuestos_en_estudio SET prioridad = ?, actualizado_en = datetime('now') WHERE id = ?")
+            ->execute([$prioridad, $id]);
+
+        Response::json(['ok' => true]);
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -50,6 +90,8 @@ try {
             Response::error('Falta "obra"', 422);
         }
 
+        // "prioridad" no se toca acá a propósito: es un dato que decide un
+        // admin desde el panel, la sincronización con Drive nunca la pisa.
         $stmt = $db->prepare("
             INSERT INTO presupuestos_en_estudio
                 (obra, cliente, estatus, no_ventanas, precio_m2, ral, persiana, vidrio, precio_ultimo_presupuesto, porcentaje_ganancia, actualizado_en)

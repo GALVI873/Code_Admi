@@ -39,3 +39,11 @@ export function presupuestosEnEstudio(accessToken) {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
 }
+
+export function actualizarPrioridad(accessToken, id, prioridad) {
+  return request('/presupuestos_en_estudio.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ id, prioridad }),
+  })
+}
