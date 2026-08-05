@@ -24,15 +24,14 @@ if ($accion === 'inicializar') {
 }
 
 if ($accion === 'crear_usuario') {
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        Response::error('Método no permitido', 405);
-    }
-
-    $body = json_decode((string) file_get_contents('php://input'), true) ?? $_POST;
-    $nombre = trim((string) ($body['nombre'] ?? ''));
-    $email = trim((string) ($body['email'] ?? ''));
-    $password = (string) ($body['password'] ?? '');
-    $rol = trim((string) ($body['rol'] ?? ''));
+    // Acepta GET además de POST a propósito: es más fácil pegar una URL en el
+    // navegador que armar una petición POST sin curl/Postman a mano. Queda
+    // protegido igual por el SETUP_TOKEN.
+    $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
+    $nombre = trim((string) ($body['nombre'] ?? $_REQUEST['nombre'] ?? ''));
+    $email = trim((string) ($body['email'] ?? $_REQUEST['email'] ?? ''));
+    $password = (string) ($body['password'] ?? $_REQUEST['password'] ?? '');
+    $rol = trim((string) ($body['rol'] ?? $_REQUEST['rol'] ?? ''));
 
     if ($nombre === '' || $email === '' || $password === '' || $rol === '') {
         Response::error('Faltan datos: nombre, email, password y rol son obligatorios', 422);
