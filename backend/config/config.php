@@ -14,4 +14,5 @@ return [
         'allowed_origins' => array_filter(array_map('trim', explode(',', getenv('CORS_ALLOWED_ORIGINS') ?: ''))),
     ],
     'setup_token' => getenv('SETUP_TOKEN') ?: '',
+    'sync_token' => getenv('SYNC_TOKEN') ?: '',
 ];

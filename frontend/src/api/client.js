@@ -33,3 +33,9 @@ export function refresh() {
 export function logout() {
   return request('/logout.php', { method: 'POST' })
 }
+
+export function presupuestosEnEstudio(accessToken) {
+  return request('/presupuestos_en_estudio.php', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
