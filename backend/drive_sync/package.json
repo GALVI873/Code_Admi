@@ -1,0 +1,11 @@
+{
+  "name": "galvi-drive-sync-setup",
+  "private": true,
+  "version": "0.1.0",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "googleapis": "^144.0.0",
+    "xlsx": "^0.18.5"
+  }
+}

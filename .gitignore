@@ -19,3 +19,6 @@ frontend/dist/
 # Sistema
 Thumbs.db
 .DS_Store
+
+# Archivos de ejemplo descargados de Drive para pruebas (datos reales de clientes)
+backend/drive_sync/ejemplo_*
