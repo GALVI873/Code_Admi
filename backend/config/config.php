@@ -3,10 +3,7 @@ declare(strict_types=1);
 
 return [
     'db' => [
-        'host' => getenv('DB_HOST') ?: '127.0.0.1',
-        'name' => getenv('DB_NAME') ?: '',
-        'user' => getenv('DB_USER') ?: '',
-        'pass' => getenv('DB_PASS') ?: '',
+        'path' => getenv('DB_PATH') ?: (__DIR__ . '/../data/galvi_panel.sqlite'),
     ],
     'jwt' => [
         'secret' => getenv('JWT_SECRET') ?: '',
@@ -16,4 +13,5 @@ return [
     'cors' => [
         'allowed_origins' => array_filter(array_map('trim', explode(',', getenv('CORS_ALLOWED_ORIGINS') ?: ''))),
     ],
+    'setup_token' => getenv('SETUP_TOKEN') ?: '',
 ];

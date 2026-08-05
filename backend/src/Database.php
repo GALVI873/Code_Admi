@@ -8,12 +8,12 @@ final class Database
     public static function connection(array $config): PDO
     {
         if (self::$instance === null) {
-            $dsn = sprintf('mysql:host=%s;dbname=%s;charset=utf8mb4', $config['db']['host'], $config['db']['name']);
-            self::$instance = new PDO($dsn, $config['db']['user'], $config['db']['pass'], [
+            $dsn = 'sqlite:' . $config['db']['path'];
+            self::$instance = new PDO($dsn, null, null, [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES => false,
             ]);
+            self::$instance->exec('PRAGMA foreign_keys = ON;');
         }
         return self::$instance;
     }

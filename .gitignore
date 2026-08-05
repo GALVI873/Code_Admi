@@ -22,3 +22,6 @@ Thumbs.db
 
 # Archivos de ejemplo descargados de Drive para pruebas (datos reales de clientes)
 backend/drive_sync/ejemplo_*
+
+# Base de datos SQLite (datos reales de producción, nunca en el repo)
+backend/data/*.sqlite

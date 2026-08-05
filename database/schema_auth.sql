@@ -1,86 +1,94 @@
 -- Esquema de autenticación y control de accesos (RBAC) — Panel Galvi
--- Cargar antes que cualquier tabla de negocio (presupuestos, etc.), ya que esas tablas
--- referenciarán usuarios.id como creador/responsable.
+-- SQLite (no MySQL): elegido porque el hosting solo da acceso por FTP,
+-- sin panel de administración ni SSH para crear una base de datos MySQL
+-- por separado. Este archivo se ejecuta completo vía public/api/setup.php.
 
-CREATE TABLE usuarios (
-  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  nombre VARCHAR(100) NOT NULL,
-  email VARCHAR(150) NOT NULL UNIQUE,
-  password_hash VARCHAR(255) NOT NULL,
-  activo TINYINT(1) NOT NULL DEFAULT 1,
-  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS usuarios (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  activo INTEGER NOT NULL DEFAULT 1,
+  creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+  actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
-CREATE TABLE roles (
-  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  nombre VARCHAR(50) NOT NULL UNIQUE,
-  descripcion VARCHAR(255)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TRIGGER IF NOT EXISTS usuarios_actualizado_en
+AFTER UPDATE ON usuarios
+FOR EACH ROW
+BEGIN
+  UPDATE usuarios SET actualizado_en = datetime('now') WHERE id = OLD.id;
+END;
 
-CREATE TABLE permisos (
-  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  clave VARCHAR(100) NOT NULL UNIQUE,
-  descripcion VARCHAR(255)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS roles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre TEXT NOT NULL UNIQUE,
+  descripcion TEXT
+);
 
-CREATE TABLE rol_permisos (
-  rol_id INT UNSIGNED NOT NULL,
-  permiso_id INT UNSIGNED NOT NULL,
+CREATE TABLE IF NOT EXISTS permisos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  clave TEXT NOT NULL UNIQUE,
+  descripcion TEXT
+);
+
+CREATE TABLE IF NOT EXISTS rol_permisos (
+  rol_id INTEGER NOT NULL,
+  permiso_id INTEGER NOT NULL,
   PRIMARY KEY (rol_id, permiso_id),
   FOREIGN KEY (rol_id) REFERENCES roles(id) ON DELETE CASCADE,
   FOREIGN KEY (permiso_id) REFERENCES permisos(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
-CREATE TABLE usuario_roles (
-  usuario_id INT UNSIGNED NOT NULL,
-  rol_id INT UNSIGNED NOT NULL,
+CREATE TABLE IF NOT EXISTS usuario_roles (
+  usuario_id INTEGER NOT NULL,
+  rol_id INTEGER NOT NULL,
   PRIMARY KEY (usuario_id, rol_id),
   FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
   FOREIGN KEY (rol_id) REFERENCES roles(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
-CREATE TABLE refresh_tokens (
-  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  usuario_id INT UNSIGNED NOT NULL,
-  token_hash CHAR(64) NOT NULL, -- sha256 del token; el valor real solo vive en la cookie httpOnly del cliente
-  expira_en DATETIME NOT NULL,
-  revocado TINYINT(1) NOT NULL DEFAULT 0,
-  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
-  INDEX idx_token_hash (token_hash)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  usuario_id INTEGER NOT NULL,
+  token_hash TEXT NOT NULL, -- sha256 del token; el valor real solo vive en la cookie httpOnly del cliente
+  expira_en TEXT NOT NULL,
+  revocado INTEGER NOT NULL DEFAULT 0,
+  creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hash ON refresh_tokens(token_hash);
 
-CREATE TABLE intentos_login (
-  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  email VARCHAR(150) NOT NULL,
-  ip VARCHAR(45) NOT NULL,
-  exitoso TINYINT(1) NOT NULL,
-  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_email_creado (email, creado_en)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS intentos_login (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL,
+  ip TEXT NOT NULL,
+  exitoso INTEGER NOT NULL,
+  creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_intentos_login_email_creado ON intentos_login(email, creado_en);
 
-CREATE TABLE auditoria (
-  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  usuario_id INT UNSIGNED NULL,
-  accion VARCHAR(100) NOT NULL,
-  entidad VARCHAR(100) NULL,
-  entidad_id INT UNSIGNED NULL,
-  detalle JSON NULL,
-  ip VARCHAR(45) NULL,
-  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE IF NOT EXISTS auditoria (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  usuario_id INTEGER NULL,
+  accion TEXT NOT NULL,
+  entidad TEXT NULL,
+  entidad_id INTEGER NULL,
+  detalle TEXT NULL,
+  ip TEXT NULL,
+  creado_en TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Seed: roles y permisos iniciales para el piloto de Presupuestos.
 -- Los permisos de futuros departamentos (gestion_obras.*, transporte.*, etc.) se agregan
 -- cuando se construya cada módulo, sin tocar esta estructura.
-INSERT INTO roles (nombre, descripcion) VALUES
+INSERT OR IGNORE INTO roles (nombre, descripcion) VALUES
   ('admin', 'Acceso total; aprueba y supervisa todos los departamentos'),
   ('presupuestos', 'Gestiona el ciclo de presupuestos'),
   ('gestion_obras', 'Gestión de Obras — sin permisos propios todavía, se agregan cuando se construya ese módulo');
 
-INSERT INTO permisos (clave, descripcion) VALUES
+INSERT OR IGNORE INTO permisos (clave, descripcion) VALUES
   ('presupuestos.crear', 'Crear un nuevo presupuesto'),
   ('presupuestos.ver_propios', 'Ver los presupuestos que el usuario creó'),
   ('presupuestos.ver_todos', 'Ver todos los presupuestos de todos los usuarios'),
@@ -90,10 +98,10 @@ INSERT INTO permisos (clave, descripcion) VALUES
   ('presupuestos.reemplazar_version', 'Crear una nueva versión tras modificación post-aceptación'),
   ('usuarios.gestionar', 'Crear/editar usuarios, roles y permisos');
 
-INSERT INTO rol_permisos (rol_id, permiso_id)
+INSERT OR IGNORE INTO rol_permisos (rol_id, permiso_id)
 SELECT r.id, p.id FROM roles r, permisos p WHERE r.nombre = 'admin';
 
-INSERT INTO rol_permisos (rol_id, permiso_id)
+INSERT OR IGNORE INTO rol_permisos (rol_id, permiso_id)
 SELECT r.id, p.id FROM roles r, permisos p
 WHERE r.nombre = 'presupuestos'
   AND p.clave IN (

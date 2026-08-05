@@ -63,9 +63,9 @@ final class AuthService
     {
         $hash = hash('sha256', $refreshToken);
         $stmt = $this->db->prepare(
-            'SELECT * FROM refresh_tokens WHERE token_hash = ? AND revocado = 0 AND expira_en > NOW()'
+            'SELECT * FROM refresh_tokens WHERE token_hash = ? AND revocado = 0 AND expira_en > ?'
         );
-        $stmt->execute([$hash]);
+        $stmt->execute([$hash, date('Y-m-d H:i:s')]);
         $registro = $stmt->fetch();
 
         if (!$registro) {
@@ -145,10 +145,10 @@ final class AuthService
     private function tooManyAttempts(string $email): bool
     {
         $stmt = $this->db->prepare(
-            "SELECT COUNT(*) AS n FROM intentos_login
-             WHERE email = ? AND exitoso = 0 AND creado_en > (NOW() - INTERVAL 15 MINUTE)"
+            'SELECT COUNT(*) AS n FROM intentos_login
+             WHERE email = ? AND exitoso = 0 AND creado_en > ?'
         );
-        $stmt->execute([$email]);
+        $stmt->execute([$email, date('Y-m-d H:i:s', time() - 15 * 60)]);
         return (int) $stmt->fetch()['n'] >= 5;
     }
 
