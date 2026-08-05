@@ -9,6 +9,18 @@ declare(strict_types=1);
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
 
+// Diagnóstico sin token: solo confirma booleanos (nunca valores), para
+// depurar sin exponer secretos.
+if (($_GET['accion'] ?? '') === 'diagnostico') {
+    $envPath = __DIR__ . '/../../backend/.env';
+    Response::json([
+        'env_existe' => is_file($envPath),
+        'env_ruta_buscada' => realpath($envPath) ?: $envPath,
+        'jwt_secret_cargado' => getenv('JWT_SECRET') !== false && getenv('JWT_SECRET') !== '',
+        'setup_token_cargado' => getenv('SETUP_TOKEN') !== false && getenv('SETUP_TOKEN') !== '',
+    ]);
+}
+
 $token = $_GET['token'] ?? $_POST['token'] ?? '';
 if ($config['setup_token'] === '' || !hash_equals($config['setup_token'], (string) $token)) {
     Response::error('No autorizado', 403);
