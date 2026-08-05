@@ -2,6 +2,10 @@
 -- SQLite (no MySQL): elegido porque el hosting solo da acceso por FTP,
 -- sin panel de administración ni SSH para crear una base de datos MySQL
 -- por separado. Este archivo se ejecuta completo vía public/api/setup.php.
+--
+-- Vive dentro de backend/ (no en una carpeta database/ aparte) a propósito:
+-- backend/ es la única carpeta que el workflow de deploy sube siempre, así
+-- este archivo nunca puede faltar en el servidor por un paso de deploy olvidado.
 
 CREATE TABLE IF NOT EXISTS usuarios (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
