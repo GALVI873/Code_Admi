@@ -177,7 +177,9 @@ body {
 .badge-rechazado { background: #fdedec; color: var(--rojo); }
 
 .dashboard-ancho {
-  max-width: 1500px;
+  max-width: none;
+  padding-left: 36px;
+  padding-right: 36px;
 }
 
 .tabla-scroll {
@@ -187,19 +189,25 @@ body {
 }
 
 .tabla-presupuestos-ancha {
-  min-width: 1300px;
+  width: 100%;
+  min-width: 1500px;
+  table-layout: fixed;
   box-shadow: none;
 }
 
 .tabla-presupuestos-ancha th,
 .tabla-presupuestos-ancha td {
+  padding: 16px 22px;
+  font-size: 14.5px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tabla-presupuestos-ancha td:nth-child(2),
 .tabla-presupuestos-ancha td:nth-child(8) {
   white-space: normal;
-  min-width: 220px;
+  overflow: visible;
 }
 
 .select-prioridad {
