@@ -88,14 +88,14 @@ async function main() {
       fs.writeFileSync(tmpPath, buffer);
       const campos = extraerCampos(tmpPath);
 
+      // Siempre se busca el presupuesto enviado (no solo si faltan campos):
+      // la fecha de envío se necesita en todos los casos.
       const faltantes = CAMPOS_RESPALDABLES.filter((c) => campos[c] === null || campos[c] === undefined);
-      if (faltantes.length > 0) {
-        try {
-          const relleno = await completarDesdeEnviado(obra, faltantes);
-          Object.assign(campos, relleno);
-        } catch {
-          // sigue sin el respaldo si la búsqueda del enviado falla
-        }
+      try {
+        const relleno = await completarDesdeEnviado(obra, faltantes);
+        Object.assign(campos, relleno);
+      } catch {
+        // sigue sin el respaldo/fecha si la búsqueda del enviado falla
       }
 
       const url = `${process.env.PANEL_API_URL}/presupuestos_en_estudio.php?token=${process.env.SYNC_TOKEN}`;

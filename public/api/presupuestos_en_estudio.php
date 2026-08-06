@@ -29,15 +29,19 @@ try {
           precio_ultimo_presupuesto REAL,
           porcentaje_ganancia REAL,
           prioridad TEXT NOT NULL DEFAULT 'Normal',
+          fecha_ultimo_envio TEXT,
           actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
     ");
 
-    // Migración idempotente: si la tabla ya existía de antes sin la columna
-    // "prioridad" (producción), se agrega sin tocar los datos existentes.
+    // Migraciones idempotentes: si la tabla ya existía de antes sin estas
+    // columnas (producción), se agregan sin tocar los datos existentes.
     $columnas = array_column($db->query('PRAGMA table_info(presupuestos_en_estudio)')->fetchAll(), 'name');
     if (!in_array('prioridad', $columnas, true)) {
         $db->exec("ALTER TABLE presupuestos_en_estudio ADD COLUMN prioridad TEXT NOT NULL DEFAULT 'Normal'");
+    }
+    if (!in_array('fecha_ultimo_envio', $columnas, true)) {
+        $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN fecha_ultimo_envio TEXT');
     }
 
     // Igual de idempotente para el permiso nuevo: se crea y se asigna solo a
@@ -94,8 +98,8 @@ try {
         // admin desde el panel, la sincronización con Drive nunca la pisa.
         $stmt = $db->prepare("
             INSERT INTO presupuestos_en_estudio
-                (obra, cliente, estatus, no_ventanas, precio_m2, ral, persiana, vidrio, precio_ultimo_presupuesto, porcentaje_ganancia, actualizado_en)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                (obra, cliente, estatus, no_ventanas, precio_m2, ral, persiana, vidrio, precio_ultimo_presupuesto, porcentaje_ganancia, fecha_ultimo_envio, actualizado_en)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(obra) DO UPDATE SET
                 cliente = excluded.cliente,
                 estatus = excluded.estatus,
@@ -106,6 +110,7 @@ try {
                 vidrio = excluded.vidrio,
                 precio_ultimo_presupuesto = excluded.precio_ultimo_presupuesto,
                 porcentaje_ganancia = excluded.porcentaje_ganancia,
+                fecha_ultimo_envio = excluded.fecha_ultimo_envio,
                 actualizado_en = datetime('now')
         ");
         $stmt->execute([
@@ -119,6 +124,7 @@ try {
             $body['vidrio'] ?? null,
             $body['precio_ultimo_presupuesto'] ?? null,
             $body['porcentaje_ganancia'] ?? null,
+            $body['fecha_ultimo_envio'] ?? null,
         ]);
 
         Response::json(['ok' => true]);

@@ -20,20 +20,20 @@ async function main() {
 
   const campos = extraerCampos(filePath);
 
+  // Siempre se busca el presupuesto enviado, no solo cuando faltan campos:
+  // la fecha de envío se necesita en todos los casos para saber la antigüedad.
   const faltantes = CAMPOS_RESPALDABLES.filter((c) => campos[c] === null || campos[c] === undefined);
-  if (faltantes.length > 0) {
-    console.log(`Campos vacíos en el Excel (${faltantes.join(', ')}) — buscando en presupuestos enviados...`);
-    try {
-      const relleno = await completarDesdeEnviado(obra, faltantes);
-      Object.assign(campos, relleno);
-      if (Object.keys(relleno).length > 0) {
-        console.log('Completado desde presupuesto enviado:', JSON.stringify(relleno));
-      } else {
-        console.log('No se encontró un presupuesto enviado para completar los campos faltantes.');
-      }
-    } catch (err) {
-      console.warn('No se pudo buscar en presupuestos enviados:', err.message);
+  console.log('Buscando presupuesto enviado (fecha + respaldo de campos faltantes)...');
+  try {
+    const relleno = await completarDesdeEnviado(obra, faltantes);
+    Object.assign(campos, relleno);
+    if (Object.keys(relleno).length > 0) {
+      console.log('Completado desde presupuesto enviado:', JSON.stringify(relleno));
+    } else {
+      console.log('No se encontró un presupuesto enviado para esta obra.');
     }
+  } catch (err) {
+    console.warn('No se pudo buscar en presupuestos enviados:', err.message);
   }
 
   const url = `${process.env.PANEL_API_URL}/presupuestos_en_estudio.php?token=${process.env.SYNC_TOKEN}`;

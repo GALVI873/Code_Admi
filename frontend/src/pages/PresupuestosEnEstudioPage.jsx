@@ -12,6 +12,12 @@ function formatoPorcentaje(valor) {
   return `${valor}%`
 }
 
+function formatoFecha(iso) {
+  if (!iso) return '—'
+  const [anio, mes, dia] = iso.split('-')
+  return `${dia}/${mes}/${anio}`
+}
+
 export default function PresupuestosEnEstudioPage() {
   const { accessToken, tienePermiso } = useAuth()
   const [filas, setFilas] = useState([])
@@ -69,6 +75,7 @@ export default function PresupuestosEnEstudioPage() {
                 <th>Vidrio</th>
                 <th>Precio último ppto.</th>
                 <th>% Ganancia</th>
+                <th>Fecha último envío</th>
               </tr>
             </thead>
             <tbody>
@@ -100,6 +107,7 @@ export default function PresupuestosEnEstudioPage() {
                   <td>{p.vidrio || '—'}</td>
                   <td>{formatoMoneda(p.precio_ultimo_presupuesto)}</td>
                   <td>{formatoPorcentaje(p.porcentaje_ganancia)}</td>
+                  <td>{formatoFecha(p.fecha_ultimo_envio)}</td>
                 </tr>
               ))}
             </tbody>
