@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { presupuestosEnEstudio, actualizarPrioridad } from '../api/client.js'
 
@@ -23,6 +23,7 @@ export default function PresupuestosEnEstudioPage() {
   const [filas, setFilas] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
+  const [busqueda, setBusqueda] = useState('')
   const puedeCambiarPrioridad = tienePermiso('presupuestos.gestionar_prioridad')
 
   useEffect(() => {
@@ -31,6 +32,16 @@ export default function PresupuestosEnEstudioPage() {
       .catch((err) => setError(err.message))
       .finally(() => setCargando(false))
   }, [accessToken])
+
+  const filasFiltradas = useMemo(() => {
+    const termino = busqueda.trim().toLowerCase()
+    if (!termino) return filas
+    return filas.filter(
+      (p) =>
+        p.obra?.toLowerCase().includes(termino) ||
+        p.cliente?.toLowerCase().includes(termino),
+    )
+  }, [filas, busqueda])
 
   async function handlePrioridadChange(id, prioridad) {
     const anteriores = filas
@@ -51,6 +62,21 @@ export default function PresupuestosEnEstudioPage() {
           <p>Sincronizado desde Google Drive</p>
         </div>
       </header>
+
+      {!cargando && !error && filas.length > 0 && (
+        <div className="filtro-tabla">
+          <input
+            type="text"
+            className="input-filtro"
+            placeholder="Filtrar por obra o cliente…"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+          />
+          <span className="filtro-contador">
+            {filasFiltradas.length} de {filas.length}
+          </span>
+        </div>
+      )}
 
       {cargando && <p className="dashboard-nota">Cargando…</p>}
       {error && <div className="auth-error">{error}</div>}
@@ -79,7 +105,7 @@ export default function PresupuestosEnEstudioPage() {
               </tr>
             </thead>
             <tbody>
-              {filas.map((p) => (
+              {filasFiltradas.map((p) => (
                 <tr key={p.id}>
                   <td>{p.obra}</td>
                   <td>{p.cliente || '—'}</td>
@@ -112,6 +138,9 @@ export default function PresupuestosEnEstudioPage() {
               ))}
             </tbody>
           </table>
+          {filasFiltradas.length === 0 && (
+            <p className="dashboard-nota">Ningún presupuesto coincide con "{busqueda}".</p>
+          )}
         </div>
       )}
     </div>

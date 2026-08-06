@@ -220,6 +220,31 @@ body {
   cursor: pointer;
 }
 
+.filtro-tabla {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.input-filtro {
+  flex: 0 1 320px;
+  border: 1px solid #dfe6e9;
+  border-radius: 8px;
+  padding: 9px 14px;
+  font-size: 13.5px;
+}
+
+.input-filtro:focus {
+  outline: none;
+  border-color: var(--azul-clar);
+}
+
+.filtro-contador {
+  font-size: 12px;
+  color: #888;
+}
+
 .dashboard-nota {
   margin-top: 14px;
   font-size: 12px;
