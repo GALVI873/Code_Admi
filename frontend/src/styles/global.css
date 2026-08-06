@@ -234,27 +234,28 @@ body {
 
 .filtro-tabla {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   flex-wrap: wrap;
   gap: 18px;
   margin-bottom: 18px;
-  padding: 14px 18px;
+  padding: 8px 18px;
   background: #f7f9fc;
   border: 1px solid #e3e8f0;
-  border-radius: 12px;
+  border-radius: 10px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
 }
 
 .filtro-campo {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
 }
 
 .filtro-campo .input-filtro,
 .filtro-campo .select-inline {
   width: 130px;
-  padding: 12px 14px;
+  padding: 7px 12px;
   font-size: 13.5px;
 }
 
@@ -264,6 +265,7 @@ body {
   color: #7a8699;
   text-transform: uppercase;
   letter-spacing: .03em;
+  white-space: nowrap;
 }
 
 .input-filtro {
@@ -281,8 +283,10 @@ body {
 }
 
 .filtro-contador {
+  margin-left: auto;
   font-size: 12px;
   color: #888;
+  white-space: nowrap;
 }
 
 .dashboard-nota {
