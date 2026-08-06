@@ -212,6 +212,17 @@ body {
   cursor: pointer;
 }
 
+.select-estatus {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-weight: 700;
+}
+
+.select-estatus-en-estudio { background: #eaf0fb; color: #2980b9; }
+.select-estatus-seguimiento { background: #fef9e7; color: #d68910; }
+.select-estatus-aceptado { background: #d5f5e3; color: #1e8449; }
+.select-estatus-descartado { background: #fdedec; color: var(--rojo); }
+
 .filtro-tabla {
   display: flex;
   align-items: center;

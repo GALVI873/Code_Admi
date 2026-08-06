@@ -12,6 +12,13 @@ function rangoPrioridad(prioridad) {
   return prioridad === 'Alta' ? 0 : 1
 }
 
+const CLASE_ESTATUS = {
+  'En Estudio': 'select-estatus-en-estudio',
+  Seguimiento: 'select-estatus-seguimiento',
+  Aceptado: 'select-estatus-aceptado',
+  Descartado: 'select-estatus-descartado',
+}
+
 function formatoMoneda(valor) {
   if (valor === null || valor === undefined) return '—'
   return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(valor)
@@ -139,7 +146,7 @@ export default function PresupuestosEnEstudioPage() {
                   <td>{p.cliente || '—'}</td>
                   <td>
                     <select
-                      className="select-inline"
+                      className={`select-inline select-estatus ${CLASE_ESTATUS[p.estatus] || ''}`}
                       value={p.estatus}
                       onChange={(e) => handleCambio(p.id, { estatus: e.target.value })}
                     >
