@@ -251,6 +251,13 @@ body {
   gap: 4px;
 }
 
+.filtro-campo .input-filtro,
+.filtro-campo .select-inline {
+  width: 130px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+}
+
 .filtro-campo label {
   font-size: 11px;
   font-weight: 700;
