@@ -191,7 +191,6 @@ body {
 .tabla-presupuestos-ancha {
   width: 100%;
   min-width: 1500px;
-  table-layout: fixed;
   box-shadow: none;
 }
 
@@ -199,15 +198,8 @@ body {
 .tabla-presupuestos-ancha td {
   padding: 16px 22px;
   font-size: 14.5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tabla-presupuestos-ancha td:nth-child(2),
-.tabla-presupuestos-ancha td:nth-child(8) {
   white-space: normal;
-  overflow: visible;
+  overflow-wrap: break-word;
 }
 
 .select-prioridad {
