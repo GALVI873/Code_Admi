@@ -260,10 +260,10 @@ body {
 }
 
 .input-filtro {
-  flex: 0 1 160px;
+  flex: 0 1 130px;
   border: 1px solid #dfe6e9;
   border-radius: 8px;
-  padding: 9px 14px;
+  padding: 12px 14px;
   font-size: 13.5px;
   background: white;
 }
