@@ -57,7 +57,10 @@ try {
         $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
         AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_todos');
 
-        $stmt = $db->query('SELECT * FROM presupuestos_en_estudio ORDER BY actualizado_en DESC');
+        // Más reciente a más antiguo por fecha de envío; las obras sin envío
+        // (fecha_ultimo_envio NULL) quedan al final (SQLite ordena NULL como
+        // el valor más chico, así que en DESC caen últimas).
+        $stmt = $db->query('SELECT * FROM presupuestos_en_estudio ORDER BY fecha_ultimo_envio DESC');
         Response::json(['presupuestos' => $stmt->fetchAll()]);
     }
 

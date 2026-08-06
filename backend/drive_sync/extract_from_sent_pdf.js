@@ -11,7 +11,7 @@ async function buscarPdfEnviado(drive, enviadosFolderId, obra) {
   const res = await drive.files.list({
     q: `'${enviadosFolderId}' in parents and name contains '${obra.replace(/'/g, "\\'")}' and mimeType='application/pdf' and trashed=false`,
     orderBy: 'modifiedTime desc',
-    fields: 'files(id, name, modifiedTime)',
+    fields: 'files(id, name, createdTime)',
     pageSize: 5,
   });
   return res.data.files[0] || null;
@@ -49,14 +49,7 @@ function parseTextoPresupuestoEnviado(text) {
   const persianaMatch = text.match(/Compacto:\s*([\s\S]*?)Metros Cuadrados:/);
   const persiana = persianaMatch ? resumirPersiana(persianaMatch[1].replace(/\s+/g, ' ').trim()) : null;
 
-  let fecha = null;
-  const fechaMatch = text.match(/FECHA:\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (fechaMatch) {
-    const [, dia, mes, anio] = fechaMatch;
-    fecha = `${anio}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`; // ISO, para poder ordenar en la BD
-  }
-
-  return { cliente, ral, vidrio, persiana, fecha };
+  return { cliente, ral, vidrio, persiana };
 }
 
 async function completarDesdeEnviado(obra, camposFaltantes) {
@@ -77,11 +70,11 @@ async function completarDesdeEnviado(obra, camposFaltantes) {
       relleno[campo] = extraidos[campo];
     }
   }
-  // La fecha se toma siempre que se encuentre un presupuesto enviado, sin
-  // importar si los otros campos ya venían completos del Excel.
-  if (extraidos.fecha) {
-    relleno.fecha_ultimo_envio = extraidos.fecha;
-  }
+  // Fecha en que el archivo se guardó en Drive (metadato del archivo, no el
+  // texto "FECHA:" del documento) — se toma siempre que se encuentre un
+  // presupuesto enviado, sin importar si los otros campos ya venían
+  // completos del Excel.
+  relleno.fecha_ultimo_envio = archivo.createdTime.slice(0, 10); // "2026-07-31T10:23:45.000Z" -> "2026-07-31"
   return relleno;
 }
 
