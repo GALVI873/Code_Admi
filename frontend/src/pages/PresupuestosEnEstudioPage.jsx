@@ -4,6 +4,14 @@ import { presupuestosEnEstudio, actualizarPresupuestoEnEstudio } from '../api/cl
 
 const ESTATUS_OPCIONES = ['En Estudio', 'Seguimiento', 'Aceptado', 'Descartado']
 
+function rangoEstatus(estatus) {
+  return estatus === 'En Estudio' || estatus === 'Seguimiento' ? 0 : 1
+}
+
+function rangoPrioridad(prioridad) {
+  return prioridad === 'Alta' ? 0 : 1
+}
+
 function formatoMoneda(valor) {
   if (valor === null || valor === undefined) return '—'
   return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(valor)
@@ -26,6 +34,7 @@ export default function PresupuestosEnEstudioPage() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [busqueda, setBusqueda] = useState('')
+  const [filtroEstatus, setFiltroEstatus] = useState('Todos')
   const puedeCambiarPrioridad = tienePermiso('presupuestos.gestionar_prioridad')
 
   useEffect(() => {
@@ -37,13 +46,20 @@ export default function PresupuestosEnEstudioPage() {
 
   const filasFiltradas = useMemo(() => {
     const termino = busqueda.trim().toLowerCase()
-    if (!termino) return filas
-    return filas.filter(
-      (p) =>
-        p.obra?.toLowerCase().includes(termino) ||
-        p.cliente?.toLowerCase().includes(termino),
-    )
-  }, [filas, busqueda])
+    return filas
+      .filter((p) => filtroEstatus === 'Todos' || p.estatus === filtroEstatus)
+      .filter(
+        (p) =>
+          !termino ||
+          p.obra?.toLowerCase().includes(termino) ||
+          p.cliente?.toLowerCase().includes(termino),
+      )
+      .sort((a, b) => {
+        const porEstatus = rangoEstatus(a.estatus) - rangoEstatus(b.estatus)
+        if (porEstatus !== 0) return porEstatus
+        return rangoPrioridad(a.prioridad) - rangoPrioridad(b.prioridad)
+      })
+  }, [filas, busqueda, filtroEstatus])
 
   async function handleCambio(id, cambios) {
     const anteriores = filas
@@ -74,6 +90,16 @@ export default function PresupuestosEnEstudioPage() {
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
           />
+          <select
+            className="select-inline"
+            value={filtroEstatus}
+            onChange={(e) => setFiltroEstatus(e.target.value)}
+          >
+            <option value="Todos">Todos los estatus</option>
+            {ESTATUS_OPCIONES.map((op) => (
+              <option key={op} value={op}>{op}</option>
+            ))}
+          </select>
           <span className="filtro-contador">
             {filasFiltradas.length} de {filas.length}
           </span>
