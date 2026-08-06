@@ -40,10 +40,10 @@ export function presupuestosEnEstudio(accessToken) {
   })
 }
 
-export function actualizarPrioridad(accessToken, id, prioridad) {
+export function actualizarPresupuestoEnEstudio(accessToken, id, cambios) {
   return request('/presupuestos_en_estudio.php', {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ id, prioridad }),
+    body: JSON.stringify({ id, ...cambios }),
   })
 }

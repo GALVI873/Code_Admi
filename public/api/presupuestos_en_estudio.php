@@ -4,10 +4,13 @@ declare(strict_types=1);
 // GET: lista los presupuestos en estudio (requiere sesión + permiso presupuestos.ver_todos).
 // POST: upsert de un registro, usado por el proceso de sincronización con Drive
 // (protegido por SYNC_TOKEN, no por sesión de usuario — es máquina a máquina).
-// PATCH: cambia la prioridad (Alta/Normal) — requiere sesión + permiso
-// presupuestos.gestionar_prioridad (solo admin).
+// PATCH: cambia prioridad y/o estatus:
+//   - "prioridad" requiere el permiso presupuestos.gestionar_prioridad (solo admin).
+//   - "estatus" requiere presupuestos.ver_todos (cualquiera que pueda ver la tabla).
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
+
+const ESTATUS_VALIDOS = ['En Estudio', 'Descartado', 'Seguimiento', 'Aceptado'];
 
 try {
     $db = Database::connection($config);
@@ -66,21 +69,32 @@ try {
 
     if ($_SERVER['REQUEST_METHOD'] === 'PATCH') {
         $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
-        AuthMiddleware::requierePermiso($usuario, 'presupuestos.gestionar_prioridad');
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
         $id = (int) ($body['id'] ?? 0);
-        $prioridad = trim((string) ($body['prioridad'] ?? ''));
-
         if ($id <= 0) {
             Response::error('Falta "id"', 422);
         }
-        if (!in_array($prioridad, ['Alta', 'Normal'], true)) {
-            Response::error('"prioridad" debe ser "Alta" o "Normal"', 422);
+
+        if (array_key_exists('prioridad', $body)) {
+            AuthMiddleware::requierePermiso($usuario, 'presupuestos.gestionar_prioridad');
+            $prioridad = trim((string) $body['prioridad']);
+            if (!in_array($prioridad, ['Alta', 'Normal'], true)) {
+                Response::error('"prioridad" debe ser "Alta" o "Normal"', 422);
+            }
+            $db->prepare("UPDATE presupuestos_en_estudio SET prioridad = ?, actualizado_en = datetime('now') WHERE id = ?")
+                ->execute([$prioridad, $id]);
         }
 
-        $db->prepare("UPDATE presupuestos_en_estudio SET prioridad = ?, actualizado_en = datetime('now') WHERE id = ?")
-            ->execute([$prioridad, $id]);
+        if (array_key_exists('estatus', $body)) {
+            AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_todos');
+            $estatus = trim((string) $body['estatus']);
+            if (!in_array($estatus, ESTATUS_VALIDOS, true)) {
+                Response::error('"estatus" debe ser una de: ' . implode(', ', ESTATUS_VALIDOS), 422);
+            }
+            $db->prepare("UPDATE presupuestos_en_estudio SET estatus = ?, actualizado_en = datetime('now') WHERE id = ?")
+                ->execute([$estatus, $id]);
+        }
 
         Response::json(['ok' => true]);
     }
@@ -97,15 +111,16 @@ try {
             Response::error('Falta "obra"', 422);
         }
 
-        // "prioridad" no se toca acá a propósito: es un dato que decide un
-        // admin desde el panel, la sincronización con Drive nunca la pisa.
+        // "prioridad" y "estatus" no se tocan acá a propósito en el UPDATE:
+        // son datos que decide un usuario desde el panel: la sincronización
+        // con Drive nunca los pisa una vez que existe la fila. En el INSERT
+        // sí se usa el valor por defecto para una obra nueva.
         $stmt = $db->prepare("
             INSERT INTO presupuestos_en_estudio
                 (obra, cliente, estatus, no_ventanas, precio_m2, ral, persiana, vidrio, precio_ultimo_presupuesto, porcentaje_ganancia, fecha_ultimo_envio, actualizado_en)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(obra) DO UPDATE SET
                 cliente = excluded.cliente,
-                estatus = excluded.estatus,
                 no_ventanas = excluded.no_ventanas,
                 precio_m2 = excluded.precio_m2,
                 ral = excluded.ral,

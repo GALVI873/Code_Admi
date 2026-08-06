@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { presupuestosEnEstudio, actualizarPrioridad } from '../api/client.js'
+import { presupuestosEnEstudio, actualizarPresupuestoEnEstudio } from '../api/client.js'
+
+const ESTATUS_OPCIONES = ['En Estudio', 'Seguimiento', 'Aceptado', 'Descartado']
 
 function formatoMoneda(valor) {
   if (valor === null || valor === undefined) return '—'
@@ -43,11 +45,11 @@ export default function PresupuestosEnEstudioPage() {
     )
   }, [filas, busqueda])
 
-  async function handlePrioridadChange(id, prioridad) {
+  async function handleCambio(id, cambios) {
     const anteriores = filas
-    setFilas((f) => f.map((p) => (p.id === id ? { ...p, prioridad } : p)))
+    setFilas((f) => f.map((p) => (p.id === id ? { ...p, ...cambios } : p)))
     try {
-      await actualizarPrioridad(accessToken, id, prioridad)
+      await actualizarPresupuestoEnEstudio(accessToken, id, cambios)
     } catch (err) {
       setFilas(anteriores)
       setError(err.message)
@@ -109,13 +111,23 @@ export default function PresupuestosEnEstudioPage() {
                 <tr key={p.id}>
                   <td>{p.obra}</td>
                   <td>{p.cliente || '—'}</td>
-                  <td><span className="badge badge-borrador">{p.estatus}</span></td>
+                  <td>
+                    <select
+                      className="select-inline"
+                      value={p.estatus}
+                      onChange={(e) => handleCambio(p.id, { estatus: e.target.value })}
+                    >
+                      {ESTATUS_OPCIONES.map((op) => (
+                        <option key={op} value={op}>{op}</option>
+                      ))}
+                    </select>
+                  </td>
                   <td>
                     {puedeCambiarPrioridad ? (
                       <select
-                        className="select-prioridad"
+                        className="select-inline"
                         value={p.prioridad}
-                        onChange={(e) => handlePrioridadChange(p.id, e.target.value)}
+                        onChange={(e) => handleCambio(p.id, { prioridad: e.target.value })}
                       >
                         <option value="Normal">Normal</option>
                         <option value="Alta">Alta</option>
