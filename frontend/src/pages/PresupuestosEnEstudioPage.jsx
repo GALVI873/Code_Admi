@@ -19,6 +19,11 @@ const CLASE_ESTATUS = {
   Descartado: 'select-estatus-descartado',
 }
 
+const CLASE_PRIORIDAD = {
+  Alta: 'select-prioridad-alta',
+  Normal: 'select-prioridad-normal',
+}
+
 function formatoMoneda(valor) {
   if (valor === null || valor === undefined) return '—'
   return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(valor)
@@ -40,7 +45,8 @@ export default function PresupuestosEnEstudioPage() {
   const [filas, setFilas] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
-  const [busqueda, setBusqueda] = useState('')
+  const [busquedaObra, setBusquedaObra] = useState('')
+  const [busquedaCliente, setBusquedaCliente] = useState('')
   const [filtroEstatus, setFiltroEstatus] = useState('Todos')
   const puedeCambiarPrioridad = tienePermiso('presupuestos.gestionar_prioridad')
 
@@ -52,21 +58,18 @@ export default function PresupuestosEnEstudioPage() {
   }, [accessToken])
 
   const filasFiltradas = useMemo(() => {
-    const termino = busqueda.trim().toLowerCase()
+    const terminoObra = busquedaObra.trim().toLowerCase()
+    const terminoCliente = busquedaCliente.trim().toLowerCase()
     return filas
       .filter((p) => filtroEstatus === 'Todos' || p.estatus === filtroEstatus)
-      .filter(
-        (p) =>
-          !termino ||
-          p.obra?.toLowerCase().includes(termino) ||
-          p.cliente?.toLowerCase().includes(termino),
-      )
+      .filter((p) => !terminoObra || p.obra?.toLowerCase().includes(terminoObra))
+      .filter((p) => !terminoCliente || p.cliente?.toLowerCase().includes(terminoCliente))
       .sort((a, b) => {
         const porEstatus = rangoEstatus(a.estatus) - rangoEstatus(b.estatus)
         if (porEstatus !== 0) return porEstatus
         return rangoPrioridad(a.prioridad) - rangoPrioridad(b.prioridad)
       })
-  }, [filas, busqueda, filtroEstatus])
+  }, [filas, busquedaObra, busquedaCliente, filtroEstatus])
 
   async function handleCambio(id, cambios) {
     const anteriores = filas
@@ -90,23 +93,42 @@ export default function PresupuestosEnEstudioPage() {
 
       {!cargando && !error && filas.length > 0 && (
         <div className="filtro-tabla">
-          <input
-            type="text"
-            className="input-filtro"
-            placeholder="Filtrar por obra o cliente…"
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-          />
-          <select
-            className="select-inline"
-            value={filtroEstatus}
-            onChange={(e) => setFiltroEstatus(e.target.value)}
-          >
-            <option value="Todos">Todos los estatus</option>
-            {ESTATUS_OPCIONES.map((op) => (
-              <option key={op} value={op}>{op}</option>
-            ))}
-          </select>
+          <div className="filtro-campo">
+            <label htmlFor="filtro-obra">Obra</label>
+            <input
+              id="filtro-obra"
+              type="text"
+              className="input-filtro"
+              placeholder="Filtrar por obra…"
+              value={busquedaObra}
+              onChange={(e) => setBusquedaObra(e.target.value)}
+            />
+          </div>
+          <div className="filtro-campo">
+            <label htmlFor="filtro-cliente">Cliente</label>
+            <input
+              id="filtro-cliente"
+              type="text"
+              className="input-filtro"
+              placeholder="Filtrar por cliente…"
+              value={busquedaCliente}
+              onChange={(e) => setBusquedaCliente(e.target.value)}
+            />
+          </div>
+          <div className="filtro-campo">
+            <label htmlFor="filtro-estatus">Estatus</label>
+            <select
+              id="filtro-estatus"
+              className="select-inline"
+              value={filtroEstatus}
+              onChange={(e) => setFiltroEstatus(e.target.value)}
+            >
+              <option value="Todos">Todos los estatus</option>
+              {ESTATUS_OPCIONES.map((op) => (
+                <option key={op} value={op}>{op}</option>
+              ))}
+            </select>
+          </div>
           <span className="filtro-contador">
             {filasFiltradas.length} de {filas.length}
           </span>
@@ -158,7 +180,7 @@ export default function PresupuestosEnEstudioPage() {
                   <td>
                     {puedeCambiarPrioridad ? (
                       <select
-                        className="select-inline"
+                        className={`select-inline select-prioridad ${CLASE_PRIORIDAD[p.prioridad] || ''}`}
                         value={p.prioridad}
                         onChange={(e) => handleCambio(p.id, { prioridad: e.target.value })}
                       >
@@ -184,7 +206,7 @@ export default function PresupuestosEnEstudioPage() {
             </tbody>
           </table>
           {filasFiltradas.length === 0 && (
-            <p className="dashboard-nota">Ningún presupuesto coincide con "{busqueda}".</p>
+            <p className="dashboard-nota">Ningún presupuesto coincide con los filtros aplicados.</p>
           )}
         </div>
       )}

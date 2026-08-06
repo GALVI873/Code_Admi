@@ -223,19 +223,49 @@ body {
 .select-estatus-aceptado { background: #d5f5e3; color: #1e8449; }
 .select-estatus-descartado { background: #fdedec; color: var(--rojo); }
 
+.select-prioridad {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-weight: 700;
+}
+
+.select-prioridad-alta { background: #fdedec; color: var(--rojo); }
+.select-prioridad-normal { background: #eaf0fb; color: #2980b9; }
+
 .filtro-tabla {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 14px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-bottom: 18px;
+  padding: 14px 18px;
+  background: #f7f9fc;
+  border: 1px solid #e3e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
+}
+
+.filtro-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filtro-campo label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #7a8699;
+  text-transform: uppercase;
+  letter-spacing: .03em;
 }
 
 .input-filtro {
-  flex: 0 1 320px;
+  flex: 0 1 240px;
   border: 1px solid #dfe6e9;
   border-radius: 8px;
   padding: 9px 14px;
   font-size: 13.5px;
+  background: white;
 }
 
 .input-filtro:focus {
