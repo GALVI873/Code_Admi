@@ -6,6 +6,7 @@
 const path = require('path');
 const fs = require('fs');
 const { getDrive } = require('./drive_client.js');
+const { obraDesdeCadenaCarpetas } = require('./resolver_obra.js');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const PROFUNDIDAD_MAXIMA = 6;
@@ -17,7 +18,7 @@ function obraDesdeNombreArchivo(nombreArchivo) {
     .trim();
 }
 
-async function recorrer(drive, folderId, rutaActual, profundidad, encontrados) {
+async function recorrer(drive, folderId, cadenaCarpetas, profundidad, encontrados) {
   if (profundidad > PROFUNDIDAD_MAXIMA) return;
 
   const res = await drive.files.list({
@@ -28,13 +29,14 @@ async function recorrer(drive, folderId, rutaActual, profundidad, encontrados) {
 
   for (const file of res.data.files) {
     if (file.mimeType === 'application/vnd.google-apps.folder') {
-      await recorrer(drive, file.id, `${rutaActual}/${file.name}`, profundidad + 1, encontrados);
+      await recorrer(drive, file.id, [...cadenaCarpetas, file.name], profundidad + 1, encontrados);
     } else if (/CALCULO.*\.xlsx$/i.test(file.name)) {
       encontrados.push({
-        obra: obraDesdeNombreArchivo(file.name),
+        obra: obraDesdeCadenaCarpetas(cadenaCarpetas),
+        obraSegunArchivo: obraDesdeNombreArchivo(file.name),
         archivo: file.name,
         fileId: file.id,
-        ruta: `${rutaActual}/${file.name}`,
+        ruta: `${cadenaCarpetas.join('/')}/${file.name}`,
       });
     }
   }
@@ -50,11 +52,16 @@ async function main() {
   const encontrados = [];
   for (const cat of categorias.data.files) {
     console.log(`Recorriendo ${cat.name}...`);
-    await recorrer(drive, cat.id, cat.name, 1, encontrados);
+    await recorrer(drive, cat.id, [cat.name], 1, encontrados);
   }
 
   console.log(`\nTotal de archivos CALCULO encontrados: ${encontrados.length}\n`);
-  encontrados.forEach((e) => console.log(`${e.obra}  <-  ${e.ruta}`));
+  const obrasDistintas = new Set(encontrados.map((e) => e.obra));
+  console.log(`Obras distintas (por carpeta): ${obrasDistintas.size}\n`);
+  encontrados.forEach((e) => {
+    const marca = e.obra !== e.obraSegunArchivo ? '  [antes: ' + e.obraSegunArchivo + ']' : '';
+    console.log(`${e.obra}${marca}  <-  ${e.ruta}`);
+  });
 
   fs.writeFileSync('obras_descubiertas.json', JSON.stringify(encontrados, null, 2));
   console.log('\nGuardado en obras_descubiertas.json');

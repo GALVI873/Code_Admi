@@ -41,10 +41,35 @@ async function obtenerIndicePdfsEnviados(drive, enviadosFolderId) {
   return indicePdfsEnviadosCache;
 }
 
+// Cruce por palabras en vez de substring exacto: desde que "obra" se resuelve
+// por carpeta (ver resolver_obra.js) puede traer texto que el PDF enviado no
+// tiene (ej. carpeta "IESO Amalia Avia 20" vs PDF "...IESO Amalia Avia,
+// Ejuca.pdf") o al revés. Cuenta como match si casi todas las palabras
+// significativas (>2 letras) de la obra aparecen en el nombre del PDF.
+function normalizarPalabras(texto) {
+  return texto
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '') // quita acentos para comparar
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((p) => p.length > 2);
+}
+
+const UMBRAL_COINCIDENCIA_PALABRAS = 0.7;
+
+function coincideConObra(obra, nombreArchivo) {
+  const palabrasObra = normalizarPalabras(obra);
+  if (palabrasObra.length === 0) return nombreArchivo.toLowerCase().includes(obra.toLowerCase());
+  const palabrasArchivo = new Set(normalizarPalabras(nombreArchivo));
+  const coincidentes = palabrasObra.filter((p) => palabrasArchivo.has(p));
+  return coincidentes.length / palabrasObra.length >= UMBRAL_COINCIDENCIA_PALABRAS;
+}
+
 async function buscarPdfEnviado(drive, enviadosFolderId, obra) {
   const indice = await obtenerIndicePdfsEnviados(drive, enviadosFolderId);
   const coincidencias = indice
-    .filter((f) => f.name.includes(obra))
+    .filter((f) => coincideConObra(obra, f.name))
     .sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
   return coincidencias[0] || null;
 }
@@ -110,4 +135,4 @@ async function completarDesdeEnviado(obra, camposFaltantes) {
   return relleno;
 }
 
-module.exports = { completarDesdeEnviado, parseTextoPresupuestoEnviado };
+module.exports = { completarDesdeEnviado, parseTextoPresupuestoEnviado, coincideConObra };

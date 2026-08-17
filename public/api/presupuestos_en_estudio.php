@@ -7,6 +7,7 @@ declare(strict_types=1);
 // PATCH: cambia prioridad y/o estatus:
 //   - "prioridad" requiere el permiso presupuestos.gestionar_prioridad (solo admin).
 //   - "estatus" requiere presupuestos.ver_todos (cualquiera que pueda ver la tabla).
+// DELETE: reconciliación tras sync con Drive, protegido por SYNC_TOKEN igual que POST.
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
 
@@ -155,6 +156,41 @@ try {
         ]);
 
         Response::json(['ok' => true]);
+    }
+
+    // DELETE: reconciliación tras la sincronización con Drive. Recibe la
+    // lista completa de obras encontradas en este recorrido y borra las que
+    // ya no aparecen (renombradas, movidas o archivadas) — pero solo si
+    // siguen en estatus por defecto (En Estudio / Seguimiento). Descartado y
+    // Aceptado son decisiones ya tomadas y se conservan siempre como
+    // historial, aunque su obra ya no exista en Drive con ese nombre.
+    if ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
+        $token = $_GET['token'] ?? '';
+        if ($config['sync_token'] === '' || !hash_equals($config['sync_token'], (string) $token)) {
+            Response::error('No autorizado', 403);
+        }
+
+        $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
+        $obrasActivas = $body['obras_activas'] ?? null;
+        if (!is_array($obrasActivas)) {
+            Response::error('Falta "obras_activas" (array)', 422);
+        }
+
+        // Lista vacía nunca borra nada: evita que un fallo de lectura de
+        // Drive (folder vacío, error silencioso) termine vaciando la tabla.
+        if (count($obrasActivas) === 0) {
+            Response::json(['ok' => true, 'eliminados' => 0]);
+        }
+
+        $marcadores = implode(',', array_fill(0, count($obrasActivas), '?'));
+        $stmt = $db->prepare("
+            DELETE FROM presupuestos_en_estudio
+            WHERE estatus IN ('En Estudio', 'Seguimiento')
+              AND obra NOT IN ($marcadores)
+        ");
+        $stmt->execute($obrasActivas);
+
+        Response::json(['ok' => true, 'eliminados' => $stmt->rowCount()]);
     }
 
     Response::error('Método no permitido', 405);
