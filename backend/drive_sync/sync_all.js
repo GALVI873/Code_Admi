@@ -10,6 +10,18 @@ const { completarDesdeEnviado } = require('./extract_from_sent_pdf.js');
 const { getDrive, descargarComoBuffer } = require('./drive_client.js');
 
 const CAMPOS_RESPALDABLES = ['cliente', 'ral', 'persiana', 'vidrio'];
+const MESES_ANTIGUEDAD_MAXIMA = 3;
+
+// Solo aplica a obras con envío registrado: si nunca se envió no hay fecha
+// contra la que comparar, así que se sincroniza igual (sigue activa en
+// estudio). Las que sí tienen envío pero de hace más de 3 meses se omiten,
+// se asumen cerradas/abandonadas.
+function envioDemasiadoAntiguo(fechaUltimoEnvio) {
+  if (!fechaUltimoEnvio) return false;
+  const limite = new Date();
+  limite.setMonth(limite.getMonth() - MESES_ANTIGUEDAD_MAXIMA);
+  return new Date(fechaUltimoEnvio) < limite;
+}
 
 function limpiarNombreObra(nombreArchivo) {
   return nombreArchivo
@@ -78,7 +90,7 @@ async function main() {
   encontrados = deduplicarPorVersion(encontrados);
   console.log(`Encontrados: ${antesDedup} archivos -> ${encontrados.length} obras tras deduplicar versiones\n`);
 
-  const resultados = { ok: [], error: [] };
+  const resultados = { ok: [], omitidos: [], error: [] };
 
   for (const archivo of encontrados) {
     const obra = limpiarNombreObra(archivo.nombreArchivo);
@@ -94,8 +106,21 @@ async function main() {
       try {
         const relleno = await completarDesdeEnviado(obra, faltantes);
         Object.assign(campos, relleno);
+        // Si hay un envío encontrado, la obra pasa de "En Estudio" a
+        // "Seguimiento" automáticamente (el backend solo aplica este cambio
+        // si el estatus actual sigue siendo el default; nunca pisa
+        // Descartado/Aceptado/Seguimiento puestos a mano).
+        if (relleno.fecha_ultimo_envio) {
+          campos.estatus = 'Seguimiento';
+        }
       } catch {
         // sigue sin el respaldo/fecha si la búsqueda del enviado falla
+      }
+
+      if (envioDemasiadoAntiguo(campos.fecha_ultimo_envio)) {
+        console.log(`OMITIDO (envío de hace más de ${MESES_ANTIGUEDAD_MAXIMA} meses, ${campos.fecha_ultimo_envio}): ${obra}`);
+        resultados.omitidos.push({ obra, fecha_ultimo_envio: campos.fecha_ultimo_envio });
+        continue;
       }
 
       const url = `${process.env.PANEL_API_URL}/presupuestos_en_estudio.php?token=${process.env.SYNC_TOKEN}`;
@@ -120,6 +145,7 @@ async function main() {
 
   console.log(`\n=== Resumen ===`);
   console.log(`OK: ${resultados.ok.length}`);
+  console.log(`Omitidos (envío > ${MESES_ANTIGUEDAD_MAXIMA} meses): ${resultados.omitidos.length}`);
   console.log(`Errores: ${resultados.error.length}`);
   fs.writeFileSync('resultado_sync_all.json', JSON.stringify(resultados, null, 2));
 }

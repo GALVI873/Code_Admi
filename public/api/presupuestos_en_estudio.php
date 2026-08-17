@@ -111,16 +111,25 @@ try {
             Response::error('Falta "obra"', 422);
         }
 
-        // "prioridad" y "estatus" no se tocan acá a propósito en el UPDATE:
-        // son datos que decide un usuario desde el panel: la sincronización
-        // con Drive nunca los pisa una vez que existe la fila. En el INSERT
-        // sí se usa el valor por defecto para una obra nueva.
+        // "prioridad" no se toca acá a propósito en el UPDATE: es un dato que
+        // decide un usuario desde el panel, la sincronización con Drive nunca
+        // lo pisa. "estatus" es la única excepción: si la sincronización
+        // encuentra un envío nuevo (excluded.estatus = 'Seguimiento') y la
+        // obra seguía en el default 'En Estudio', se pasa a 'Seguimiento'
+        // automáticamente. Cualquier otro estatus puesto a mano (Descartado,
+        // Aceptado, o un Seguimiento ya existente) nunca se pisa. En el
+        // INSERT sí se usa el valor por defecto para una obra nueva.
         $stmt = $db->prepare("
             INSERT INTO presupuestos_en_estudio
                 (obra, cliente, estatus, no_ventanas, precio_m2, ral, persiana, vidrio, precio_ultimo_presupuesto, porcentaje_ganancia, fecha_ultimo_envio, actualizado_en)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(obra) DO UPDATE SET
                 cliente = excluded.cliente,
+                estatus = CASE
+                    WHEN presupuestos_en_estudio.estatus = 'En Estudio' AND excluded.estatus = 'Seguimiento'
+                        THEN 'Seguimiento'
+                    ELSE presupuestos_en_estudio.estatus
+                END,
                 no_ventanas = excluded.no_ventanas,
                 precio_m2 = excluded.precio_m2,
                 ral = excluded.ral,
