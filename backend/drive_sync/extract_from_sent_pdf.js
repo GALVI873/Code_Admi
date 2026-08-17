@@ -7,14 +7,46 @@
 const pdfParse = require('pdf-parse');
 const { getDrive, descargarComoBuffer } = require('./drive_client.js');
 
-async function buscarPdfEnviado(drive, enviadosFolderId, obra) {
+// La carpeta de enviados no tiene los PDFs sueltos: están organizados en
+// subcarpetas por año ("1.PPTOS 26 GALVI", "1.PPTOS 25 GALVI", "PPTOS
+// ANTERIORES"). Por eso hace falta bajar recursivamente en vez de listar
+// solo los hijos directos (bug original: nunca encontraba nada y por eso
+// ninguna obra tenía fecha_ultimo_envio).
+//
+// Se cachea el índice completo en memoria la primera vez que se pide, para
+// no repetir el recorrido del árbol una vez por cada obra (puede haber
+// cientos de PDFs).
+let indicePdfsEnviadosCache = null;
+
+async function listarPdfsRecursivo(drive, folderId, encontrados) {
   const res = await drive.files.list({
-    q: `'${enviadosFolderId}' in parents and name contains '${obra.replace(/'/g, "\\'")}' and mimeType='application/pdf' and trashed=false`,
-    orderBy: 'modifiedTime desc',
-    fields: 'files(id, name, createdTime)',
-    pageSize: 5,
+    q: `'${folderId}' in parents and trashed = false`,
+    fields: 'files(id, name, mimeType, createdTime, modifiedTime)',
+    pageSize: 1000,
   });
-  return res.data.files[0] || null;
+  for (const file of res.data.files) {
+    if (file.mimeType === 'application/vnd.google-apps.folder') {
+      await listarPdfsRecursivo(drive, file.id, encontrados);
+    } else if (file.mimeType === 'application/pdf' && !file.name.startsWith('~$')) {
+      encontrados.push(file);
+    }
+  }
+}
+
+async function obtenerIndicePdfsEnviados(drive, enviadosFolderId) {
+  if (!indicePdfsEnviadosCache) {
+    indicePdfsEnviadosCache = [];
+    await listarPdfsRecursivo(drive, enviadosFolderId, indicePdfsEnviadosCache);
+  }
+  return indicePdfsEnviadosCache;
+}
+
+async function buscarPdfEnviado(drive, enviadosFolderId, obra) {
+  const indice = await obtenerIndicePdfsEnviados(drive, enviadosFolderId);
+  const coincidencias = indice
+    .filter((f) => f.name.includes(obra))
+    .sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
+  return coincidencias[0] || null;
 }
 
 // Resume la descripción larga del "Compacto" (cajón + color + motor) a lo
