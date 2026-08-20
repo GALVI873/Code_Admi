@@ -11,7 +11,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { extraerCampos } = require('./extract_fields.js');
 const { completarDesdeEnviado } = require('./extract_from_sent_pdf.js');
 const { getDrive, descargarComoBuffer } = require('./drive_client.js');
-const { obraDesdeCadenaCarpetas } = require('./resolver_obra.js');
+const { indiceCarpetaObra } = require('./resolver_obra.js');
 
 const CAMPOS_RESPALDABLES = ['cliente', 'ral', 'persiana', 'vidrio'];
 const MESES_ANTIGUEDAD_MAXIMA = 3;
@@ -38,7 +38,7 @@ function extraerPrefijoNumerico(nombreArchivo) {
   return m ? parseInt(m[1], 10) : null;
 }
 
-async function recorrer(drive, folderId, cadenaCarpetas, encontrados) {
+async function recorrer(drive, folderId, cadenaNombres, cadenaIds, encontrados) {
   const res = await drive.files.list({
     q: `'${folderId}' in parents and trashed = false`,
     fields: 'files(id, name, mimeType, modifiedTime)',
@@ -46,13 +46,15 @@ async function recorrer(drive, folderId, cadenaCarpetas, encontrados) {
   });
   for (const file of res.data.files) {
     if (file.mimeType === 'application/vnd.google-apps.folder') {
-      await recorrer(drive, file.id, [...cadenaCarpetas, file.name], encontrados);
+      await recorrer(drive, file.id, [...cadenaNombres, file.name], [...cadenaIds, file.id], encontrados);
     } else if (/CALCULO.*\.xlsx$/i.test(file.name) && esArchivoValido(file.name)) {
+      const idx = indiceCarpetaObra(cadenaNombres);
       encontrados.push({
         fileId: file.id,
         nombreArchivo: file.name,
         modifiedTime: file.modifiedTime,
-        obra: obraDesdeCadenaCarpetas(cadenaCarpetas),
+        obra: cadenaNombres[idx].trim(),
+        obraFolderId: cadenaIds[idx],
       });
     }
   }
@@ -91,7 +93,7 @@ async function main() {
 
   let encontrados = [];
   for (const cat of categorias.data.files) {
-    await recorrer(drive, cat.id, [cat.name], encontrados);
+    await recorrer(drive, cat.id, [cat.name], [cat.id], encontrados);
   }
   const antesDedup = encontrados.length;
   encontrados = deduplicarPorObra(encontrados);
@@ -111,7 +113,7 @@ async function main() {
       // la fecha de envío se necesita en todos los casos.
       const faltantes = CAMPOS_RESPALDABLES.filter((c) => campos[c] === null || campos[c] === undefined);
       try {
-        const relleno = await completarDesdeEnviado(obra, faltantes);
+        const relleno = await completarDesdeEnviado(obra, faltantes, archivo.obraFolderId);
         Object.assign(campos, relleno);
         // Si hay un envío encontrado, la obra pasa de "En Estudio" a
         // "Seguimiento" automáticamente (el backend solo aplica este cambio

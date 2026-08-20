@@ -1,5 +1,12 @@
-// Busca el presupuesto enviado más reciente con el nombre de la obra
-// (carpeta "Enviados por mail"). Sirve para dos cosas:
+// Busca el presupuesto enviado más reciente de una obra. Dos fuentes, en
+// orden de prioridad:
+// 1. Una subcarpeta de envíos dentro de la propia carpeta de la obra (ej.
+//    ".../Pasaje del Sur/Enviados/") — confiable, no depende de adivinar
+//    nombres.
+// 2. Si no existe esa subcarpeta (obras que todavía no migraron a esa
+//    convención), la carpeta global "Presupuestos Enviados", cruzando por
+//    coincidencia de palabras con el nombre de la obra.
+// Sirve para dos cosas:
 // 1. Respaldo de Cliente/RAL/Vidrio/Persiana cuando la hoja "Ficha" del
 //    Excel interno viene vacía.
 // 2. La fecha de envío (siempre, independientemente de si el resto de los
@@ -74,6 +81,32 @@ async function buscarPdfEnviado(drive, enviadosFolderId, obra) {
   return coincidencias[0] || null;
 }
 
+// Prioridad alternativa: si dentro de la propia carpeta de la obra hay una
+// subcarpeta de envíos (cualquier nombre que contenga "enviad-", ej.
+// "Enviados", "Presupuestos Enviados"), se usa el PDF más reciente de ahí en
+// vez de la búsqueda por nombre en la carpeta global — es más confiable
+// porque no depende de adivinar el nombre, está guardado a propósito junto
+// a la obra. Recorrido acotado a la carpeta de la obra, no al árbol
+// completo de Drive.
+async function buscarPdfEnviadoEnCarpetaObra(drive, obraFolderId) {
+  const res = await drive.files.list({
+    q: `'${obraFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+    fields: 'files(id, name)',
+    pageSize: 1000,
+  });
+  const subcarpetasEnviados = res.data.files.filter((f) => /envia/i.test(f.name));
+  if (subcarpetasEnviados.length === 0) return null;
+
+  const pdfs = [];
+  for (const carpeta of subcarpetasEnviados) {
+    await listarPdfsRecursivo(drive, carpeta.id, pdfs);
+  }
+  if (pdfs.length === 0) return null;
+
+  pdfs.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
+  return pdfs[0];
+}
+
 // Resume la descripción larga del "Compacto" (cajón + color + motor) a lo
 // esencial: tipo de cajón y tipo de motor, sin todo el detalle de colores
 // repetido línea por línea.
@@ -109,12 +142,19 @@ function parseTextoPresupuestoEnviado(text) {
   return { cliente, ral, vidrio, persiana };
 }
 
-async function completarDesdeEnviado(obra, camposFaltantes) {
-  const enviadosFolderId = process.env.GOOGLE_DRIVE_ENVIADOS_FOLDER_ID;
-  if (!enviadosFolderId) return {};
-
+async function completarDesdeEnviado(obra, camposFaltantes, obraFolderId) {
   const drive = getDrive();
-  const archivo = await buscarPdfEnviado(drive, enviadosFolderId, obra);
+
+  let archivo = null;
+  if (obraFolderId) {
+    archivo = await buscarPdfEnviadoEnCarpetaObra(drive, obraFolderId);
+  }
+  if (!archivo) {
+    const enviadosFolderId = process.env.GOOGLE_DRIVE_ENVIADOS_FOLDER_ID;
+    if (enviadosFolderId) {
+      archivo = await buscarPdfEnviado(drive, enviadosFolderId, obra);
+    }
+  }
   if (!archivo) return {};
 
   const buffer = await descargarComoBuffer(drive, archivo.id);

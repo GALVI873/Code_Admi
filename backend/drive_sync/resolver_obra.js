@@ -13,11 +13,19 @@ function esCarpetaOrganizativa(nombre) {
   return /^\d*\.?\s*(organizaci[oó]n|pptos?\.?\s*ant)/i.test(nombre.trim());
 }
 
-function obraDesdeCadenaCarpetas(cadenaCarpetas) {
+// Índice (no el nombre) de la carpeta-obra dentro de la cadena, para que
+// quien la llame pueda resolver también el id de esa carpeta (necesario
+// para buscar una subcarpeta "Enviados" propia de la obra), no solo su
+// nombre.
+function indiceCarpetaObra(cadenaCarpetas) {
   for (let i = cadenaCarpetas.length - 1; i >= 0; i--) {
-    if (!esCarpetaOrganizativa(cadenaCarpetas[i])) return cadenaCarpetas[i].trim();
+    if (!esCarpetaOrganizativa(cadenaCarpetas[i])) return i;
   }
-  return cadenaCarpetas[cadenaCarpetas.length - 1].trim();
+  return cadenaCarpetas.length - 1;
 }
 
-module.exports = { esCarpetaOrganizativa, obraDesdeCadenaCarpetas };
+function obraDesdeCadenaCarpetas(cadenaCarpetas) {
+  return cadenaCarpetas[indiceCarpetaObra(cadenaCarpetas)].trim();
+}
+
+module.exports = { esCarpetaOrganizativa, obraDesdeCadenaCarpetas, indiceCarpetaObra };
