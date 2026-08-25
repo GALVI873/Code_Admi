@@ -4,10 +4,14 @@ declare(strict_types=1);
 // GET: lista los presupuestos en estudio (requiere sesión + permiso presupuestos.ver_todos).
 // POST: upsert de un registro, usado por el proceso de sincronización con Drive
 // (protegido por SYNC_TOKEN, no por sesión de usuario — es máquina a máquina).
+// Con {accion:"marcar_estatus", obras:[...], estatus:"..."} hace limpieza en
+// bloque (pisa el estatus sin importar cuál tenía, a diferencia del upsert).
 // PATCH: cambia prioridad y/o estatus:
 //   - "prioridad" requiere el permiso presupuestos.gestionar_prioridad (solo admin).
 //   - "estatus" requiere presupuestos.ver_todos (cualquiera que pueda ver la tabla).
-// DELETE: reconciliación tras sync con Drive, protegido por SYNC_TOKEN igual que POST.
+// DELETE: protegido por SYNC_TOKEN igual que POST. Con {obras:[...]} borra esas
+// filas puntuales sin importar su estatus; con {obras_activas:[...]} reconcilia
+// tras un sync (borra lo que no está en la lista, solo en estatus por defecto).
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
 
@@ -107,6 +111,29 @@ try {
         }
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? $_POST;
+
+        // Modo administrativo (limpieza en bloque, ej. descartar obras
+        // viejas desde una lista) — a diferencia del upsert de abajo, este
+        // SÍ pisa el estatus sin importar cuál tenía antes: es una decisión
+        // explícita, no la sincronización automática con Drive.
+        if (($body['accion'] ?? '') === 'marcar_estatus') {
+            $obras = $body['obras'] ?? null;
+            $estatus = trim((string) ($body['estatus'] ?? ''));
+            if (!is_array($obras) || count($obras) === 0) {
+                Response::error('Falta "obras" (array no vacío)', 422);
+            }
+            if (!in_array($estatus, ESTATUS_VALIDOS, true)) {
+                Response::error('"estatus" debe ser una de: ' . implode(', ', ESTATUS_VALIDOS), 422);
+            }
+            $marcadores = implode(',', array_fill(0, count($obras), '?'));
+            $stmt = $db->prepare("
+                UPDATE presupuestos_en_estudio SET estatus = ?, actualizado_en = datetime('now')
+                WHERE obra IN ($marcadores)
+            ");
+            $stmt->execute([$estatus, ...$obras]);
+            Response::json(['ok' => true, 'actualizados' => $stmt->rowCount()]);
+        }
+
         $obra = trim((string) ($body['obra'] ?? ''));
         if ($obra === '') {
             Response::error('Falta "obra"', 422);
@@ -171,6 +198,23 @@ try {
         }
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
+
+        // Borrado puntual administrativo: lista explícita de obras a
+        // eliminar del panel sin importar su estatus (ej. obras que se
+        // aceptaron y se movieron a seguimiento de obra, ya no pertenecen
+        // acá). Distinto del modo de reconciliación de abajo, que solo
+        // borra las que están en estatus por defecto.
+        if (isset($body['obras']) && is_array($body['obras'])) {
+            $obras = $body['obras'];
+            if (count($obras) === 0) {
+                Response::json(['ok' => true, 'eliminados' => 0]);
+            }
+            $marcadores = implode(',', array_fill(0, count($obras), '?'));
+            $stmt = $db->prepare("DELETE FROM presupuestos_en_estudio WHERE obra IN ($marcadores)");
+            $stmt->execute($obras);
+            Response::json(['ok' => true, 'eliminados' => $stmt->rowCount()]);
+        }
+
         $obrasActivas = $body['obras_activas'] ?? null;
         if (!is_array($obrasActivas)) {
             Response::error('Falta "obras_activas" (array)', 422);
