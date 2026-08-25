@@ -4,14 +4,6 @@ import { presupuestosEnEstudio, actualizarPresupuestoEnEstudio } from '../api/cl
 
 const ESTATUS_OPCIONES = ['En Estudio', 'Seguimiento', 'Aceptado', 'Descartado']
 
-function rangoEstatus(estatus) {
-  return estatus === 'En Estudio' || estatus === 'Seguimiento' ? 0 : 1
-}
-
-function rangoPrioridad(prioridad) {
-  return prioridad === 'Alta' ? 0 : 1
-}
-
 const CLASE_ESTATUS = {
   'En Estudio': 'select-estatus-en-estudio',
   Seguimiento: 'select-estatus-seguimiento',
@@ -40,6 +32,88 @@ function formatoFecha(iso) {
   return `${dia}/${mes}/${anio}`
 }
 
+function SelectEstatus({ presupuesto, onCambio }) {
+  return (
+    <select
+      className={`select-inline select-estatus ${CLASE_ESTATUS[presupuesto.estatus] || ''}`}
+      value={presupuesto.estatus}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onCambio(presupuesto.id, { estatus: e.target.value })}
+    >
+      {ESTATUS_OPCIONES.map((op) => (
+        <option key={op} value={op}>{op}</option>
+      ))}
+    </select>
+  )
+}
+
+function SelectPrioridad({ presupuesto, onCambio, puedeCambiar }) {
+  if (!puedeCambiar) {
+    return (
+      <span className={`badge ${presupuesto.prioridad === 'Alta' ? 'badge-rechazado' : 'badge-borrador'}`}>
+        {presupuesto.prioridad}
+      </span>
+    )
+  }
+  return (
+    <select
+      className={`select-inline select-prioridad ${CLASE_PRIORIDAD[presupuesto.prioridad] || ''}`}
+      value={presupuesto.prioridad}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onCambio(presupuesto.id, { prioridad: e.target.value })}
+    >
+      <option value="Normal">Normal</option>
+      <option value="Alta">Alta</option>
+    </select>
+  )
+}
+
+function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad }) {
+  useEffect(() => {
+    function alEscape(e) {
+      if (e.key === 'Escape') onCerrar()
+    }
+    window.addEventListener('keydown', alEscape)
+    return () => window.removeEventListener('keydown', alEscape)
+  }, [onCerrar])
+
+  return (
+    <div className="modal-fondo" onClick={onCerrar}>
+      <div className="modal-caja" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <h2>{presupuesto.obra}</h2>
+            <p>{presupuesto.cliente || 'Sin cliente'}</p>
+          </div>
+          <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
+        </div>
+
+        <div className="modal-meta">
+          <div className="modal-campo">
+            <span>Estatus</span>
+            <SelectEstatus presupuesto={presupuesto} onCambio={onCambio} />
+          </div>
+          <div className="modal-campo">
+            <span>Prioridad</span>
+            <SelectPrioridad presupuesto={presupuesto} onCambio={onCambio} puedeCambiar={puedeCambiarPrioridad} />
+          </div>
+        </div>
+
+        <dl className="modal-detalle">
+          <div><dt>Nº Ventanas</dt><dd>{presupuesto.no_ventanas ?? '—'}</dd></div>
+          <div><dt>Precio/m²</dt><dd>{formatoMoneda(presupuesto.precio_m2)}</dd></div>
+          <div><dt>RAL / Color</dt><dd>{presupuesto.ral || '—'}</dd></div>
+          <div><dt>Persiana</dt><dd>{presupuesto.persiana || '—'}</dd></div>
+          <div><dt>Vidrio</dt><dd>{presupuesto.vidrio || '—'}</dd></div>
+          <div><dt>Precio último ppto.</dt><dd>{formatoMoneda(presupuesto.precio_ultimo_presupuesto)}</dd></div>
+          <div><dt>% Ganancia</dt><dd>{formatoPorcentaje(presupuesto.porcentaje_ganancia)}</dd></div>
+          <div><dt>Fecha último envío</dt><dd>{formatoFecha(presupuesto.fecha_ultimo_envio)}</dd></div>
+        </dl>
+      </div>
+    </div>
+  )
+}
+
 export default function PresupuestosEnEstudioPage() {
   const { accessToken, tienePermiso } = useAuth()
   const [filas, setFilas] = useState([])
@@ -48,6 +122,7 @@ export default function PresupuestosEnEstudioPage() {
   const [busquedaObra, setBusquedaObra] = useState('')
   const [busquedaCliente, setBusquedaCliente] = useState('')
   const [filtroEstatus, setFiltroEstatus] = useState('Todos')
+  const [obraSeleccionadaId, setObraSeleccionadaId] = useState(null)
   const puedeCambiarPrioridad = tienePermiso('presupuestos.gestionar_prioridad')
 
   useEffect(() => {
@@ -64,12 +139,10 @@ export default function PresupuestosEnEstudioPage() {
       .filter((p) => filtroEstatus === 'Todos' || p.estatus === filtroEstatus)
       .filter((p) => !terminoObra || p.obra?.toLowerCase().includes(terminoObra))
       .filter((p) => !terminoCliente || p.cliente?.toLowerCase().includes(terminoCliente))
-      .sort((a, b) => {
-        const porEstatus = rangoEstatus(a.estatus) - rangoEstatus(b.estatus)
-        if (porEstatus !== 0) return porEstatus
-        return rangoPrioridad(a.prioridad) - rangoPrioridad(b.prioridad)
-      })
+      .sort((a, b) => (a.obra || '').localeCompare(b.obra || '', 'es'))
   }, [filas, busquedaObra, busquedaCliente, filtroEstatus])
+
+  const obraSeleccionada = filas.find((p) => p.id === obraSeleccionadaId) || null
 
   async function handleCambio(id, cambios) {
     const anteriores = filas
@@ -143,72 +216,41 @@ export default function PresupuestosEnEstudioPage() {
       )}
 
       {!cargando && !error && filas.length > 0 && (
-        <div className="tabla-scroll">
-          <table className="tabla-presupuestos tabla-presupuestos-ancha">
-            <thead>
-              <tr>
-                <th>Obra</th>
-                <th>Cliente</th>
-                <th>Estatus</th>
-                <th>Prioridad</th>
-                <th>Nº Ventanas</th>
-                <th>Precio/m²</th>
-                <th>RAL / Color</th>
-                <th>Persiana</th>
-                <th>Vidrio</th>
-                <th>Precio último ppto.</th>
-                <th>% Ganancia</th>
-                <th>Fecha último envío</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filasFiltradas.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.obra}</td>
-                  <td>{p.cliente || '—'}</td>
-                  <td>
-                    <select
-                      className={`select-inline select-estatus ${CLASE_ESTATUS[p.estatus] || ''}`}
-                      value={p.estatus}
-                      onChange={(e) => handleCambio(p.id, { estatus: e.target.value })}
-                    >
-                      {ESTATUS_OPCIONES.map((op) => (
-                        <option key={op} value={op}>{op}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    {puedeCambiarPrioridad ? (
-                      <select
-                        className={`select-inline select-prioridad ${CLASE_PRIORIDAD[p.prioridad] || ''}`}
-                        value={p.prioridad}
-                        onChange={(e) => handleCambio(p.id, { prioridad: e.target.value })}
-                      >
-                        <option value="Normal">Normal</option>
-                        <option value="Alta">Alta</option>
-                      </select>
-                    ) : (
-                      <span className={`badge ${p.prioridad === 'Alta' ? 'badge-rechazado' : 'badge-borrador'}`}>
-                        {p.prioridad}
-                      </span>
-                    )}
-                  </td>
-                  <td>{p.no_ventanas ?? '—'}</td>
-                  <td>{formatoMoneda(p.precio_m2)}</td>
-                  <td>{p.ral || '—'}</td>
-                  <td>{p.persiana || '—'}</td>
-                  <td>{p.vidrio || '—'}</td>
-                  <td>{formatoMoneda(p.precio_ultimo_presupuesto)}</td>
-                  <td>{formatoPorcentaje(p.porcentaje_ganancia)}</td>
-                  <td>{formatoFecha(p.fecha_ultimo_envio)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <>
+          <div className="obras-grid">
+            {filasFiltradas.map((p) => (
+              <div
+                key={p.id}
+                className="obra-card"
+                role="button"
+                tabIndex={0}
+                onClick={() => setObraSeleccionadaId(p.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') setObraSeleccionadaId(p.id)
+                }}
+              >
+                <div className="obra-card-titulo">{p.obra}</div>
+                <div className="obra-card-cliente">{p.cliente || 'Sin cliente'}</div>
+                <div className="obra-card-meta">
+                  <SelectEstatus presupuesto={p} onCambio={handleCambio} />
+                  <SelectPrioridad presupuesto={p} onCambio={handleCambio} puedeCambiar={puedeCambiarPrioridad} />
+                </div>
+              </div>
+            ))}
+          </div>
           {filasFiltradas.length === 0 && (
             <p className="dashboard-nota">Ningún presupuesto coincide con los filtros aplicados.</p>
           )}
-        </div>
+        </>
+      )}
+
+      {obraSeleccionada && (
+        <DetalleObra
+          presupuesto={obraSeleccionada}
+          onCerrar={() => setObraSeleccionadaId(null)}
+          onCambio={handleCambio}
+          puedeCambiarPrioridad={puedeCambiarPrioridad}
+        />
       )}
     </div>
   )
