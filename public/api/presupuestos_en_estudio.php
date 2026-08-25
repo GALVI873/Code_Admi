@@ -4,8 +4,10 @@ declare(strict_types=1);
 // GET: lista los presupuestos en estudio (requiere sesión + permiso presupuestos.ver_todos).
 // POST: upsert de un registro, usado por el proceso de sincronización con Drive
 // (protegido por SYNC_TOKEN, no por sesión de usuario — es máquina a máquina).
-// Con {accion:"marcar_estatus", obras:[...], estatus:"..."} hace limpieza en
-// bloque (pisa el estatus sin importar cuál tenía, a diferencia del upsert).
+// Con {accion:"listar"} devuelve obra/estatus/fecha_ultimo_envio de todas las
+// filas (lectura administrativa, sin sesión). Con {accion:"marcar_estatus",
+// obras:[...], estatus:"..."} hace limpieza en bloque (pisa el estatus sin
+// importar cuál tenía, a diferencia del upsert).
 // PATCH: cambia prioridad y/o estatus:
 //   - "prioridad" requiere el permiso presupuestos.gestionar_prioridad (solo admin).
 //   - "estatus" requiere presupuestos.ver_todos (cualquiera que pueda ver la tabla).
@@ -123,6 +125,14 @@ try {
         }
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? $_POST;
+
+        // Modo administrativo de solo lectura: permite a las herramientas de
+        // mantenimiento (que no tienen sesión de usuario) consultar el
+        // estado actual del panel antes de decidir qué actualizar.
+        if (($body['accion'] ?? '') === 'listar') {
+            $stmt = $db->query('SELECT obra, estatus, fecha_ultimo_envio FROM presupuestos_en_estudio');
+            Response::json(['presupuestos' => $stmt->fetchAll()]);
+        }
 
         // Modo administrativo (limpieza en bloque, ej. descartar obras
         // viejas desde una lista) — a diferencia del upsert de abajo, este
