@@ -385,27 +385,59 @@ body {
   overflow-y: auto;
 }
 
+.obras-seccion + .obras-seccion {
+  margin-top: 28px;
+}
+
+.obras-seccion-titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 4px 0 10px;
+  margin-bottom: 12px;
+  border-bottom: 2px solid currentColor;
+  color: #7a8699;
+}
+
+.obras-seccion-titulo.select-estatus-en-estudio { color: #2980b9; }
+.obras-seccion-titulo.select-estatus-seguimiento { color: #d68910; }
+.obras-seccion-titulo.select-estatus-aceptado { color: #1e8449; }
+.obras-seccion-titulo.select-estatus-descartado { color: var(--rojo); }
+
+.obras-seccion-contador {
+  background: rgba(0, 0, 0, .06);
+  color: #666;
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
 .obras-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 
 .obra-card {
   background: white;
   border: 1px solid #e3e8f0;
   border-radius: 10px;
-  padding: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .06);
+  padding: 14px 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  transition: box-shadow .15s, transform .15s;
+  gap: 8px;
+  transition: box-shadow .15s, transform .15s, border-color .15s;
 }
 
 .obra-card:hover {
   box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+  border-color: var(--azul-clar);
   transform: translateY(-1px);
 }
 
@@ -415,22 +447,36 @@ body {
 }
 
 .obra-card-titulo {
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 700;
   color: var(--azul);
   line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .obra-card-cliente {
-  font-size: 13px;
-  color: #666;
+  font-size: 12.5px;
+  color: #888;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .obra-card-meta {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   margin-top: auto;
+}
+
+/* Prioridad "Normal" es el caso por defecto/esperado: se muestra apagada
+   para no competir visualmente con "Alta", que sí debe saltar a la vista. */
+.select-prioridad-normal {
+  background: transparent;
+  color: #aab2bd;
+  font-weight: 600;
 }
 
 .modal-fondo {

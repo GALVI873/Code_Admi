@@ -68,6 +68,27 @@ function SelectPrioridad({ presupuesto, onCambio, puedeCambiar }) {
   )
 }
 
+function TarjetaObra({ presupuesto, onAbrir, onCambio, puedeCambiarPrioridad }) {
+  return (
+    <div
+      className="obra-card"
+      role="button"
+      tabIndex={0}
+      onClick={() => onAbrir(presupuesto.id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onAbrir(presupuesto.id)
+      }}
+    >
+      <div className="obra-card-titulo" title={presupuesto.obra}>{presupuesto.obra}</div>
+      <div className="obra-card-cliente" title={presupuesto.cliente || ''}>{presupuesto.cliente || 'Sin cliente'}</div>
+      <div className="obra-card-meta">
+        <SelectEstatus presupuesto={presupuesto} onCambio={onCambio} />
+        <SelectPrioridad presupuesto={presupuesto} onCambio={onCambio} puedeCambiar={puedeCambiarPrioridad} />
+      </div>
+    </div>
+  )
+}
+
 function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad }) {
   useEffect(() => {
     function alEscape(e) {
@@ -149,6 +170,17 @@ export default function PresupuestosEnEstudioPage() {
       .sort((a, b) => (a.obra || '').localeCompare(b.obra || '', 'es'))
   }, [filasSegunEstatus, busquedaObra, busquedaCliente])
 
+  // Agrupadas por estatus (en el orden En Estudio -> Seguimiento -> Aceptado)
+  // para que el grid tenga secciones claras en vez de una sola pared de
+  // tarjetas. Al filtrar por un estatus puntual no hace falta el
+  // agrupamiento: ya es un solo grupo.
+  const gruposVisibles = useMemo(() => {
+    if (filtroEstatus !== 'Todos') return [{ estatus: filtroEstatus, items: filasFiltradas }]
+    return ESTATUS_OPCIONES.filter((e) => e !== 'Descartado')
+      .map((estatus) => ({ estatus, items: filasFiltradas.filter((p) => p.estatus === estatus) }))
+      .filter((g) => g.items.length > 0)
+  }, [filasFiltradas, filtroEstatus])
+
   const obraSeleccionada = filas.find((p) => p.id === obraSeleccionadaId) || null
 
   async function handleCambio(id, cambios) {
@@ -224,27 +256,27 @@ export default function PresupuestosEnEstudioPage() {
 
       {!cargando && !error && filas.length > 0 && (
         <>
-          <div className="obras-grid">
-            {filasFiltradas.map((p) => (
-              <div
-                key={p.id}
-                className="obra-card"
-                role="button"
-                tabIndex={0}
-                onClick={() => setObraSeleccionadaId(p.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') setObraSeleccionadaId(p.id)
-                }}
-              >
-                <div className="obra-card-titulo">{p.obra}</div>
-                <div className="obra-card-cliente">{p.cliente || 'Sin cliente'}</div>
-                <div className="obra-card-meta">
-                  <SelectEstatus presupuesto={p} onCambio={handleCambio} />
-                  <SelectPrioridad presupuesto={p} onCambio={handleCambio} puedeCambiar={puedeCambiarPrioridad} />
-                </div>
+          {gruposVisibles.map((grupo) => (
+            <section key={grupo.estatus} className="obras-seccion">
+              {filtroEstatus === 'Todos' && (
+                <h2 className={`obras-seccion-titulo ${CLASE_ESTATUS[grupo.estatus] || ''}`}>
+                  {grupo.estatus}
+                  <span className="obras-seccion-contador">{grupo.items.length}</span>
+                </h2>
+              )}
+              <div className="obras-grid">
+                {grupo.items.map((p) => (
+                  <TarjetaObra
+                    key={p.id}
+                    presupuesto={p}
+                    onAbrir={setObraSeleccionadaId}
+                    onCambio={handleCambio}
+                    puedeCambiarPrioridad={puedeCambiarPrioridad}
+                  />
+                ))}
               </div>
-            ))}
-          </div>
+            </section>
+          ))}
           {filasFiltradas.length === 0 && (
             <p className="dashboard-nota">Ningún presupuesto coincide con los filtros aplicados.</p>
           )}
