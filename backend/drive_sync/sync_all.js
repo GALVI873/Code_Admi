@@ -5,11 +5,14 @@
 // temporales de bloqueo (~$) y cálculos auxiliares ("Calculo Composite").
 // Omite obras cuyo último envío registrado supera los 3 meses, y al final
 // reconcilia el panel borrando las que ya no aparecen en este recorrido.
+// Si la carpeta "Enviados" de una obra trae PDFs etiquetados "Opción A" /
+// "Opción B" (alternativas, no revisiones), sube una fila por opción
+// ("Obra — Opción A", "Obra — Opción B") en vez de una sola.
 const path = require('path');
 const fs = require('fs');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { extraerCampos } = require('./extract_fields.js');
-const { completarDesdeEnviado } = require('./extract_from_sent_pdf.js');
+const { resolverEnviosDeObra } = require('./extract_from_sent_pdf.js');
 const { getDrive, descargarComoBuffer } = require('./drive_client.js');
 const { indiceCarpetaObra } = require('./resolver_obra.js');
 
@@ -100,6 +103,7 @@ async function main() {
   console.log(`Encontrados: ${antesDedup} archivos -> ${encontrados.length} obras tras deduplicar por carpeta\n`);
 
   const resultados = { ok: [], omitidos: [], error: [] };
+  const nombresActivos = []; // obra final (con sufijo de opción si aplica) por cada variante considerada este run
 
   for (const archivo of encontrados) {
     const obra = archivo.obra;
@@ -107,14 +111,23 @@ async function main() {
     try {
       const buffer = await descargarComoBuffer(drive, archivo.fileId);
       fs.writeFileSync(tmpPath, buffer);
-      const campos = extraerCampos(tmpPath);
+      const camposBase = extraerCampos(tmpPath);
+      const faltantes = CAMPOS_RESPALDABLES.filter((c) => camposBase[c] === null || camposBase[c] === undefined);
 
-      // Siempre se busca el presupuesto enviado (no solo si faltan campos):
-      // la fecha de envío se necesita en todos los casos.
-      const faltantes = CAMPOS_RESPALDABLES.filter((c) => campos[c] === null || campos[c] === undefined);
+      // Una entrada por PDF encontrado: normalmente una sola (la más
+      // reciente), o varias si la carpeta de la obra tiene "opciones"
+      // (alternativas del mismo proyecto, ej. "Opción A"/"Opción B") — cada
+      // una sube como fila separada del panel.
+      let envios;
       try {
-        const relleno = await completarDesdeEnviado(obra, faltantes, archivo.obraFolderId);
-        Object.assign(campos, relleno);
+        envios = await resolverEnviosDeObra(obra, faltantes, archivo.obraFolderId);
+      } catch {
+        envios = [{ sufijo: '', campos: {} }]; // sigue sin el respaldo/fecha si la búsqueda falla
+      }
+
+      for (const { sufijo, campos: relleno } of envios) {
+        const obraFinal = obra + sufijo;
+        const campos = { ...camposBase, ...relleno };
         // Si hay un envío encontrado, la obra pasa de "En Estudio" a
         // "Seguimiento" automáticamente (el backend solo aplica este cambio
         // si el estatus actual sigue siendo el default; nunca pisa
@@ -122,27 +135,27 @@ async function main() {
         if (relleno.fecha_ultimo_envio) {
           campos.estatus = 'Seguimiento';
         }
-      } catch {
-        // sigue sin el respaldo/fecha si la búsqueda del enviado falla
+
+        nombresActivos.push(obraFinal);
+
+        if (envioDemasiadoAntiguo(campos.fecha_ultimo_envio)) {
+          console.log(`OMITIDO (envío de hace más de ${MESES_ANTIGUEDAD_MAXIMA} meses, ${campos.fecha_ultimo_envio}): ${obraFinal}`);
+          resultados.omitidos.push({ obra: obraFinal, fecha_ultimo_envio: campos.fecha_ultimo_envio });
+          continue;
+        }
+
+        const url = `${process.env.PANEL_API_URL}/presupuestos_en_estudio.php?token=${process.env.SYNC_TOKEN}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ obra: obraFinal, ...campos }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(JSON.stringify(data));
+
+        console.log(`OK: ${obraFinal}`);
+        resultados.ok.push(obraFinal);
       }
-
-      if (envioDemasiadoAntiguo(campos.fecha_ultimo_envio)) {
-        console.log(`OMITIDO (envío de hace más de ${MESES_ANTIGUEDAD_MAXIMA} meses, ${campos.fecha_ultimo_envio}): ${obra}`);
-        resultados.omitidos.push({ obra, fecha_ultimo_envio: campos.fecha_ultimo_envio });
-        continue;
-      }
-
-      const url = `${process.env.PANEL_API_URL}/presupuestos_en_estudio.php?token=${process.env.SYNC_TOKEN}`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ obra, ...campos }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(JSON.stringify(data));
-
-      console.log(`OK: ${obra}`);
-      resultados.ok.push(obra);
     } catch (err) {
       console.error(`ERROR en "${obra}" (${archivo.nombreArchivo}): ${err.message}`);
       resultados.error.push({ obra, archivo: archivo.nombreArchivo, error: err.message });
@@ -164,7 +177,7 @@ async function main() {
   // recorrido de Drive y siguen en estatus por defecto (En Estudio /
   // Seguimiento) — Descartado/Aceptado se conservan siempre como historial,
   // aunque su obra ya no exista en Drive.
-  const obrasActivas = encontrados.map((a) => a.obra);
+  const obrasActivas = nombresActivos;
   if (obrasActivas.length === 0) {
     console.log('Reconciliación omitida: 0 obras encontradas en Drive (posible fallo de lectura, no se borra nada por seguridad).');
     return;

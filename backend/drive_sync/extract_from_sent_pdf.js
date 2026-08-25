@@ -11,6 +11,11 @@
 //    Excel interno viene vacía.
 // 2. La fecha de envío (siempre, independientemente de si el resto de los
 //    campos ya venían completos), para saber la antigüedad del presupuesto.
+//
+// Cuando la carpeta de la obra trae varias "opciones" (alternativas, no
+// revisiones: PDFs con "Opción A"/"Opción B" en el nombre), resolverEnviosDeObra
+// devuelve un resultado por opción para que sync_all.js las suba como filas
+// separadas del panel ("Obra — Opción A", "Obra — Opción B").
 const pdfParse = require('pdf-parse');
 const { getDrive, descargarComoBuffer } = require('./drive_client.js');
 
@@ -88,23 +93,59 @@ async function buscarPdfEnviado(drive, enviadosFolderId, obra) {
 // porque no depende de adivinar el nombre, está guardado a propósito junto
 // a la obra. Recorrido acotado a la carpeta de la obra, no al árbol
 // completo de Drive.
-async function buscarPdfEnviadoEnCarpetaObra(drive, obraFolderId) {
+async function pdfsEnCarpetaObra(drive, obraFolderId) {
   const res = await drive.files.list({
     q: `'${obraFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
     fields: 'files(id, name)',
     pageSize: 1000,
   });
   const subcarpetasEnviados = res.data.files.filter((f) => /envia/i.test(f.name));
-  if (subcarpetasEnviados.length === 0) return null;
+  if (subcarpetasEnviados.length === 0) return [];
 
   const pdfs = [];
   for (const carpeta of subcarpetasEnviados) {
     await listarPdfsRecursivo(drive, carpeta.id, pdfs);
   }
-  if (pdfs.length === 0) return null;
+  return pdfs;
+}
 
-  pdfs.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
-  return pdfs[0];
+// Distingue "opciones" (alternativas del mismo proyecto: distinto material,
+// distinto precio) de simples revisiones cronológicas. Convención: el
+// nombre del PDF incluye "Opción A", "Opción B"... — quien no lleve esa
+// etiqueta se trata como revisión normal (se queda solo la más reciente).
+function extraerEtiquetaOpcion(nombreArchivo) {
+  const m = nombreArchivo.match(/opci[oó]n\s*([a-z0-9]+)/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+// Devuelve una "variante" por resultado: { etiqueta, archivo }. etiqueta es
+// null cuando no hay opciones (un solo resultado, el PDF más reciente entre
+// todos). Si hay al menos un PDF etiquetado, se ignoran los que no lo están
+// (se asume que son borradores previos a separar en opciones) y se devuelve
+// un resultado por etiqueta distinta, con el más reciente de cada una.
+async function buscarVariantesEnCarpetaObra(drive, obraFolderId) {
+  const pdfs = await pdfsEnCarpetaObra(drive, obraFolderId);
+  if (pdfs.length === 0) return [];
+
+  const etiquetados = pdfs
+    .map((archivo) => ({ archivo, etiqueta: extraerEtiquetaOpcion(archivo.name) }))
+    .filter((p) => p.etiqueta !== null);
+
+  if (etiquetados.length === 0) {
+    const masReciente = [...pdfs].sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime))[0];
+    return [{ etiqueta: null, archivo: masReciente }];
+  }
+
+  const porEtiqueta = new Map();
+  for (const { archivo, etiqueta } of etiquetados) {
+    const actual = porEtiqueta.get(etiqueta);
+    if (!actual || new Date(archivo.modifiedTime) > new Date(actual.modifiedTime)) {
+      porEtiqueta.set(etiqueta, archivo);
+    }
+  }
+  return Array.from(porEtiqueta.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([etiqueta, archivo]) => ({ etiqueta, archivo }));
 }
 
 // Resume la descripción larga del "Compacto" (cajón + color + motor) a lo
@@ -142,21 +183,8 @@ function parseTextoPresupuestoEnviado(text) {
   return { cliente, ral, vidrio, persiana };
 }
 
-async function completarDesdeEnviado(obra, camposFaltantes, obraFolderId) {
+async function extraerRellenoDePdf(archivo, camposFaltantes) {
   const drive = getDrive();
-
-  let archivo = null;
-  if (obraFolderId) {
-    archivo = await buscarPdfEnviadoEnCarpetaObra(drive, obraFolderId);
-  }
-  if (!archivo) {
-    const enviadosFolderId = process.env.GOOGLE_DRIVE_ENVIADOS_FOLDER_ID;
-    if (enviadosFolderId) {
-      archivo = await buscarPdfEnviado(drive, enviadosFolderId, obra);
-    }
-  }
-  if (!archivo) return {};
-
   const buffer = await descargarComoBuffer(drive, archivo.id);
   const { text } = await pdfParse(buffer);
   const extraidos = parseTextoPresupuestoEnviado(text);
@@ -175,4 +203,58 @@ async function completarDesdeEnviado(obra, camposFaltantes, obraFolderId) {
   return relleno;
 }
 
-module.exports = { completarDesdeEnviado, parseTextoPresupuestoEnviado, coincideConObra };
+async function completarDesdeEnviado(obra, camposFaltantes, obraFolderId) {
+  const drive = getDrive();
+
+  let archivo = null;
+  if (obraFolderId) {
+    const variantes = await buscarVariantesEnCarpetaObra(drive, obraFolderId);
+    archivo = variantes[0] ? variantes[0].archivo : null;
+  }
+  if (!archivo) {
+    const enviadosFolderId = process.env.GOOGLE_DRIVE_ENVIADOS_FOLDER_ID;
+    if (enviadosFolderId) {
+      archivo = await buscarPdfEnviado(drive, enviadosFolderId, obra);
+    }
+  }
+  if (!archivo) return {};
+
+  return extraerRellenoDePdf(archivo, camposFaltantes);
+}
+
+// Como completarDesdeEnviado, pero devuelve una entrada por cada "opción"
+// encontrada en la carpeta de la obra (ver buscarVariantesEnCarpetaObra) en
+// vez de una sola. Cada entrada trae su propio sufijo para el nombre de
+// obra en el panel ("" si no hay opciones, " — Opción A" / " — Opción B" si
+// las hay) y sus propios campos extraídos de ESE PDF puntual.
+async function resolverEnviosDeObra(obra, camposFaltantes, obraFolderId) {
+  const drive = getDrive();
+
+  let variantes = [];
+  if (obraFolderId) {
+    variantes = await buscarVariantesEnCarpetaObra(drive, obraFolderId);
+  }
+  if (variantes.length === 0) {
+    const enviadosFolderId = process.env.GOOGLE_DRIVE_ENVIADOS_FOLDER_ID;
+    if (enviadosFolderId) {
+      const archivo = await buscarPdfEnviado(drive, enviadosFolderId, obra);
+      if (archivo) variantes = [{ etiqueta: null, archivo }];
+    }
+  }
+  if (variantes.length === 0) return [{ sufijo: '', campos: {} }];
+
+  const resultados = [];
+  for (const { etiqueta, archivo } of variantes) {
+    const campos = await extraerRellenoDePdf(archivo, camposFaltantes);
+    resultados.push({ sufijo: etiqueta ? ` — Opción ${etiqueta}` : '', campos });
+  }
+  return resultados;
+}
+
+module.exports = {
+  completarDesdeEnviado,
+  resolverEnviosDeObra,
+  parseTextoPresupuestoEnviado,
+  coincideConObra,
+  extraerEtiquetaOpcion,
+};
