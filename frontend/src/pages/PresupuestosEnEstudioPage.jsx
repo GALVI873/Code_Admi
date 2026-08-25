@@ -2,11 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { presupuestosEnEstudio, actualizarPresupuestoEnEstudio } from '../api/client.js'
 
-const ESTATUS_OPCIONES = ['En Estudio', 'Seguimiento', 'Aceptado', 'Descartado']
+// Orden = flujo real: "En Estudio" es el default al descubrir la obra en
+// Drive; "En Valoración"/"En Revisión" son afinamientos manuales de esa
+// misma fase previa al envío; "Pdt Aprobación" se pone solo (o a mano) en
+// cuanto hay un PDF en la carpeta Enviados de la obra; Aceptado/Descartado
+// son decisiones finales.
+const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Pdt Aprobación', 'Aceptado', 'Descartado']
 
 const CLASE_ESTATUS = {
   'En Estudio': 'select-estatus-en-estudio',
-  Seguimiento: 'select-estatus-seguimiento',
+  'En Valoración': 'select-estatus-en-valoracion',
+  'En Revisión': 'select-estatus-en-revision',
+  'Pdt Aprobación': 'select-estatus-pdt-aprobacion',
   Aceptado: 'select-estatus-aceptado',
   Descartado: 'select-estatus-descartado',
 }
@@ -32,18 +39,41 @@ function formatoFecha(iso) {
   return `${dia}/${mes}/${anio}`
 }
 
-function SelectEstatus({ presupuesto, onCambio }) {
+// "Pdt Aprobación" puesto a mano sin que exista un PDF en la carpeta
+// Enviados de la obra es un estado inconsistente — probablemente alguien se
+// adelantó o el PDF todavía no se subió a Drive. No se bloquea (el estatus
+// siempre se puede cambiar), pero se avisa.
+function faltaEnvio(presupuesto) {
+  return presupuesto.estatus === 'Pdt Aprobación' && !presupuesto.fecha_ultimo_envio
+}
+
+function AvisoSinEnvio() {
   return (
-    <select
-      className={`select-inline select-estatus ${CLASE_ESTATUS[presupuesto.estatus] || ''}`}
-      value={presupuesto.estatus}
+    <span
+      className="aviso-sin-envio"
+      title="Pdt Aprobación sin ningún presupuesto enviado registrado en Drive"
       onClick={(e) => e.stopPropagation()}
-      onChange={(e) => onCambio(presupuesto.id, { estatus: e.target.value })}
     >
-      {ESTATUS_OPCIONES.map((op) => (
-        <option key={op} value={op}>{op}</option>
-      ))}
-    </select>
+      ⚠
+    </span>
+  )
+}
+
+function SelectEstatus({ presupuesto, onCambio, mostrarAviso = true }) {
+  return (
+    <>
+      <select
+        className={`select-inline select-estatus ${CLASE_ESTATUS[presupuesto.estatus] || ''}`}
+        value={presupuesto.estatus}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => onCambio(presupuesto.id, { estatus: e.target.value })}
+      >
+        {ESTATUS_OPCIONES.map((op) => (
+          <option key={op} value={op}>{op}</option>
+        ))}
+      </select>
+      {mostrarAviso && faltaEnvio(presupuesto) && <AvisoSinEnvio />}
+    </>
   )
 }
 
@@ -109,10 +139,14 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad })
           <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
         </div>
 
+        {faltaEnvio(presupuesto) && (
+          <p className="modal-aviso">⚠ "Pdt Aprobación" sin ningún presupuesto enviado registrado en Drive.</p>
+        )}
+
         <div className="modal-meta">
           <div className="modal-campo">
             <span>Estatus</span>
-            <SelectEstatus presupuesto={presupuesto} onCambio={onCambio} />
+            <SelectEstatus presupuesto={presupuesto} onCambio={onCambio} mostrarAviso={false} />
           </div>
           <div className="modal-campo">
             <span>Prioridad</span>
@@ -170,10 +204,11 @@ export default function PresupuestosEnEstudioPage() {
       .sort((a, b) => (a.obra || '').localeCompare(b.obra || '', 'es'))
   }, [filasSegunEstatus, busquedaObra, busquedaCliente])
 
-  // Agrupadas por estatus (en el orden En Estudio -> Seguimiento -> Aceptado)
-  // para que el grid tenga secciones claras en vez de una sola pared de
-  // tarjetas. Al filtrar por un estatus puntual no hace falta el
-  // agrupamiento: ya es un solo grupo.
+  // Agrupadas por estatus (en el orden de ESTATUS_OPCIONES: En Estudio ->
+  // En Valoración -> En Revisión -> Pdt Aprobación -> Aceptado) para que el
+  // grid tenga secciones claras en vez de una sola pared de tarjetas. Al
+  // filtrar por un estatus puntual no hace falta el agrupamiento: ya es un
+  // solo grupo.
   const gruposVisibles = useMemo(() => {
     if (filtroEstatus !== 'Todos') return [{ estatus: filtroEstatus, items: filasFiltradas }]
     return ESTATUS_OPCIONES.filter((e) => e !== 'Descartado')

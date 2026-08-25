@@ -128,12 +128,13 @@ async function main() {
       for (const { sufijo, campos: relleno } of envios) {
         const obraFinal = obra + sufijo;
         const campos = { ...camposBase, ...relleno };
-        // Si hay un envío encontrado, la obra pasa de "En Estudio" a
-        // "Seguimiento" automáticamente (el backend solo aplica este cambio
-        // si el estatus actual sigue siendo el default; nunca pisa
-        // Descartado/Aceptado/Seguimiento puestos a mano).
+        // Si hay un envío encontrado, la obra pasa a "Pdt Aprobación"
+        // automáticamente (el backend solo aplica este cambio si el estatus
+        // actual sigue en una fase previa al envío — En Estudio, En
+        // Valoración o En Revisión; nunca pisa Descartado/Aceptado/Pdt
+        // Aprobación puestos a mano).
         if (relleno.fecha_ultimo_envio) {
-          campos.estatus = 'Seguimiento';
+          campos.estatus = 'Pdt Aprobación';
         }
 
         nombresActivos.push(obraFinal);
@@ -174,9 +175,10 @@ async function main() {
   // Reconciliación: con el cambio de "obra = nombre de archivo" a "obra =
   // nombre de carpeta", las filas viejas quedan con un identificador que ya
   // no se vuelve a generar. Se borran del panel las que no aparecen en este
-  // recorrido de Drive y siguen en estatus por defecto (En Estudio /
-  // Seguimiento) — Descartado/Aceptado se conservan siempre como historial,
-  // aunque su obra ya no exista en Drive.
+  // recorrido de Drive y siguen en un estatus previo a la decisión final
+  // (En Estudio / En Valoración / En Revisión / Pdt Aprobación) —
+  // Descartado/Aceptado se conservan siempre como historial, aunque su obra
+  // ya no exista en Drive.
   const obrasActivas = nombresActivos;
   if (obrasActivas.length === 0) {
     console.log('Reconciliación omitida: 0 obras encontradas en Drive (posible fallo de lectura, no se borra nada por seguridad).');

@@ -219,7 +219,9 @@ body {
 }
 
 .select-estatus-en-estudio { background: #eaf0fb; color: #2980b9; }
-.select-estatus-seguimiento { background: #fef9e7; color: #d68910; }
+.select-estatus-en-valoracion { background: #f4ecfb; color: #8e44ad; }
+.select-estatus-en-revision { background: #e8f6f5; color: #17847a; }
+.select-estatus-pdt-aprobacion { background: #fef9e7; color: #d68910; }
 .select-estatus-aceptado { background: #d5f5e3; color: #1e8449; }
 .select-estatus-descartado { background: #fdedec; color: var(--rojo); }
 
@@ -404,7 +406,9 @@ body {
 }
 
 .obras-seccion-titulo.select-estatus-en-estudio { color: #2980b9; }
-.obras-seccion-titulo.select-estatus-seguimiento { color: #d68910; }
+.obras-seccion-titulo.select-estatus-en-valoracion { color: #8e44ad; }
+.obras-seccion-titulo.select-estatus-en-revision { color: #17847a; }
+.obras-seccion-titulo.select-estatus-pdt-aprobacion { color: #d68910; }
 .obras-seccion-titulo.select-estatus-aceptado { color: #1e8449; }
 .obras-seccion-titulo.select-estatus-descartado { color: var(--rojo); }
 
@@ -477,6 +481,24 @@ body {
   background: transparent;
   color: #aab2bd;
   font-weight: 600;
+}
+
+.aviso-sin-envio {
+  flex-shrink: 0;
+  color: var(--naranja);
+  font-size: 14px;
+  cursor: help;
+  align-self: center;
+}
+
+.modal-aviso {
+  background: #fef5e9;
+  border-left: 3px solid var(--naranja);
+  color: #a3620a;
+  font-size: 12.5px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  margin-bottom: 16px;
 }
 
 .modal-fondo {

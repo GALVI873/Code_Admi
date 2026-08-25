@@ -15,7 +15,14 @@ declare(strict_types=1);
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
 
-const ESTATUS_VALIDOS = ['En Estudio', 'Descartado', 'Seguimiento', 'Aceptado'];
+// "En Estudio" es el default automático (recién descubierta en Drive, sin
+// envío todavía). "En Valoración"/"En Revisión" son afinamientos manuales de
+// esa misma fase — nadie los pone la sincronización, solo una persona. "Pdt
+// Aprobación" es automático en cuanto la sincronización encuentra un PDF en
+// la carpeta Enviados de la obra (para cualquiera de los tres estatus de
+// arriba). Descartado/Aceptado son decisiones finales manuales.
+const ESTATUS_VALIDOS = ['En Estudio', 'En Valoración', 'En Revisión', 'Pdt Aprobación', 'Aceptado', 'Descartado'];
+const ESTATUS_PRE_ENVIO = ['En Estudio', 'En Valoración', 'En Revisión'];
 
 try {
     $db = Database::connection($config);
@@ -51,6 +58,11 @@ try {
     if (!in_array('fecha_ultimo_envio', $columnas, true)) {
         $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN fecha_ultimo_envio TEXT');
     }
+
+    // Renombre de estatus: "Seguimiento" pasó a llamarse "Pdt Aprobación"
+    // (mismo significado, nombre más preciso). No afecta filas nuevas, solo
+    // limpia las que quedaron con el nombre viejo.
+    $db->exec("UPDATE presupuestos_en_estudio SET estatus = 'Pdt Aprobación' WHERE estatus = 'Seguimiento'");
 
     // Igual de idempotente para el permiso nuevo: se crea y se asigna solo a
     // admin si todavía no existe (no rompe nada si ya corrió antes).
@@ -142,11 +154,13 @@ try {
         // "prioridad" no se toca acá a propósito en el UPDATE: es un dato que
         // decide un usuario desde el panel, la sincronización con Drive nunca
         // lo pisa. "estatus" es la única excepción: si la sincronización
-        // encuentra un envío nuevo (excluded.estatus = 'Seguimiento') y la
-        // obra seguía en el default 'En Estudio', se pasa a 'Seguimiento'
+        // encuentra un envío nuevo (excluded.estatus = 'Pdt Aprobación') y la
+        // obra seguía en una de las fases previas al envío (En Estudio, En
+        // Valoración o En Revisión), se pasa a 'Pdt Aprobación'
         // automáticamente. Cualquier otro estatus puesto a mano (Descartado,
-        // Aceptado, o un Seguimiento ya existente) nunca se pisa. En el
+        // Aceptado, o un Pdt Aprobación ya existente) nunca se pisa. En el
         // INSERT sí se usa el valor por defecto para una obra nueva.
+        $estatusPreEnvio = "'" . implode("','", ESTATUS_PRE_ENVIO) . "'";
         $stmt = $db->prepare("
             INSERT INTO presupuestos_en_estudio
                 (obra, cliente, estatus, no_ventanas, precio_m2, ral, persiana, vidrio, precio_ultimo_presupuesto, porcentaje_ganancia, fecha_ultimo_envio, actualizado_en)
@@ -154,8 +168,8 @@ try {
             ON CONFLICT(obra) DO UPDATE SET
                 cliente = excluded.cliente,
                 estatus = CASE
-                    WHEN presupuestos_en_estudio.estatus = 'En Estudio' AND excluded.estatus = 'Seguimiento'
-                        THEN 'Seguimiento'
+                    WHEN presupuestos_en_estudio.estatus IN ($estatusPreEnvio) AND excluded.estatus = 'Pdt Aprobación'
+                        THEN 'Pdt Aprobación'
                     ELSE presupuestos_en_estudio.estatus
                 END,
                 no_ventanas = excluded.no_ventanas,
@@ -188,9 +202,10 @@ try {
     // DELETE: reconciliación tras la sincronización con Drive. Recibe la
     // lista completa de obras encontradas en este recorrido y borra las que
     // ya no aparecen (renombradas, movidas o archivadas) — pero solo si
-    // siguen en estatus por defecto (En Estudio / Seguimiento). Descartado y
-    // Aceptado son decisiones ya tomadas y se conservan siempre como
-    // historial, aunque su obra ya no exista en Drive con ese nombre.
+    // siguen en un estatus previo a la decisión final (En Estudio, En
+    // Valoración, En Revisión o Pdt Aprobación). Descartado y Aceptado son
+    // decisiones ya tomadas y se conservan siempre como historial, aunque su
+    // obra ya no exista en Drive con ese nombre.
     if ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
         $token = $_GET['token'] ?? '';
         if ($config['sync_token'] === '' || !hash_equals($config['sync_token'], (string) $token)) {
@@ -227,9 +242,10 @@ try {
         }
 
         $marcadores = implode(',', array_fill(0, count($obrasActivas), '?'));
+        $estatusReconciliables = "'" . implode("','", array_merge(ESTATUS_PRE_ENVIO, ['Pdt Aprobación'])) . "'";
         $stmt = $db->prepare("
             DELETE FROM presupuestos_en_estudio
-            WHERE estatus IN ('En Estudio', 'Seguimiento')
+            WHERE estatus IN ($estatusReconciliables)
               AND obra NOT IN ($marcadores)
         ");
         $stmt->execute($obrasActivas);
