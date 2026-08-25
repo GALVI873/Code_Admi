@@ -136,7 +136,7 @@ try {
         // mantenimiento (que no tienen sesión de usuario) consultar el
         // estado actual del panel antes de decidir qué actualizar.
         if (($body['accion'] ?? '') === 'listar') {
-            $stmt = $db->query('SELECT obra, estatus, fecha_ultimo_envio FROM presupuestos_en_estudio');
+            $stmt = $db->query('SELECT obra, estatus, categoria, contacto, fecha_ultimo_envio FROM presupuestos_en_estudio');
             Response::json(['presupuestos' => $stmt->fetchAll()]);
         }
 
