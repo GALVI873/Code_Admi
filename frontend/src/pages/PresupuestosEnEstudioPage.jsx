@@ -132,15 +132,22 @@ export default function PresupuestosEnEstudioPage() {
       .finally(() => setCargando(false))
   }, [accessToken])
 
+  // "Todos" muestra los presupuestos vivos (todo menos Descartado) — las
+  // descartadas solo aparecen si se filtra explícitamente por ese estatus,
+  // para que la vista por defecto no se llene de obras viejas ya cerradas.
+  const filasSegunEstatus = useMemo(
+    () => filas.filter((p) => (filtroEstatus === 'Todos' ? p.estatus !== 'Descartado' : p.estatus === filtroEstatus)),
+    [filas, filtroEstatus],
+  )
+
   const filasFiltradas = useMemo(() => {
     const terminoObra = busquedaObra.trim().toLowerCase()
     const terminoCliente = busquedaCliente.trim().toLowerCase()
-    return filas
-      .filter((p) => filtroEstatus === 'Todos' || p.estatus === filtroEstatus)
+    return filasSegunEstatus
       .filter((p) => !terminoObra || p.obra?.toLowerCase().includes(terminoObra))
       .filter((p) => !terminoCliente || p.cliente?.toLowerCase().includes(terminoCliente))
       .sort((a, b) => (a.obra || '').localeCompare(b.obra || '', 'es'))
-  }, [filas, busquedaObra, busquedaCliente, filtroEstatus])
+  }, [filasSegunEstatus, busquedaObra, busquedaCliente])
 
   const obraSeleccionada = filas.find((p) => p.id === obraSeleccionadaId) || null
 
@@ -196,14 +203,14 @@ export default function PresupuestosEnEstudioPage() {
               value={filtroEstatus}
               onChange={(e) => setFiltroEstatus(e.target.value)}
             >
-              <option value="Todos">Todos los estatus</option>
+              <option value="Todos">Todos (activos)</option>
               {ESTATUS_OPCIONES.map((op) => (
                 <option key={op} value={op}>{op}</option>
               ))}
             </select>
           </div>
           <span className="filtro-contador">
-            {filasFiltradas.length} de {filas.length}
+            {filasFiltradas.length} de {filasSegunEstatus.length}
           </span>
         </div>
       )}
