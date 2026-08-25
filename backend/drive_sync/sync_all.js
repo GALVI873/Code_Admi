@@ -41,6 +41,24 @@ function extraerPrefijoNumerico(nombreArchivo) {
   return m ? parseInt(m[1], 10) : null;
 }
 
+// Singular para mostrar en el panel ("Arquitecto" en vez del nombre de
+// carpeta "Arquitectos"). Particulares no tiene nivel de contacto propio
+// (la obra cuelga directo de la categoría), así que no hay "contacto" ahí.
+const CATEGORIA_SINGULAR = {
+  Arquitectos: 'Arquitecto',
+  Constructores: 'Constructor',
+  Particulares: 'Particular',
+  Proveedores: 'Proveedor',
+  Reformistas: 'Reformista',
+};
+
+function categoriaYContacto(cadenaNombres) {
+  const categoriaCarpeta = cadenaNombres[0];
+  const categoria = CATEGORIA_SINGULAR[categoriaCarpeta] || categoriaCarpeta;
+  const contacto = categoriaCarpeta === 'Particulares' ? null : cadenaNombres[1] || null;
+  return { categoria, contacto };
+}
+
 async function recorrer(drive, folderId, cadenaNombres, cadenaIds, encontrados) {
   const res = await drive.files.list({
     q: `'${folderId}' in parents and trashed = false`,
@@ -58,6 +76,7 @@ async function recorrer(drive, folderId, cadenaNombres, cadenaIds, encontrados) 
         modifiedTime: file.modifiedTime,
         obra: cadenaNombres[idx].trim(),
         obraFolderId: cadenaIds[idx],
+        ...categoriaYContacto(cadenaNombres),
       });
     }
   }
@@ -149,7 +168,12 @@ async function main() {
         const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ obra: obraFinal, ...campos }),
+          body: JSON.stringify({
+            obra: obraFinal,
+            categoria: archivo.categoria,
+            contacto: archivo.contacto,
+            ...campos,
+          }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(JSON.stringify(data));

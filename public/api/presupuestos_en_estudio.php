@@ -60,6 +60,12 @@ try {
     if (!in_array('fecha_ultimo_envio', $columnas, true)) {
         $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN fecha_ultimo_envio TEXT');
     }
+    if (!in_array('categoria', $columnas, true)) {
+        $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN categoria TEXT');
+    }
+    if (!in_array('contacto', $columnas, true)) {
+        $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN contacto TEXT');
+    }
 
     // Renombre de estatus: "Seguimiento" pasó a llamarse "Pdt Aprobación"
     // (mismo significado, nombre más preciso). No afecta filas nuevas, solo
@@ -173,8 +179,8 @@ try {
         $estatusPreEnvio = "'" . implode("','", ESTATUS_PRE_ENVIO) . "'";
         $stmt = $db->prepare("
             INSERT INTO presupuestos_en_estudio
-                (obra, cliente, estatus, no_ventanas, precio_m2, ral, persiana, vidrio, precio_ultimo_presupuesto, porcentaje_ganancia, fecha_ultimo_envio, actualizado_en)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                (obra, cliente, estatus, no_ventanas, precio_m2, ral, persiana, vidrio, precio_ultimo_presupuesto, porcentaje_ganancia, fecha_ultimo_envio, categoria, contacto, actualizado_en)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(obra) DO UPDATE SET
                 cliente = excluded.cliente,
                 estatus = CASE
@@ -190,6 +196,8 @@ try {
                 precio_ultimo_presupuesto = excluded.precio_ultimo_presupuesto,
                 porcentaje_ganancia = excluded.porcentaje_ganancia,
                 fecha_ultimo_envio = excluded.fecha_ultimo_envio,
+                categoria = excluded.categoria,
+                contacto = excluded.contacto,
                 actualizado_en = datetime('now')
         ");
         $stmt->execute([
@@ -204,6 +212,8 @@ try {
             $body['precio_ultimo_presupuesto'] ?? null,
             $body['porcentaje_ganancia'] ?? null,
             $body['fecha_ultimo_envio'] ?? null,
+            $body['categoria'] ?? null,
+            $body['contacto'] ?? null,
         ]);
 
         Response::json(['ok' => true]);

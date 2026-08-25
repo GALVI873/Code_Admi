@@ -9,6 +9,11 @@ import { presupuestosEnEstudio, actualizarPresupuestoEnEstudio } from '../api/cl
 // son decisiones finales.
 const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Pdt Aprobación', 'Aceptado', 'Descartado']
 
+// Categorías de contacto tal como las organiza Drive (Arquitectos/
+// Constructores/Particulares/Proveedores/Reformistas), en singular para
+// mostrar en el panel.
+const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista']
+
 const CLASE_ESTATUS = {
   'En Estudio': 'select-estatus-en-estudio',
   'En Valoración': 'select-estatus-en-valoracion',
@@ -175,7 +180,8 @@ export default function PresupuestosEnEstudioPage() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [busquedaObra, setBusquedaObra] = useState('')
-  const [busquedaCliente, setBusquedaCliente] = useState('')
+  const [filtroCategoria, setFiltroCategoria] = useState('Todos')
+  const [filtroContacto, setFiltroContacto] = useState('Todos')
   const [filtroEstatus, setFiltroEstatus] = useState('Todos')
   const [obraSeleccionadaId, setObraSeleccionadaId] = useState(null)
   const puedeCambiarPrioridad = tienePermiso('presupuestos.gestionar_prioridad')
@@ -195,14 +201,30 @@ export default function PresupuestosEnEstudioPage() {
     [filas, filtroEstatus],
   )
 
+  // Contactos disponibles para el segundo desplegable: solo los que
+  // realmente aparecen bajo la categoría elegida (no la lista fija de
+  // CATEGORIAS_CLIENTE, esa es solo para el primer desplegable).
+  const contactosDisponibles = useMemo(() => {
+    if (filtroCategoria === 'Todos') return []
+    const unicos = new Set(
+      filas.filter((p) => p.categoria === filtroCategoria && p.contacto).map((p) => p.contacto),
+    )
+    return Array.from(unicos).sort((a, b) => a.localeCompare(b, 'es'))
+  }, [filas, filtroCategoria])
+
   const filasFiltradas = useMemo(() => {
     const terminoObra = busquedaObra.trim().toLowerCase()
-    const terminoCliente = busquedaCliente.trim().toLowerCase()
     return filasSegunEstatus
       .filter((p) => !terminoObra || p.obra?.toLowerCase().includes(terminoObra))
-      .filter((p) => !terminoCliente || p.cliente?.toLowerCase().includes(terminoCliente))
+      .filter((p) => filtroCategoria === 'Todos' || p.categoria === filtroCategoria)
+      .filter((p) => filtroContacto === 'Todos' || p.contacto === filtroContacto)
       .sort((a, b) => (a.obra || '').localeCompare(b.obra || '', 'es'))
-  }, [filasSegunEstatus, busquedaObra, busquedaCliente])
+  }, [filasSegunEstatus, busquedaObra, filtroCategoria, filtroContacto])
+
+  function handleCambioCategoria(valor) {
+    setFiltroCategoria(valor)
+    setFiltroContacto('Todos') // el contacto elegido puede no existir en la nueva categoría
+  }
 
   // Agrupadas por estatus (en el orden de ESTATUS_OPCIONES: En Estudio ->
   // En Valoración -> En Revisión -> Pdt Aprobación -> Aceptado) para que el
@@ -252,15 +274,33 @@ export default function PresupuestosEnEstudioPage() {
             />
           </div>
           <div className="filtro-campo">
-            <label htmlFor="filtro-cliente">Cliente</label>
-            <input
-              id="filtro-cliente"
-              type="text"
-              className="input-filtro"
-              placeholder="Filtrar por cliente…"
-              value={busquedaCliente}
-              onChange={(e) => setBusquedaCliente(e.target.value)}
-            />
+            <label htmlFor="filtro-categoria">Tipo de Cliente</label>
+            <select
+              id="filtro-categoria"
+              className="select-inline"
+              value={filtroCategoria}
+              onChange={(e) => handleCambioCategoria(e.target.value)}
+            >
+              <option value="Todos">Todos</option>
+              {CATEGORIAS_CLIENTE.map((op) => (
+                <option key={op} value={op}>{op}</option>
+              ))}
+            </select>
+          </div>
+          <div className="filtro-campo">
+            <label htmlFor="filtro-contacto">Cliente</label>
+            <select
+              id="filtro-contacto"
+              className="select-inline"
+              value={filtroContacto}
+              onChange={(e) => setFiltroContacto(e.target.value)}
+              disabled={filtroCategoria === 'Todos' || contactosDisponibles.length === 0}
+            >
+              <option value="Todos">Todos</option>
+              {contactosDisponibles.map((op) => (
+                <option key={op} value={op}>{op}</option>
+              ))}
+            </select>
           </div>
           <div className="filtro-campo">
             <label htmlFor="filtro-estatus">Estatus</label>
