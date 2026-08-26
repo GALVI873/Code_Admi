@@ -9,8 +9,35 @@
 // y se acepta que algunas ofertas reales no se detecten (mejor no mostrar
 // nada que mostrar un dato inventado).
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const pdfParse = require('pdf-parse');
+const { execFileSync } = require('child_process');
+
+// pdf-parse (motor pdfjs muy viejo) deja algún estado global corrupto entre
+// documentos con estructura rara (XRef roto, fuentes atípicas) — un PDF
+// sano leído justo después de uno así falla con "bad XRef entry" aunque su
+// propio archivo esté perfecto. Se confirmó reproduciéndolo: mismo archivo,
+// solo siempre funciona, después de otro siempre falla igual. Limpiar el
+// caché de require no alcanzó (sí crea una instancia nueva del módulo y aun
+// así fallaba, señal de que el estado corrupto no es a nivel de módulo) —
+// la única garantía real es un proceso de Node nuevo por archivo. El
+// resultado se pasa por un archivo temporal, no por stdout, porque pdfjs a
+// veces manda avisos directo a stdout y eso rompería el JSON de salida.
+function parsearPdfAislado(rutaArchivo) {
+  const rutaSalida = path.join(os.tmpdir(), `pdf_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
+  try {
+    execFileSync(
+      process.execPath,
+      [path.join(__dirname, 'parse_pdf_aislado.js'), rutaArchivo, rutaSalida],
+      { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 },
+    );
+    const resultado = JSON.parse(fs.readFileSync(rutaSalida, 'utf8'));
+    if (resultado.error) throw new Error(resultado.error);
+    return resultado.text;
+  } finally {
+    fs.rmSync(rutaSalida, { force: true });
+  }
+}
 
 const MESES = {
   ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6,
@@ -49,18 +76,37 @@ function aNumero(texto) {
   return Number.isNaN(num) ? null : num;
 }
 
-// Se probó un respaldo más laxo (última vez que aparece "TOTAL" solo, sin
-// exigir el IVA cerca) para cubrir proveedores que no desglosan el IVA —
-// pero "total" también aparece en frases sin relación a dinero ("Total m²
-// de vidrios: 132,42 m²", "Peso total del parte") y eso generaba datos
-// falsos. Mejor no mostrar una oferta que mostrar un valor inventado: se
-// descartó el respaldo y se deja solo el ancla de IVA+porcentaje, que en
-// todas las pruebas reales no dio ningún falso positivo.
+// Respaldo para proveedores que no desglosan IVA cerca del total: "TOTAL"
+// en MAYÚSCULA COMPLETA seguido de inmediato (sin otra palabra en medio) por
+// un número. Se probó antes un "TOTAL" más laxo (cualquier mayúscula/
+// minúscula, número en cualquier punto cercano) y agarraba falsos positivos
+// reales: "Total m² de vidrios: 132,42 m²", "Peso total del parte...",
+// "Total CAPÍTULO 09..." — todos con mayúscula solo en la T, o con una
+// palabra entre "TOTAL" y el número. Exigir mayúscula completa PEGADA a un
+// número separa el total de verdad ("TOTAL\n3.330,84 €") de esos casos, y
+// de los "Total: 362,91 €" por ítem (esos van con mayúscula inicial nomás).
+// Se usa como respaldo, no como primera opción, porque el ancla de IVA es
+// más específica cuando está disponible.
+function ultimoIndiceTotalMayusculas(text) {
+  const matches = [...text.matchAll(/TOTAL\s*\n?\s*€?\s*\d/g)];
+  return matches.length > 0 ? matches[matches.length - 1].index : -1;
+}
+
 function extraerNumeroTotal(text) {
-  const idx = ultimoIndiceIva(text);
-  if (idx === -1) return null;
-  const numeros = numerosMonedaCerca(text, idx).map(aNumero).filter((n) => n !== null);
-  return numeros.length > 0 ? Math.max(...numeros) : null;
+  const idxIva = ultimoIndiceIva(text);
+  if (idxIva !== -1) {
+    const numeros = numerosMonedaCerca(text, idxIva).map(aNumero).filter((n) => n !== null);
+    if (numeros.length > 0) return Math.max(...numeros);
+  }
+  const idxTotal = ultimoIndiceTotalMayusculas(text);
+  if (idxTotal !== -1) {
+    // Máximo, no el primero: "TOTAL 30   111,15   28.049,82" (cantidad,
+    // precio unitario, total) es una fila de tabla real vista en un
+    // proveedor — el total de verdad es siempre el número más grande.
+    const numeros = numerosMonedaCerca(text, idxTotal, 0, 60).map(aNumero).filter((n) => n !== null);
+    if (numeros.length > 0) return Math.max(...numeros);
+  }
+  return null;
 }
 
 function esDocumentoDeOferta(text) {
@@ -132,8 +178,7 @@ async function extraerOfertasDeObra(rutaObra) {
     const rutaArchivo = path.join(rutaVal, nombreArchivo);
     let text;
     try {
-      const buffer = fs.readFileSync(rutaArchivo);
-      ({ text } = await pdfParse(buffer));
+      text = parsearPdfAislado(rutaArchivo);
     } catch {
       continue;
     }
