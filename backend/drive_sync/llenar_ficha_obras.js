@@ -158,6 +158,39 @@ function fechaASerialExcel(fecha) {
   return Math.round((Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth(), fecha.getUTCDate()) - epoch) / 86400000);
 }
 
+// Cada campo se ubica buscando su etiqueta en la columna A de la hoja
+// "Ficha", no por celda fija: la sección de Persianas (filas 20-26 en la
+// plantilla "completa") simplemente no existe en el Excel de obras sin
+// persianas, así que todo lo de abajo se corre hacia arriba y varía de un
+// archivo a otro. Escribir por celda fija (B26, etc.) aterrizaba en la fila
+// equivocada en más de un tercio de un batch real, incluyendo un caso de
+// pérdida de dato real (Vidrio pisado por el valor de Persianas). Buscar por
+// etiqueta es exactamente lo que ya hace extract_fields.js para leer estos
+// mismos campos del lado del panel — este es el mismo criterio aplicado a
+// escribir. columna: 2=B, 3=C.
+function construirCampos(info, campos, numeroPptoCompleto, fechaPdf) {
+  return [
+    { nombre: 'Direccion', etiqueta: 'DIRECCION', columna: 3, valor: path.basename(info.rutaObra) },
+    { nombre: 'Cliente', etiqueta: '^CLIENTE$', columna: 2, valor: info.contacto || info.categoria },
+    { nombre: 'Nº Ppto', etiqueta: 'N.\\s*Ppto', columna: 2, valor: numeroPptoCompleto },
+    { nombre: 'Fecha Ppto', etiqueta: 'Fecha Ppto', columna: 2, valor: fechaASerialExcel(fechaPdf) },
+    // Series (Correderas/Abatibles desglosadas) queda sin tocar a propósito.
+    { nombre: 'Carpinteria', etiqueta: '^\\s*Carpinteria', columna: 2, valor: campos.carpinteria },
+    { nombre: 'Proveedores', etiqueta: 'Proveedor', columna: 2, valor: campos.proveedor },
+    { nombre: 'Color Carpinteria', etiqueta: 'Color Carpinteria', columna: 2, valor: campos.colorCarpinteria },
+    { nombre: 'Correderas', etiqueta: '^Correderas', columna: 2, valor: campos.correderas },
+    { nombre: 'Abatibles', etiqueta: '^Abatibles', columna: 2, valor: campos.abatibles },
+    { nombre: 'Vidrio', etiqueta: '^Vidrio', columna: 2, valor: campos.vidrio },
+    { nombre: 'Persianas', etiqueta: '^Persianas?\\s*:?\\s*$', columna: 2, valor: campos.persianas },
+    { nombre: 'Color Persianas', etiqueta: 'Color Persianas', columna: 2, valor: campos.colorPersianas },
+    { nombre: 'Modelo de Lamas', etiqueta: 'Modelo de Lamas', columna: 2, valor: campos.modeloLamas },
+    { nombre: 'Motor Radio', etiqueta: 'Motor Radio', columna: 2, valor: campos.motorRadio },
+    { nombre: 'Motor mecanico', etiqueta: 'Motor mec', columna: 2, valor: campos.motorMecanico },
+    { nombre: 'Composite', etiqueta: '^Composite', columna: 2, valor: campos.composite },
+    { nombre: 'RAL Silicona', etiqueta: 'RAL Silicona', columna: 2, valor: campos.ralSilicona },
+  ];
+}
+
 // Recorre toda la carpeta de "en estudio" y devuelve una entrada por cada
 // carpeta de obra (Categoria/[Contacto]/Obra), sin bajar a subcarpetas de
 // organización. No filtra por si tiene Enviados o no — eso lo decide
@@ -204,30 +237,10 @@ async function procesarObraInfo(nombreObra, info) {
     .filter((n) => n && n !== campos.numeroPpto);
   const numeroPptoCompleto = [campos.numeroPpto, ...numerosComplementarios].filter(Boolean).join(', ') || null;
 
-  const celdas = {
-    C6: path.basename(info.rutaObra),
-    B8: info.contacto || info.categoria,
-    B11: numeroPptoCompleto,
-    B12: fechaASerialExcel(fechaPdf),
-    B13: campos.carpinteria,
-    B14: campos.proveedor,
-    B15: campos.colorCarpinteria,
-    // B16 (Series) queda sin tocar a propósito: la serie ahora va desglosada
-    // por tipo de apertura en Correderas/Abatibles (pueden ser distintas).
-    B17: campos.correderas,
-    B18: campos.abatibles,
-    B19: campos.vidrio,
-    B20: campos.persianas,
-    B21: campos.colorPersianas,
-    B22: campos.modeloLamas,
-    B23: campos.motorRadio,
-    B24: campos.motorMecanico,
-    B25: campos.composite,
-    B26: campos.ralSilicona,
-  };
+  const camposParaEscribir = construirCampos(info, campos, numeroPptoCompleto, fechaPdf);
 
   const jsonPath = path.join(os.tmpdir(), `ficha_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
-  fs.writeFileSync(jsonPath, JSON.stringify(celdas), 'utf8');
+  fs.writeFileSync(jsonPath, JSON.stringify(camposParaEscribir), 'utf8');
   try {
     execFileSync(
       'powershell.exe',
@@ -245,7 +258,7 @@ async function procesarObraInfo(nombreObra, info) {
     rutaCalculo,
     rutaPdf: principal.ruta,
     complementarios: complementarios.map((c) => path.basename(c.ruta)),
-    celdas,
+    celdas: Object.fromEntries(camposParaEscribir.map((c) => [c.nombre, c.valor])),
   };
 }
 

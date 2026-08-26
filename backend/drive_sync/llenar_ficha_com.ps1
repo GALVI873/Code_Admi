@@ -11,6 +11,15 @@
 # mata el proceso. La unica forma confiable: anotar el PID exacto de la
 # instancia que ESTE script lanza (por diferencia de procesos antes/despues)
 # y matar ESE PID al final, pase lo que pase con el COM.
+#
+# Escritura por ETIQUETA, no por celda fija: la fila de cada campo (Vidrio,
+# Persianas, RAL Silicona, etc.) varia de un Excel a otro -- algunas obras no
+# tienen persianas y esas filas simplemente no existen en su plantilla, asi
+# que todo lo de abajo se corre hacia arriba. Escribir en "B26" a ciegas
+# aterrizaba en la fila equivocada en 13 de 36 obras de un batch real (un
+# caso con perdida real de dato: Vidrio pisado por "SI" de Persianas). Ahora
+# cada entrada trae su propia etiqueta a buscar en la columna A; si no
+# aparece en esa Ficha, se omite (no se inventa una fila).
 param(
   [Parameter(Mandatory=$true)][string]$RutaExcel,
   [Parameter(Mandatory=$true)][string]$RutaJson
@@ -21,6 +30,17 @@ $datos = Get-Content -Raw -Encoding UTF8 $RutaJson | ConvertFrom-Json
 
 function Release-Com($obj) {
   if ($obj) { [System.Runtime.Interopservices.Marshal]::ReleaseComObject($obj) | Out-Null }
+}
+
+# Busca en la columna A (filas 1-60, rango mas que de sobra para la hoja
+# Ficha) la primera fila cuyo texto matchee la regex de etiqueta, y devuelve
+# su numero de fila (1-based) o $null si no aparece.
+function Buscar-FilaPorEtiqueta($ws, [string]$etiquetaRegex) {
+  for ($fila = 1; $fila -le 60; $fila++) {
+    $texto = [string]$ws.Cells.Item($fila, 1).Value2
+    if ($texto -and ($texto.Trim() -match $etiquetaRegex)) { return $fila }
+  }
+  return $null
 }
 
 $pidsAntes = @((Get-Process -Name EXCEL -ErrorAction SilentlyContinue).Id)
@@ -38,11 +58,15 @@ try {
   $wb = $excel.Workbooks.Open($RutaExcel)
   $ws = $wb.Sheets.Item("Ficha")
 
-  foreach ($prop in $datos.PSObject.Properties) {
-    $celda = $prop.Name
-    $valor = $prop.Value
+  foreach ($campo in $datos) {
+    $valor = $campo.valor
     if ($null -eq $valor -or $valor -eq '') { continue }
-    $rango = $ws.Range($celda)
+    $fila = Buscar-FilaPorEtiqueta $ws $campo.etiqueta
+    if ($null -eq $fila) {
+      Write-Output "OMITIDO campo '$($campo.nombre)' (etiqueta '$($campo.etiqueta)' no encontrada en esta Ficha)"
+      continue
+    }
+    $rango = $ws.Cells.Item($fila, $campo.columna)
     try {
       if ($valor -is [int] -or $valor -is [long] -or $valor -is [double]) {
         $rango.Value2 = [double]$valor
@@ -50,7 +74,7 @@ try {
         $rango.Value2 = [string]$valor
       }
     } catch {
-      Write-Output "FALLO en celda $celda (valor=$valor): $($_.Exception.Message)"
+      Write-Output "FALLO en campo $($campo.nombre) (fila=$fila, valor=$valor): $($_.Exception.Message)"
       throw
     } finally {
       Release-Com $rango

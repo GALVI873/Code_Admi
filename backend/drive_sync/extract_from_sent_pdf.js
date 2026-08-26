@@ -271,7 +271,14 @@ function extraerCamposFicha(text) {
   const items = text.split(/(?=\b(?:Ventana|Puerta)\s+(?:oscilobatiente|corredera|abatible|practicable))/i).slice(1);
   const seriesCorrederas = new Set();
   const seriesAbatibles = new Set();
-  const tiposVidrio = new Set();
+  // Map en vez de Set: dos ítems pueden describir el mismo vidrio con
+  // distinta may/minúscula ("Luna de 4 mm" / "luna de 4 mm") — se dedupe
+  // ignorando mayúsculas pero conservando la primera forma vista.
+  const tiposVidrioVistos = new Map();
+  function agregarTipoVidrio(texto) {
+    const clave = texto.toLowerCase();
+    if (!tiposVidrioVistos.has(clave)) tiposVidrioVistos.set(clave, texto);
+  }
   const coloresPersianas = new Set();
   const modelosLamas = new Set();
   let hayPersiana = false;
@@ -284,7 +291,22 @@ function extraerCamposFicha(text) {
   // ni aparecen siempre (ej. "Premarco"/"Cremona" solo en algunos ítems) —
   // sin incluirlas acá se colaban dentro del valor anterior.
   const HASTA_SIGUIENTE_ETIQUETA =
-    '(?=\\s*⦁?\\s*(?:Fabricante:|Serie:|Color:|Ral:|Medida:|Superficie:|Compacto:|Premarco:?|Cremona:?|Maneta:?|Tapajunta:|Metros Cuadrados:|$))';
+    '(?=\\s*⦁?\\s*(?:Fabricante\\s*:|Serie\\s*:|Color\\s*:|Ral\\s*:|Medida\\s*:|Superficie\\s*:|Compacto\\s*:|Premarco\\s*:?|Cremona\\s*:?|Maneta\\s*:?|Tapajunta\\s*:|Metros Cuadrados\\s*:|$))';
+
+  // Algunos PDF traen en "Superficie:" solo la composición del vidrio (ej.
+  // "4 MATE /20/4"), otros la medida y cantidad pegadas a continuación (ej.
+  // "Luna de 4 mm 1,491 × 2,145 m (1 u.)") — mismo texto real del PDF, no un
+  // error de parseo. Solo interesa la composición para ver qué tipos de
+  // vidrio hay, así que se recorta cualquier "NNN × NNN m (N u.)" que
+  // aparezca (y la coma que lo separaba de la composición).
+  const PATRON_MEDIDA_CANTIDAD = /\s*[\d.,]+\s*[×x]\s*[\d.,]+\s*m\.?\s*\(\s*\d+\s*u\.?\)/gi;
+  function soloComposicionVidrio(texto) {
+    return texto
+      .replace(PATRON_MEDIDA_CANTIDAD, ' ')
+      .split(',')
+      .map((parte) => parte.trim().replace(/[()]/g, ''))
+      .filter(Boolean);
+  }
 
   for (const item of items) {
     const serieItem = item
@@ -298,7 +320,7 @@ function extraerCamposFicha(text) {
       .match(new RegExp(`Superficie:\\s*([\\s\\S]*?)${HASTA_SIGUIENTE_ETIQUETA}`, 'i'))?.[1]
       ?.replace(/\s+/g, ' ')
       .trim();
-    if (vidrioItem) tiposVidrio.add(vidrioItem);
+    if (vidrioItem) soloComposicionVidrio(vidrioItem).forEach(agregarTipoVidrio);
 
     const compactoItem = item
       .match(new RegExp(`Compacto:\\s*([\\s\\S]*?)${HASTA_SIGUIENTE_ETIQUETA}`, 'i'))?.[1]
@@ -324,7 +346,7 @@ function extraerCamposFicha(text) {
 
   const correderas = seriesCorrederas.size > 0 ? Array.from(seriesCorrederas).join(', ') : null;
   const abatibles = seriesAbatibles.size > 0 ? Array.from(seriesAbatibles).join(', ') : null;
-  const vidrio = tiposVidrio.size > 0 ? Array.from(tiposVidrio).join(', ') : null;
+  const vidrio = tiposVidrioVistos.size > 0 ? Array.from(tiposVidrioVistos.values()).join(', ') : null;
   const persianas = hayPersiana ? 'SI' : null;
   const colorPersianas = coloresPersianas.size > 0 ? Array.from(coloresPersianas).join(', ') : null;
   const modeloLamas = modelosLamas.size > 0 ? Array.from(modelosLamas).join(', ') : null;
