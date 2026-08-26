@@ -67,6 +67,9 @@ function extraerCampos(filePath) {
   // seguimiento) — mismas etiquetas que ya usa el llenado automático.
   const numeroPpto = findByLabel(ficha, /N.\s*Ppto/i);
   const carpinteria = findByLabel(ficha, /^\s*Carpinteria/i);
+  // Proveedor elegido para la oferta final (ej. "ALUGOM", "CORTIZO") — lo
+  // que Geraldinne pidió ver en el paso "Ofertas" de su línea de tiempo.
+  const proveedor = findByLabel(ficha, /Proveedor/i);
 
   // Maestro: fila "Totales", columna "Uds"
   const maestroHeaderIdx = maestro.findIndex((r) => r.includes('Uds'));
@@ -106,6 +109,7 @@ function extraerCampos(filePath) {
     vidrio: vidrio || null,
     numero_ppto: numeroPpto || null,
     carpinteria: carpinteria || null,
+    proveedor: proveedor || null,
     precio_ultimo_presupuesto: precioPpto,
     porcentaje_ganancia: ganancia,
   };

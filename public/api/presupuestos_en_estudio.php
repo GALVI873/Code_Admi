@@ -50,6 +50,7 @@ try {
           interesante INTEGER NOT NULL DEFAULT 0,
           numero_ppto TEXT,
           carpinteria TEXT,
+          proveedor TEXT,
           fecha_creacion_carpeta TEXT,
           fecha_ultimo_envio TEXT,
           actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
@@ -79,6 +80,9 @@ try {
     }
     if (!in_array('carpinteria', $columnas, true)) {
         $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN carpinteria TEXT');
+    }
+    if (!in_array('proveedor', $columnas, true)) {
+        $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN proveedor TEXT');
     }
     if (!in_array('fecha_creacion_carpeta', $columnas, true)) {
         $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN fecha_creacion_carpeta TEXT');
@@ -231,8 +235,8 @@ try {
         $estatusPreEnvio = "'" . implode("','", ESTATUS_PRE_ENVIO) . "'";
         $stmt = $db->prepare("
             INSERT INTO presupuestos_en_estudio
-                (obra, cliente, estatus, no_ventanas, precio_m2, ral, persiana, vidrio, numero_ppto, carpinteria, precio_ultimo_presupuesto, porcentaje_ganancia, fecha_ultimo_envio, fecha_creacion_carpeta, categoria, contacto, actualizado_en)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                (obra, cliente, estatus, no_ventanas, precio_m2, ral, persiana, vidrio, numero_ppto, carpinteria, proveedor, precio_ultimo_presupuesto, porcentaje_ganancia, fecha_ultimo_envio, fecha_creacion_carpeta, categoria, contacto, actualizado_en)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(obra) DO UPDATE SET
                 cliente = excluded.cliente,
                 estatus = CASE
@@ -247,6 +251,7 @@ try {
                 vidrio = excluded.vidrio,
                 numero_ppto = excluded.numero_ppto,
                 carpinteria = excluded.carpinteria,
+                proveedor = excluded.proveedor,
                 precio_ultimo_presupuesto = excluded.precio_ultimo_presupuesto,
                 porcentaje_ganancia = excluded.porcentaje_ganancia,
                 fecha_ultimo_envio = excluded.fecha_ultimo_envio,
@@ -266,6 +271,7 @@ try {
             $body['vidrio'] ?? null,
             $body['numero_ppto'] ?? null,
             $body['carpinteria'] ?? null,
+            $body['proveedor'] ?? null,
             $body['precio_ultimo_presupuesto'] ?? null,
             $body['porcentaje_ganancia'] ?? null,
             $body['fecha_ultimo_envio'] ?? null,

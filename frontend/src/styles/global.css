@@ -672,43 +672,13 @@ body {
   color: var(--texto);
 }
 
-/* Página Seguimiento (espacio de trabajo de Geraldinne) */
-.seguimiento-lista {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.seguimiento-fila {
-  background: white;
-  border: 1px solid #e3e8f0;
-  border-radius: 10px;
-  padding: 16px 18px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
-}
-
-.seguimiento-fila-header {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
-}
-
-.seguimiento-fila-obra {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--azul);
-}
-
-.seguimiento-fila-cliente {
-  font-size: 12.5px;
-  color: #888;
-}
-
+/* Página Presupuesto (espacio de trabajo de Geraldinne) — reusa
+   obra-card/modal de Presupuestos en Estudio; esto es solo la línea de
+   tiempo que se ve dentro del modal de detalle. */
 .seguimiento-timeline {
   display: flex;
   list-style: none;
+  margin-bottom: 20px;
 }
 
 .seguimiento-paso {
@@ -773,6 +743,13 @@ body {
 .seguimiento-paso-fecha {
   font-size: 11px;
   color: #888;
+}
+
+.seguimiento-paso-detalle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--azul-med);
+  white-space: nowrap;
 }
 
 @media (max-width: 900px) {
