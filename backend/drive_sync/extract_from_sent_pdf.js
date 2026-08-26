@@ -183,6 +183,120 @@ function parseTextoPresupuestoEnviado(text) {
   return { cliente, ral, vidrio, persiana };
 }
 
+// Fabricante -> material de carpintería. No hay una etiqueta explícita en
+// el PDF para esto, así que se infiere del fabricante. Ir completando a
+// medida que aparezcan fabricantes nuevos que no estén acá (quedan en
+// blanco, no se inventa un valor).
+const MATERIAL_POR_FABRICANTE = {
+  deceuninck: 'PVC',
+  deceunick: 'PVC', // así aparece escrito en los PDF de Galvi (con typo)
+  alugom: 'PVC',
+  kommerling: 'PVC',
+  rehau: 'PVC',
+  veka: 'PVC',
+  salamander: 'PVC',
+  cortizo: 'Aluminio',
+  technal: 'Aluminio',
+  schuco: 'Aluminio',
+  reynaers: 'Aluminio',
+  hydro: 'Aluminio',
+};
+
+function normalizarClave(texto) {
+  return texto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+}
+
+// Campos para la hoja "Ficha" del Excel de cálculo (distinto de
+// parseTextoPresupuestoEnviado, que es lo que ya se usa para completar el
+// panel). Mismo documento fuente (el PDF enviado), pero acá se extrae todo
+// el detalle técnico: proveedor, serie, colores, tipo de apertura, motor,
+// etc. Basado en el bloque repetido por cada ventana en el PDF:
+//   ⦁ Fabricante: DECEUNICK
+//   ⦁ Serie: PASIV PLUS THERMOFIBRA
+//   ⦁ Color: LACADO BLANCO
+//   ⦁ Ral: .
+//   ⦁ Superficie: 4 MATE /20/4
+//   Compacto: Cajón monobloc pvc 200mm, lama térmica de aluminio ...
+//     con color de cajón lacado blanco -9010 con color de lamas
+//     lacado blanco -9010, motor via radio
+function extraerCamposFicha(text) {
+  // "A / 202600140 - 1": el "-1" es la versión del presupuesto (un mismo
+  // número puede tener varias versiones), hay que conservarlo — no es un
+  // número puro entonces, se guarda como texto "202600140-1".
+  const numeroMatch = text.match(/PRESUPUESTO\s*N[ºo]:\s*[^\d]*(\d{5,})\s*-\s*(\d+)/i);
+  const numeroPpto = numeroMatch ? `${numeroMatch[1]}-${numeroMatch[2]}` : null;
+
+  const proveedorMatch = text.match(/Fabricante:\s*(.+)/i);
+  const proveedor = proveedorMatch ? proveedorMatch[1].trim() : null;
+
+  const series = (text.match(/Serie:\s*(.+)/i) || [])[1]?.trim() || null;
+  const colorCarpinteria = (text.match(/Color:\s*(.+)/i) || [])[1]?.trim() || null;
+
+  const ralMatch = text.match(/Ral:\s*(.+)/i);
+  const ralTexto = ralMatch ? ralMatch[1].trim() : null;
+  const ralSilicona = ralTexto && ralTexto !== '.' ? ralTexto : null;
+
+  const compactoMatch = text.match(/Compacto:\s*([\s\S]*?)Metros Cuadrados:/i);
+  const compactoTexto = compactoMatch ? compactoMatch[1].replace(/\s+/g, ' ').trim() : null;
+
+  const persianas = compactoTexto ? 'SI' : null;
+  const colorPersianas =
+    (compactoTexto || '').match(/color de lamas\s+([^,]+)/i)?.[1]?.trim() ||
+    (compactoTexto || '').match(/color de caj[oó]n\s+([^,]+)/i)?.[1]?.trim() ||
+    null;
+  // Corta antes del patrón de medidas ("0,480 × 1,180 m"), no en la primera
+  // coma — los números en español usan coma decimal, así que cortar en la
+  // coma partía "aluminio 0,480" a la mitad.
+  const modeloLamas = (compactoTexto || '').match(/lama\s+([^\d]+?)\s*[\d.,]+\s*[×x]\s*[\d.,]+\s*m\b/i)?.[1]?.trim() || null;
+  const motorRadio = /motor\s+v[ií]a?\s*radio/i.test(compactoTexto || '') ? 'SI' : null;
+  const motorMecanico = /motor\s+mec[aá]nico/i.test(compactoTexto || '') ? 'SI' : null;
+  const composite = /composite/i.test(text) ? 'SI' : null;
+
+  // El presupuesto trae un ítem por tipo de ventana, cada uno cerrando con
+  // "Metros Cuadrados:" — se cuenta por ítem (línea del presupuesto), no por
+  // unidad física exacta: un código "V1 - V5" puede representar varias
+  // ventanas iguales agrupadas en un solo ítem, y el texto del PDF no trae
+  // ese desglose de forma parseable.
+  const items = text.split(/Metros Cuadrados:/i).slice(0, -1);
+  let correderasCount = 0;
+  let abatiblesCount = 0;
+  const vidriosPorTipo = new Map();
+  for (const item of items) {
+    if (/corredera/i.test(item)) correderasCount++;
+    if (/oscilobatiente|abatible|practicable/i.test(item)) abatiblesCount++;
+    const vidrioItem = item.match(/Superficie:\s*([^\n⦁]+)/i)?.[1]?.trim();
+    if (vidrioItem) vidriosPorTipo.set(vidrioItem, (vidriosPorTipo.get(vidrioItem) || 0) + 1);
+  }
+  const correderas = correderasCount > 0 ? String(correderasCount) : null;
+  const abatibles = abatiblesCount > 0 ? String(abatiblesCount) : null;
+  const vidrio =
+    vidriosPorTipo.size > 0
+      ? Array.from(vidriosPorTipo.entries())
+          .map(([tipo, cant]) => `${tipo} (x${cant})`)
+          .join(', ')
+      : null;
+
+  const carpinteria = proveedor ? MATERIAL_POR_FABRICANTE[normalizarClave(proveedor)] || null : null;
+
+  return {
+    numeroPpto,
+    proveedor,
+    series,
+    colorCarpinteria,
+    ralSilicona,
+    vidrio,
+    carpinteria,
+    correderas,
+    abatibles,
+    persianas,
+    colorPersianas,
+    modeloLamas,
+    motorRadio,
+    motorMecanico,
+    composite,
+  };
+}
+
 async function extraerRellenoDePdf(archivo, camposFaltantes) {
   const drive = getDrive();
   const buffer = await descargarComoBuffer(drive, archivo.id);
@@ -257,4 +371,5 @@ module.exports = {
   parseTextoPresupuestoEnviado,
   coincideConObra,
   extraerEtiquetaOpcion,
+  extraerCamposFicha,
 };
