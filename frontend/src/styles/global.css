@@ -427,6 +427,7 @@ body {
 }
 
 .obra-card {
+  position: relative;
   background: white;
   border: 1px solid #e3e8f0;
   border-radius: 10px;
@@ -436,7 +437,18 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: box-shadow .15s, transform .15s, border-color .15s;
+  transition: box-shadow .15s, transform .15s, border-color .15s, background .15s;
+}
+
+/* "Pdt Aprobación" sin PDF de respaldo: la tarjeta entera se resalta para
+   que salte a la vista al escanear el grid, no solo un ícono chico. */
+.obra-card-alerta {
+  border-color: #f0b8ab;
+  background: #fffaf9;
+}
+
+.obra-card-alerta:hover {
+  border-color: var(--rojo);
 }
 
 .obra-card:hover {
@@ -483,12 +495,32 @@ body {
   font-weight: 600;
 }
 
-.aviso-sin-envio {
-  flex-shrink: 0;
-  color: var(--naranja);
-  font-size: 14px;
+.obra-card-insignia-alerta {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--rojo);
+  color: white;
+  font-size: 13px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 2px 6px rgba(192, 57, 43, .4);
   cursor: help;
-  align-self: center;
+  animation: pulso-alerta 2s ease-in-out infinite;
+}
+
+@keyframes pulso-alerta {
+  0%, 100% { box-shadow: 0 2px 6px rgba(192, 57, 43, .4), 0 0 0 0 rgba(192, 57, 43, .5); }
+  50% { box-shadow: 0 2px 6px rgba(192, 57, 43, .4), 0 0 0 6px rgba(192, 57, 43, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .obra-card-insignia-alerta { animation: none; }
 }
 
 .modal-aviso {

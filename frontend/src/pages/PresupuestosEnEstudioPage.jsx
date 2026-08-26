@@ -52,10 +52,13 @@ function faltaEnvio(presupuesto) {
   return presupuesto.estatus === 'Pdt Aprobación' && !presupuesto.fecha_ultimo_envio
 }
 
-function AvisoSinEnvio() {
+// Insignia flotante en la esquina de la tarjeta, con pulso animado, para
+// que salte a la vista al escanear el grid completo (no solo un ícono
+// chico junto al select).
+function InsigniaAlerta() {
   return (
     <span
-      className="aviso-sin-envio"
+      className="obra-card-insignia-alerta"
       title="Pdt Aprobación sin ningún presupuesto enviado registrado en Drive"
       onClick={(e) => e.stopPropagation()}
     >
@@ -64,21 +67,18 @@ function AvisoSinEnvio() {
   )
 }
 
-function SelectEstatus({ presupuesto, onCambio, mostrarAviso = true }) {
+function SelectEstatus({ presupuesto, onCambio }) {
   return (
-    <>
-      <select
-        className={`select-inline select-estatus ${CLASE_ESTATUS[presupuesto.estatus] || ''}`}
-        value={presupuesto.estatus}
-        onClick={(e) => e.stopPropagation()}
-        onChange={(e) => onCambio(presupuesto.id, { estatus: e.target.value })}
-      >
-        {ESTATUS_OPCIONES.map((op) => (
-          <option key={op} value={op}>{op}</option>
-        ))}
-      </select>
-      {mostrarAviso && faltaEnvio(presupuesto) && <AvisoSinEnvio />}
-    </>
+    <select
+      className={`select-inline select-estatus ${CLASE_ESTATUS[presupuesto.estatus] || ''}`}
+      value={presupuesto.estatus}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onCambio(presupuesto.id, { estatus: e.target.value })}
+    >
+      {ESTATUS_OPCIONES.map((op) => (
+        <option key={op} value={op}>{op}</option>
+      ))}
+    </select>
   )
 }
 
@@ -104,9 +104,10 @@ function SelectPrioridad({ presupuesto, onCambio, puedeCambiar }) {
 }
 
 function TarjetaObra({ presupuesto, onAbrir, onCambio, puedeCambiarPrioridad }) {
+  const alerta = faltaEnvio(presupuesto)
   return (
     <div
-      className="obra-card"
+      className={`obra-card ${alerta ? 'obra-card-alerta' : ''}`}
       role="button"
       tabIndex={0}
       onClick={() => onAbrir(presupuesto.id)}
@@ -114,6 +115,7 @@ function TarjetaObra({ presupuesto, onAbrir, onCambio, puedeCambiarPrioridad }) 
         if (e.key === 'Enter' || e.key === ' ') onAbrir(presupuesto.id)
       }}
     >
+      {alerta && <InsigniaAlerta />}
       <div className="obra-card-titulo" title={presupuesto.obra}>{presupuesto.obra}</div>
       <div className="obra-card-cliente" title={presupuesto.cliente || ''}>{presupuesto.cliente || 'Sin cliente'}</div>
       <div className="obra-card-meta">
@@ -151,7 +153,7 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad })
         <div className="modal-meta">
           <div className="modal-campo">
             <span>Estatus</span>
-            <SelectEstatus presupuesto={presupuesto} onCambio={onCambio} mostrarAviso={false} />
+            <SelectEstatus presupuesto={presupuesto} onCambio={onCambio} />
           </div>
           <div className="modal-campo">
             <span>Prioridad</span>
