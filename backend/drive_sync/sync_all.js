@@ -106,8 +106,27 @@ function esperar(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Obras marcadas "Descartado" en el panel: ya no interesa mantenerlas al
+// día, ni el trabajo de leer su Excel/PDF ni la escritura al panel. Trae el
+// listado completo con una sola llamada (acción de solo lectura protegida
+// por el mismo SYNC_TOKEN) para poder saltarlas antes de tocar Drive.
+async function obtenerObrasDescartadas() {
+  const url = `${process.env.PANEL_API_URL}/presupuestos_en_estudio.php?token=${process.env.SYNC_TOKEN}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accion: 'listar' }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(JSON.stringify(data));
+  return new Set(data.presupuestos.filter((p) => p.estatus === 'Descartado').map((p) => p.obra));
+}
+
 async function main() {
   const drive = getDrive();
+  const descartadas = await obtenerObrasDescartadas();
+  console.log(`Obras descartadas (se omiten): ${descartadas.size}\n`);
+
   const categorias = await drive.files.list({
     q: `'${process.env.GOOGLE_DRIVE_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
     fields: 'files(id, name)',
@@ -126,6 +145,15 @@ async function main() {
 
   for (const archivo of encontrados) {
     const obra = archivo.obra;
+    // Descartado sin variantes de opción es el caso común: se salta antes
+    // de leer el Excel/PDF. Si la obra tiene opciones ("— Opción A/B"), el
+    // nombre base no va a matchear acá — se filtra más abajo, por variante,
+    // una vez resueltas.
+    if (descartadas.has(obra)) {
+      console.log(`OMITIDA (Descartado): ${obra}`);
+      resultados.omitidos.push({ obra, motivo: 'Descartado' });
+      continue;
+    }
     const tmpPath = path.join(__dirname, `tmp_${archivo.fileId}.xlsx`);
     try {
       const buffer = await descargarComoBuffer(drive, archivo.fileId);
@@ -146,6 +174,13 @@ async function main() {
 
       for (const { sufijo, campos: relleno } of envios) {
         const obraFinal = obra + sufijo;
+        // Igual que arriba, pero por variante: una obra con "Opción A/B"
+        // puede tener una descartada y la otra viva.
+        if (descartadas.has(obraFinal)) {
+          console.log(`OMITIDA (Descartado): ${obraFinal}`);
+          resultados.omitidos.push({ obra: obraFinal, motivo: 'Descartado' });
+          continue;
+        }
         const campos = { ...camposBase, ...relleno };
         // Si hay un envío encontrado, la obra pasa a "Pdt Aprobación"
         // automáticamente (el backend solo aplica este cambio si el estatus
@@ -160,7 +195,7 @@ async function main() {
 
         if (envioDemasiadoAntiguo(campos.fecha_ultimo_envio)) {
           console.log(`OMITIDO (envío de hace más de ${MESES_ANTIGUEDAD_MAXIMA} meses, ${campos.fecha_ultimo_envio}): ${obraFinal}`);
-          resultados.omitidos.push({ obra: obraFinal, fecha_ultimo_envio: campos.fecha_ultimo_envio });
+          resultados.omitidos.push({ obra: obraFinal, motivo: 'envío antiguo', fecha_ultimo_envio: campos.fecha_ultimo_envio });
           continue;
         }
 
@@ -190,9 +225,12 @@ async function main() {
     await esperar(250);
   }
 
+  const omitidosPorMotivo = {};
+  for (const o of resultados.omitidos) omitidosPorMotivo[o.motivo] = (omitidosPorMotivo[o.motivo] || 0) + 1;
+
   console.log(`\n=== Resumen ===`);
   console.log(`OK: ${resultados.ok.length}`);
-  console.log(`Omitidos (envío > ${MESES_ANTIGUEDAD_MAXIMA} meses): ${resultados.omitidos.length}`);
+  console.log(`Omitidos: ${resultados.omitidos.length}`, JSON.stringify(omitidosPorMotivo));
   console.log(`Errores: ${resultados.error.length}`);
   fs.writeFileSync('resultado_sync_all.json', JSON.stringify(resultados, null, 2));
 
