@@ -229,7 +229,6 @@ function extraerCamposFicha(text) {
   const proveedorMatch = text.match(/Fabricante:\s*(.+)/i);
   const proveedor = proveedorMatch ? proveedorMatch[1].trim() : null;
 
-  const series = (text.match(/Serie:\s*(.+)/i) || [])[1]?.trim() || null;
   const colorCarpinteria = (text.match(/Color:\s*(.+)/i) || [])[1]?.trim() || null;
 
   const ralMatch = text.match(/Ral:\s*(.+)/i);
@@ -253,35 +252,31 @@ function extraerCamposFicha(text) {
   const composite = /composite/i.test(text) ? 'SI' : null;
 
   // El presupuesto trae un ítem por tipo de ventana, cada uno cerrando con
-  // "Metros Cuadrados:" — se cuenta por ítem (línea del presupuesto), no por
-  // unidad física exacta: un código "V1 - V5" puede representar varias
-  // ventanas iguales agrupadas en un solo ítem, y el texto del PDF no trae
-  // ese desglose de forma parseable.
+  // "Metros Cuadrados:". "Correderas"/"Abatibles" no son un conteo: llevan
+  // la(s) Serie(s) que se usó para ese tipo de apertura (pueden diferir,
+  // ej. "PASIV PLUS THERMOFIBRA" para las abatibles y "ISLIDE PVC" para las
+  // correderas del mismo presupuesto). "Vidrio" lista los tipos que
+  // aparecen, sin cantidades.
   const items = text.split(/Metros Cuadrados:/i).slice(0, -1);
-  let correderasCount = 0;
-  let abatiblesCount = 0;
-  const vidriosPorTipo = new Map();
+  const seriesCorrederas = new Set();
+  const seriesAbatibles = new Set();
+  const tiposVidrio = new Set();
   for (const item of items) {
-    if (/corredera/i.test(item)) correderasCount++;
-    if (/oscilobatiente|abatible|practicable/i.test(item)) abatiblesCount++;
+    const serieItem = item.match(/Serie:\s*(.+)/i)?.[1]?.trim();
+    if (/corredera/i.test(item) && serieItem) seriesCorrederas.add(serieItem);
+    if (/oscilobatiente|abatible|practicable/i.test(item) && serieItem) seriesAbatibles.add(serieItem);
     const vidrioItem = item.match(/Superficie:\s*([^\n⦁]+)/i)?.[1]?.trim();
-    if (vidrioItem) vidriosPorTipo.set(vidrioItem, (vidriosPorTipo.get(vidrioItem) || 0) + 1);
+    if (vidrioItem) tiposVidrio.add(vidrioItem);
   }
-  const correderas = correderasCount > 0 ? String(correderasCount) : null;
-  const abatibles = abatiblesCount > 0 ? String(abatiblesCount) : null;
-  const vidrio =
-    vidriosPorTipo.size > 0
-      ? Array.from(vidriosPorTipo.entries())
-          .map(([tipo, cant]) => `${tipo} (x${cant})`)
-          .join(', ')
-      : null;
+  const correderas = seriesCorrederas.size > 0 ? Array.from(seriesCorrederas).join(', ') : null;
+  const abatibles = seriesAbatibles.size > 0 ? Array.from(seriesAbatibles).join(', ') : null;
+  const vidrio = tiposVidrio.size > 0 ? Array.from(tiposVidrio).join(', ') : null;
 
   const carpinteria = proveedor ? MATERIAL_POR_FABRICANTE[normalizarClave(proveedor)] || null : null;
 
   return {
     numeroPpto,
     proveedor,
-    series,
     colorCarpinteria,
     ralSilicona,
     vidrio,

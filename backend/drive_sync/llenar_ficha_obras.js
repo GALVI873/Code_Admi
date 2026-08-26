@@ -105,6 +105,28 @@ function elegirPdfEnviadoMasReciente(rutaObra) {
   return pdfs[0];
 }
 
+// Red de seguridad: la automatización COM de Excel desde PowerShell deja
+// procesos zombie con bastante facilidad (ya pasó varias veces durante las
+// pruebas) si queda alguna referencia COM intermedia sin liberar. Un Excel
+// lanzado por automatización siempre corre con el argumento "-Embedding" —
+// una sesión real de alguien abriendo el archivo a mano nunca muestra eso —
+// así que es seguro cerrar cualquiera que quede así después de cada corrida.
+function cerrarExcelHuerfano() {
+  try {
+    execFileSync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-Command',
+        "Get-CimInstance Win32_Process -Filter \"Name='EXCEL.EXE'\" | Where-Object { $_.CommandLine -like '*-Embedding*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+      ],
+      { encoding: 'utf8' },
+    );
+  } catch {
+    // no hay nada que cerrar, o powershell no tenía permiso — no es fatal
+  }
+}
+
 function fechaASerialExcel(fecha) {
   const epoch = Date.UTC(1899, 11, 30);
   return Math.round((Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth(), fecha.getUTCDate()) - epoch) / 86400000);
@@ -133,7 +155,8 @@ async function procesarObra(nombreObra) {
     B13: campos.carpinteria,
     B14: campos.proveedor,
     B15: campos.colorCarpinteria,
-    B16: campos.series,
+    // B16 (Series) queda sin tocar a propósito: la serie ahora va desglosada
+    // por tipo de apertura en Correderas/Abatibles (pueden ser distintas).
     B17: campos.correderas,
     B18: campos.abatibles,
     B19: campos.vidrio,
@@ -156,6 +179,7 @@ async function procesarObra(nombreObra) {
     );
   } finally {
     fs.unlinkSync(jsonPath);
+    cerrarExcelHuerfano();
   }
 
   return { obra: nombreObra, ok: true, rutaCalculo, rutaPdf, celdas };
