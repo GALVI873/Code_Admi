@@ -20,6 +20,7 @@ const MOCK_USUARIOS = {
       'presupuestos.crear', 'presupuestos.ver_propios', 'presupuestos.ver_todos',
       'presupuestos.editar', 'presupuestos.enviar', 'presupuestos.aprobar',
       'presupuestos.reemplazar_version', 'usuarios.gestionar',
+      'presupuestos.gestionar_prioridad', 'presupuestos.marcar_interesante',
     ],
   },
   presupuestos: {

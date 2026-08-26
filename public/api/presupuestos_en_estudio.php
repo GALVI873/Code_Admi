@@ -8,8 +8,9 @@ declare(strict_types=1);
 // filas (lectura administrativa, sin sesión). Con {accion:"marcar_estatus",
 // obras:[...], estatus:"..."} hace limpieza en bloque (pisa el estatus sin
 // importar cuál tenía, a diferencia del upsert).
-// PATCH: cambia prioridad y/o estatus:
+// PATCH: cambia prioridad, interesante y/o estatus:
 //   - "prioridad" requiere el permiso presupuestos.gestionar_prioridad (solo admin).
+//   - "interesante" requiere presupuestos.marcar_interesante (solo admin — Álvaro/Valentina).
 //   - "estatus" requiere presupuestos.ver_todos (cualquiera que pueda ver la tabla).
 // DELETE: protegido por SYNC_TOKEN igual que POST. Con {obras:[...]} borra esas
 // filas puntuales sin importar su estatus; con {obras_activas:[...]} reconcilia
@@ -46,6 +47,7 @@ try {
           precio_ultimo_presupuesto REAL,
           porcentaje_ganancia REAL,
           prioridad TEXT NOT NULL DEFAULT 'Normal',
+          interesante INTEGER NOT NULL DEFAULT 0,
           fecha_ultimo_envio TEXT,
           actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
@@ -66,6 +68,9 @@ try {
     if (!in_array('contacto', $columnas, true)) {
         $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN contacto TEXT');
     }
+    if (!in_array('interesante', $columnas, true)) {
+        $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN interesante INTEGER NOT NULL DEFAULT 0');
+    }
 
     // Renombre de estatus: "Seguimiento" pasó a llamarse "Pdt Aprobación"
     // (mismo significado, nombre más preciso). No afecta filas nuevas, solo
@@ -79,6 +84,15 @@ try {
         INSERT OR IGNORE INTO rol_permisos (rol_id, permiso_id)
         SELECT r.id, p.id FROM roles r, permisos p
         WHERE r.nombre = 'admin' AND p.clave = 'presupuestos.gestionar_prioridad'
+    ");
+
+    // Marcar obras de alto interés (estrella de favorito) — exclusivo de
+    // Álvaro y Valentina, ambos con rol admin, igual que gestionar_prioridad.
+    $db->exec("INSERT OR IGNORE INTO permisos (clave, descripcion) VALUES ('presupuestos.marcar_interesante', 'Marcar un presupuesto en estudio como de alto interés')");
+    $db->exec("
+        INSERT OR IGNORE INTO rol_permisos (rol_id, permiso_id)
+        SELECT r.id, p.id FROM roles r, permisos p
+        WHERE r.nombre = 'admin' AND p.clave = 'presupuestos.marcar_interesante'
     ");
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -109,6 +123,13 @@ try {
             }
             $db->prepare("UPDATE presupuestos_en_estudio SET prioridad = ?, actualizado_en = datetime('now') WHERE id = ?")
                 ->execute([$prioridad, $id]);
+        }
+
+        if (array_key_exists('interesante', $body)) {
+            AuthMiddleware::requierePermiso($usuario, 'presupuestos.marcar_interesante');
+            $interesante = $body['interesante'] ? 1 : 0;
+            $db->prepare("UPDATE presupuestos_en_estudio SET interesante = ?, actualizado_en = datetime('now') WHERE id = ?")
+                ->execute([$interesante, $id]);
         }
 
         if (array_key_exists('estatus', $body)) {

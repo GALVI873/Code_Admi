@@ -103,7 +103,27 @@ function SelectPrioridad({ presupuesto, onCambio, puedeCambiar }) {
   )
 }
 
-function TarjetaObra({ presupuesto, onAbrir, onCambio, puedeCambiarPrioridad }) {
+// Estrella para marcar una obra de alto interés — exclusiva de Álvaro y
+// Valentina (permiso presupuestos.marcar_interesante). Para cualquier otro
+// usuario ni siquiera se renderiza, no solo se deshabilita.
+function BotonInteresante({ presupuesto, onCambio, puedeMarcar }) {
+  if (!puedeMarcar) return null
+  return (
+    <button
+      type="button"
+      className={`obra-card-interesante ${presupuesto.interesante ? 'obra-card-interesante-activo' : ''}`}
+      title={presupuesto.interesante ? 'Quitar de alto interés' : 'Marcar como alto interés'}
+      onClick={(e) => {
+        e.stopPropagation()
+        onCambio(presupuesto.id, { interesante: !presupuesto.interesante })
+      }}
+    >
+      {presupuesto.interesante ? '★' : '☆'}
+    </button>
+  )
+}
+
+function TarjetaObra({ presupuesto, onAbrir, onCambio, puedeCambiarPrioridad, puedeMarcarInteresante }) {
   const alerta = faltaEnvio(presupuesto)
   return (
     <div
@@ -116,6 +136,7 @@ function TarjetaObra({ presupuesto, onAbrir, onCambio, puedeCambiarPrioridad }) 
       }}
     >
       {alerta && <InsigniaAlerta />}
+      <BotonInteresante presupuesto={presupuesto} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
       <div className="obra-card-titulo" title={presupuesto.obra}>{presupuesto.obra}</div>
       <div className="obra-card-cliente" title={presupuesto.cliente || ''}>{presupuesto.cliente || 'Sin cliente'}</div>
       <div className="obra-card-meta">
@@ -126,7 +147,7 @@ function TarjetaObra({ presupuesto, onAbrir, onCambio, puedeCambiarPrioridad }) 
   )
 }
 
-function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad }) {
+function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, puedeMarcarInteresante }) {
   useEffect(() => {
     function alEscape(e) {
       if (e.key === 'Escape') onCerrar()
@@ -143,7 +164,10 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad })
             <h2>{presupuesto.obra}</h2>
             <p>{presupuesto.cliente || 'Sin cliente'}</p>
           </div>
-          <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
+          <div className="modal-header-acciones">
+            <BotonInteresante presupuesto={presupuesto} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
+            <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
+          </div>
         </div>
 
         {faltaEnvio(presupuesto) && (
@@ -187,6 +211,7 @@ export default function PresupuestosEnEstudioPage() {
   const [filtroEstatus, setFiltroEstatus] = useState('Todos')
   const [obraSeleccionadaId, setObraSeleccionadaId] = useState(null)
   const puedeCambiarPrioridad = tienePermiso('presupuestos.gestionar_prioridad')
+  const puedeMarcarInteresante = tienePermiso('presupuestos.marcar_interesante')
 
   useEffect(() => {
     presupuestosEnEstudio(accessToken)
@@ -349,6 +374,7 @@ export default function PresupuestosEnEstudioPage() {
                     onAbrir={setObraSeleccionadaId}
                     onCambio={handleCambio}
                     puedeCambiarPrioridad={puedeCambiarPrioridad}
+                    puedeMarcarInteresante={puedeMarcarInteresante}
                   />
                 ))}
               </div>
@@ -366,6 +392,7 @@ export default function PresupuestosEnEstudioPage() {
           onCerrar={() => setObraSeleccionadaId(null)}
           onCambio={handleCambio}
           puedeCambiarPrioridad={puedeCambiarPrioridad}
+          puedeMarcarInteresante={puedeMarcarInteresante}
         />
       )}
     </div>
