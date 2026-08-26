@@ -235,42 +235,74 @@ function extraerCamposFicha(text) {
   const ralTexto = ralMatch ? ralMatch[1].trim() : null;
   const ralSilicona = ralTexto && ralTexto !== '.' ? ralTexto : null;
 
-  const compactoMatch = text.match(/Compacto:\s*([\s\S]*?)Metros Cuadrados:/i);
-  const compactoTexto = compactoMatch ? compactoMatch[1].replace(/\s+/g, ' ').trim() : null;
-
-  const persianas = compactoTexto ? 'SI' : null;
-  const colorPersianas =
-    (compactoTexto || '').match(/color de lamas\s+([^,]+)/i)?.[1]?.trim() ||
-    (compactoTexto || '').match(/color de caj[oó]n\s+([^,]+)/i)?.[1]?.trim() ||
-    null;
-  // Corta antes del patrón de medidas ("0,480 × 1,180 m"), no en la primera
-  // coma — los números en español usan coma decimal, así que cortar en la
-  // coma partía "aluminio 0,480" a la mitad.
-  const modeloLamas = (compactoTexto || '').match(/lama\s+([^\d]+?)\s*[\d.,]+\s*[×x]\s*[\d.,]+\s*m\b/i)?.[1]?.trim() || null;
-  const motorRadio = /motor\s+v[ií]a?\s*radio/i.test(compactoTexto || '') ? 'SI' : null;
-  const motorMecanico = /motor\s+mec[aá]nico/i.test(compactoTexto || '') ? 'SI' : null;
   const composite = /composite/i.test(text) ? 'SI' : null;
 
-  // El presupuesto trae un ítem por tipo de ventana, cada uno cerrando con
-  // "Metros Cuadrados:". "Correderas"/"Abatibles" no son un conteo: llevan
-  // la(s) Serie(s) que se usó para ese tipo de apertura (pueden diferir,
-  // ej. "PASIV PLUS THERMOFIBRA" para las abatibles y "ISLIDE PVC" para las
+  // El presupuesto trae un ítem por tipo de ventana. Se separa por el
+  // comienzo de cada ítem ("Ventana .../Puerta ...oscilobatiente/corredera/
+  // abatible/practicable"), no por el cierre — hay al menos dos plantillas
+  // distintas en uso (una cierra cada ítem con "Metros Cuadrados:", otra con
+  // "Tapajunta:" y sin línea de m²), y el comienzo es lo único consistente
+  // entre ambas. "Correderas"/"Abatibles" no son un conteo: llevan la(s)
+  // Serie(s) que se usó para ese tipo de apertura (pueden diferir, ej.
+  // "PASIV PLUS THERMOFIBRA" para las abatibles y "ISLIDE PVC" para las
   // correderas del mismo presupuesto). "Vidrio" lista los tipos que
   // aparecen, sin cantidades.
-  const items = text.split(/Metros Cuadrados:/i).slice(0, -1);
+  const items = text.split(/(?=\b(?:Ventana|Puerta)\s+(?:oscilobatiente|corredera|abatible|practicable))/i).slice(1);
   const seriesCorrederas = new Set();
   const seriesAbatibles = new Set();
   const tiposVidrio = new Set();
+  const coloresPersianas = new Set();
+  const modelosLamas = new Set();
+  let hayPersiana = false;
+  let hayMotorRadio = false;
+  let hayMotorMecanico = false;
+
+  // Etiqueta siguiente conocida — corta ahí en vez de en el primer salto de
+  // línea, porque varios valores (Superficie, Compacto) envuelven a la
+  // línea siguiente en algunos formatos de PDF.
+  const HASTA_SIGUIENTE_ETIQUETA = '(?=\\s*⦁?\\s*(?:Compacto:|Tapajunta:|Metros Cuadrados:|Fabricante:|$))';
+
   for (const item of items) {
     const serieItem = item.match(/Serie:\s*(.+)/i)?.[1]?.trim();
     if (/corredera/i.test(item) && serieItem) seriesCorrederas.add(serieItem);
     if (/oscilobatiente|abatible|practicable/i.test(item) && serieItem) seriesAbatibles.add(serieItem);
-    const vidrioItem = item.match(/Superficie:\s*([^\n⦁]+)/i)?.[1]?.trim();
+
+    const vidrioItem = item
+      .match(new RegExp(`Superficie:\\s*([\\s\\S]*?)${HASTA_SIGUIENTE_ETIQUETA}`, 'i'))?.[1]
+      ?.replace(/\s+/g, ' ')
+      .trim();
     if (vidrioItem) tiposVidrio.add(vidrioItem);
+
+    const compactoItem = item
+      .match(/Compacto:\s*([\s\S]*?)(?=\s*⦁?\s*(?:Tapajunta:|Metros Cuadrados:|$))/i)?.[1]
+      ?.replace(/\s+/g, ' ')
+      .trim();
+    if (compactoItem) {
+      hayPersiana = true;
+      const color =
+        // Corta en la coma si hay, o antes de " con " (ej. "...-9010 con
+        // motor via radio") — no siempre hay coma después del color.
+        compactoItem.match(/color de lamas\s+([^,]+?)(?=,|\s+con\s|$)/i)?.[1]?.trim() ||
+        compactoItem.match(/color de caj[oó]n\s+([^,]+?)(?=,|\s+con\s|$)/i)?.[1]?.trim();
+      if (color) coloresPersianas.add(color);
+      // Corta antes del patrón de medidas ("0,480 × 1,180 m"), no en la
+      // primera coma — los números en español usan coma decimal, así que
+      // cortar en la coma partía "aluminio 0,480" a la mitad.
+      const modelo = compactoItem.match(/lama\s+([^\d]+?)\s*[\d.,]+\s*[×x]\s*[\d.,]+\s*m\b/i)?.[1]?.trim();
+      if (modelo) modelosLamas.add(modelo);
+      if (/motor\s+v[ií]a?\s*radio/i.test(compactoItem)) hayMotorRadio = true;
+      if (/motor\s+mec[aá]nico/i.test(compactoItem)) hayMotorMecanico = true;
+    }
   }
+
   const correderas = seriesCorrederas.size > 0 ? Array.from(seriesCorrederas).join(', ') : null;
   const abatibles = seriesAbatibles.size > 0 ? Array.from(seriesAbatibles).join(', ') : null;
   const vidrio = tiposVidrio.size > 0 ? Array.from(tiposVidrio).join(', ') : null;
+  const persianas = hayPersiana ? 'SI' : null;
+  const colorPersianas = coloresPersianas.size > 0 ? Array.from(coloresPersianas).join(', ') : null;
+  const modeloLamas = modelosLamas.size > 0 ? Array.from(modelosLamas).join(', ') : null;
+  const motorRadio = hayMotorRadio ? 'SI' : null;
+  const motorMecanico = hayMotorMecanico ? 'SI' : null;
 
   const carpinteria = proveedor ? MATERIAL_POR_FABRICANTE[normalizarClave(proveedor)] || null : null;
 
