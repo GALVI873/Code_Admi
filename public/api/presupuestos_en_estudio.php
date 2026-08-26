@@ -1,17 +1,20 @@
 <?php
 declare(strict_types=1);
 
-// GET: lista los presupuestos en estudio (requiere sesión + permiso presupuestos.ver_todos).
+// GET: lista los presupuestos en estudio (requiere sesión + presupuestos.ver_todos
+// o presupuestos.ver_seguimiento).
 // POST: upsert de un registro, usado por el proceso de sincronización con Drive
 // (protegido por SYNC_TOKEN, no por sesión de usuario — es máquina a máquina).
 // Con {accion:"listar"} devuelve obra/estatus/fecha_ultimo_envio de todas las
 // filas (lectura administrativa, sin sesión). Con {accion:"marcar_estatus",
 // obras:[...], estatus:"..."} hace limpieza en bloque (pisa el estatus sin
-// importar cuál tenía, a diferencia del upsert).
+// importar cuál tenía, a diferencia del upsert). Con
+// {accion:"reemplazar_ofertas", obra:"...", ofertas:[...]}  reemplaza todas
+// las ofertas de proveedor de esa obra (leídas de su carpeta "Valoración").
 // PATCH: cambia prioridad, interesante y/o estatus:
 //   - "prioridad" requiere el permiso presupuestos.gestionar_prioridad (solo admin).
 //   - "interesante" requiere presupuestos.marcar_interesante (solo admin — Álvaro/Valentina).
-//   - "estatus" requiere presupuestos.ver_todos (cualquiera que pueda ver la tabla).
+//   - "estatus" requiere ver_todos o ver_seguimiento (cualquiera que pueda ver la tabla).
 // DELETE: protegido por SYNC_TOKEN igual que POST. Con {obras:[...]} borra esas
 // filas puntuales sin importar su estatus; con {obras_activas:[...]} reconcilia
 // tras un sync (borra lo que no está en la lista, solo en estatus por defecto).
@@ -53,6 +56,22 @@ try {
           proveedor TEXT,
           fecha_creacion_carpeta TEXT,
           fecha_ultimo_envio TEXT,
+          actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    ");
+
+    // Ofertas de proveedor leídas de la carpeta "Valoración" de cada obra —
+    // relación 1 a N (una obra puede tener varias, una por proveedor
+    // consultado). Se reemplazan completas por obra en cada sync, no se
+    // actualizan fila por fila.
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS ofertas_proveedor (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          obra TEXT NOT NULL,
+          proveedor TEXT,
+          valor REAL,
+          fecha TEXT,
+          archivo TEXT,
           actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
     ");
@@ -138,7 +157,8 @@ try {
         // (fecha_ultimo_envio NULL) quedan al final (SQLite ordena NULL como
         // el valor más chico, así que en DESC caen últimas).
         $stmt = $db->query('SELECT * FROM presupuestos_en_estudio ORDER BY fecha_ultimo_envio DESC');
-        Response::json(['presupuestos' => $stmt->fetchAll()]);
+        $ofertas = $db->query('SELECT * FROM ofertas_proveedor ORDER BY obra, fecha DESC')->fetchAll();
+        Response::json(['presupuestos' => $stmt->fetchAll(), 'ofertas' => $ofertas]);
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'PATCH') {
@@ -168,7 +188,7 @@ try {
         }
 
         if (array_key_exists('estatus', $body)) {
-            AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_todos');
+            AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento']);
             $estatus = trim((string) $body['estatus']);
             if (!in_array($estatus, ESTATUS_VALIDOS, true)) {
                 Response::error('"estatus" debe ser una de: ' . implode(', ', ESTATUS_VALIDOS), 422);
@@ -194,6 +214,33 @@ try {
         if (($body['accion'] ?? '') === 'listar') {
             $stmt = $db->query('SELECT * FROM presupuestos_en_estudio');
             Response::json(['presupuestos' => $stmt->fetchAll()]);
+        }
+
+        // Reemplaza completas las ofertas de proveedor de una obra (todo lo
+        // leído de su carpeta "Valoración" en este sync) — no un upsert fila
+        // por fila, porque no hay una clave estable entre corridas (un
+        // proveedor puede volver a cotizar con otro archivo).
+        if (($body['accion'] ?? '') === 'reemplazar_ofertas') {
+            $obra = trim((string) ($body['obra'] ?? ''));
+            $ofertas = $body['ofertas'] ?? null;
+            if ($obra === '' || !is_array($ofertas)) {
+                Response::error('Faltan "obra" y/o "ofertas" (array)', 422);
+            }
+            $db->prepare('DELETE FROM ofertas_proveedor WHERE obra = ?')->execute([$obra]);
+            $stmt = $db->prepare("
+                INSERT INTO ofertas_proveedor (obra, proveedor, valor, fecha, archivo, actualizado_en)
+                VALUES (?, ?, ?, ?, ?, datetime('now'))
+            ");
+            foreach ($ofertas as $oferta) {
+                $stmt->execute([
+                    $obra,
+                    $oferta['proveedor'] ?? null,
+                    $oferta['valor'] ?? null,
+                    $oferta['fecha'] ?? null,
+                    $oferta['archivo'] ?? null,
+                ]);
+            }
+            Response::json(['ok' => true, 'guardadas' => count($ofertas)]);
         }
 
         // Modo administrativo (limpieza en bloque, ej. descartar obras

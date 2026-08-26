@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { presupuestosEnEstudio } from '../api/client.js'
+import { presupuestosEnEstudio, actualizarPresupuestoEnEstudio } from '../api/client.js'
 
 // Espacio de trabajo personal de Geraldinne. Nunca muestra Descartadas —a
 // diferencia de Presupuestos en Estudio, acá ni siquiera es una opción de
@@ -65,38 +65,87 @@ function construirPasos(p) {
       // Según la entrevista: Geraldinne pide precios a varios proveedores
       // por tipo de material y arma la propuesta final con la oferta más
       // alta o más completa (margen para negociar con el cliente, no un
-      // error) — por eso acá interesa mostrar qué proveedor quedó elegido
-      // y el valor total de esa oferta, no solo si se envió o no.
+      // error). Un mismo presupuesto puede tener varias ofertas de
+      // proveedor (una carpeta "Valoración" con varios PDF) — por eso este
+      // paso es desplegable en vez de mostrar un solo dato.
       clave: 'ofertas',
       etiqueta: 'Ofertas',
       hecho: tieneOfertas,
       fecha: formatoFecha(p.fecha_ultimo_envio),
-      detalle: tieneOfertas
-        ? `${p.proveedor || 'Proveedor sin dato'} — ${formatoMoneda(p.precio_ultimo_presupuesto)}`
-        : null,
+      desplegable: true,
     },
   ]
 }
 
-function LineaTiempo({ presupuesto }) {
-  const pasos = construirPasos(presupuesto)
+function ListaOfertas({ ofertas }) {
+  if (ofertas.length === 0) {
+    return <p className="seguimiento-ofertas-vacio">No se detectaron ofertas de proveedor en la carpeta "Valoración" de esta obra.</p>
+  }
   return (
-    <ol className="seguimiento-timeline">
-      {pasos.map((paso, i) => (
-        <li key={paso.clave} className={`seguimiento-paso ${paso.hecho ? 'seguimiento-paso-hecho' : 'seguimiento-paso-pendiente'}`}>
-          <div className="seguimiento-paso-punto">{paso.hecho ? '✓' : i + 1}</div>
-          <div className="seguimiento-paso-texto">
-            <span className="seguimiento-paso-etiqueta">{paso.etiqueta}</span>
-            {paso.fecha && <span className="seguimiento-paso-fecha">{paso.fecha}</span>}
-            {paso.detalle && <span className="seguimiento-paso-detalle">{paso.detalle}</span>}
-          </div>
+    <ul className="seguimiento-ofertas-lista">
+      {ofertas.map((o) => (
+        <li key={o.id} className="seguimiento-oferta-item">
+          <span className="seguimiento-oferta-proveedor">{o.proveedor || 'Proveedor sin detectar'}</span>
+          <span className="seguimiento-oferta-valor">{o.valor != null ? formatoMoneda(o.valor) : 'Valor sin detectar'}</span>
+          <span className="seguimiento-oferta-fecha">{formatoFecha(o.fecha) || 'Sin fecha'}</span>
+          <span className="seguimiento-oferta-archivo" title={o.archivo}>{o.archivo}</span>
         </li>
       ))}
-    </ol>
+    </ul>
   )
 }
 
-function TarjetaSeguimiento({ presupuesto, onAbrir }) {
+function LineaTiempo({ presupuesto, ofertas }) {
+  const pasos = construirPasos(presupuesto)
+  const [ofertasAbiertas, setOfertasAbiertas] = useState(false)
+
+  return (
+    <>
+      <ol className="seguimiento-timeline">
+        {pasos.map((paso, i) => (
+          <li
+            key={paso.clave}
+            className={`seguimiento-paso ${paso.hecho ? 'seguimiento-paso-hecho' : 'seguimiento-paso-pendiente'} ${paso.desplegable ? 'seguimiento-paso-clicable' : ''}`}
+            onClick={paso.desplegable ? () => setOfertasAbiertas((v) => !v) : undefined}
+            role={paso.desplegable ? 'button' : undefined}
+            tabIndex={paso.desplegable ? 0 : undefined}
+          >
+            <div className="seguimiento-paso-punto">{paso.hecho ? '✓' : i + 1}</div>
+            <div className="seguimiento-paso-texto">
+              <span className="seguimiento-paso-etiqueta">
+                {paso.etiqueta}
+                {paso.desplegable && <span className="seguimiento-paso-flecha">{ofertasAbiertas ? ' ▲' : ' ▼'}</span>}
+              </span>
+              {paso.fecha && <span className="seguimiento-paso-fecha">{paso.fecha}</span>}
+            </div>
+          </li>
+        ))}
+      </ol>
+      {ofertasAbiertas && (
+        <div className="seguimiento-ofertas-panel">
+          <ListaOfertas ofertas={ofertas} />
+        </div>
+      )}
+    </>
+  )
+}
+
+function SelectEstatus({ presupuesto, onCambio }) {
+  return (
+    <select
+      className={`select-inline select-estatus ${CLASE_ESTATUS[presupuesto.estatus] || ''}`}
+      value={presupuesto.estatus}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onCambio(presupuesto.id, { estatus: e.target.value })}
+    >
+      {ESTATUS_OPCIONES.map((op) => (
+        <option key={op} value={op}>{op}</option>
+      ))}
+    </select>
+  )
+}
+
+function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio }) {
   return (
     <div
       className="obra-card"
@@ -110,15 +159,13 @@ function TarjetaSeguimiento({ presupuesto, onAbrir }) {
       <div className="obra-card-titulo" title={presupuesto.obra}>{presupuesto.obra}</div>
       <div className="obra-card-cliente" title={presupuesto.cliente || ''}>{presupuesto.cliente || 'Sin cliente'}</div>
       <div className="obra-card-meta">
-        <span className={`select-inline select-estatus ${CLASE_ESTATUS[presupuesto.estatus] || ''}`}>
-          {presupuesto.estatus}
-        </span>
+        <SelectEstatus presupuesto={presupuesto} onCambio={onCambio} />
       </div>
     </div>
   )
 }
 
-function DetalleSeguimiento({ presupuesto, onCerrar }) {
+function DetalleSeguimiento({ presupuesto, ofertas, onCerrar, onCambio }) {
   useEffect(() => {
     function alEscape(e) {
       if (e.key === 'Escape') onCerrar()
@@ -138,10 +185,16 @@ function DetalleSeguimiento({ presupuesto, onCerrar }) {
           <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
         </div>
 
-        <LineaTiempo presupuesto={presupuesto} />
+        <div className="modal-meta">
+          <div className="modal-campo">
+            <span>Estatus</span>
+            <SelectEstatus presupuesto={presupuesto} onCambio={onCambio} />
+          </div>
+        </div>
+
+        <LineaTiempo presupuesto={presupuesto} ofertas={ofertas} />
 
         <dl className="modal-detalle">
-          <div><dt>Estatus</dt><dd>{presupuesto.estatus}</dd></div>
           <div><dt>Nº Ppto</dt><dd>{presupuesto.numero_ppto || '—'}</dd></div>
           <div><dt>Nº Ventanas</dt><dd>{presupuesto.no_ventanas ?? '—'}</dd></div>
           <div><dt>Carpintería</dt><dd>{presupuesto.carpinteria || '—'}</dd></div>
@@ -163,6 +216,7 @@ function DetalleSeguimiento({ presupuesto, onCerrar }) {
 export default function SeguimientoPage() {
   const { usuario, accessToken } = useAuth()
   const [filas, setFilas] = useState([])
+  const [ofertas, setOfertas] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [busquedaObra, setBusquedaObra] = useState('')
@@ -173,7 +227,10 @@ export default function SeguimientoPage() {
 
   useEffect(() => {
     presupuestosEnEstudio(accessToken)
-      .then((data) => setFilas(data.presupuestos))
+      .then((data) => {
+        setFilas(data.presupuestos)
+        setOfertas(data.ofertas || [])
+      })
       .catch((err) => setError(err.message))
       .finally(() => setCargando(false))
   }, [accessToken])
@@ -206,6 +263,20 @@ export default function SeguimientoPage() {
   }
 
   const obraSeleccionada = filas.find((p) => p.id === obraSeleccionadaId) || null
+  const ofertasDeSeleccionada = obraSeleccionada
+    ? ofertas.filter((o) => o.obra === obraSeleccionada.obra)
+    : []
+
+  async function handleCambio(id, cambios) {
+    const anteriores = filas
+    setFilas((f) => f.map((p) => (p.id === id ? { ...p, ...cambios } : p)))
+    try {
+      await actualizarPresupuestoEnEstudio(accessToken, id, cambios)
+    } catch (err) {
+      setFilas(anteriores)
+      setError(err.message)
+    }
+  }
 
   if (usuario?.email !== EMAIL_AUTORIZADO) {
     return (
@@ -295,13 +366,18 @@ export default function SeguimientoPage() {
       {!cargando && !error && filasFiltradas.length > 0 && (
         <div className="obras-grid">
           {filasFiltradas.map((p) => (
-            <TarjetaSeguimiento key={p.id} presupuesto={p} onAbrir={setObraSeleccionadaId} />
+            <TarjetaSeguimiento key={p.id} presupuesto={p} onAbrir={setObraSeleccionadaId} onCambio={handleCambio} />
           ))}
         </div>
       )}
 
       {obraSeleccionada && (
-        <DetalleSeguimiento presupuesto={obraSeleccionada} onCerrar={() => setObraSeleccionadaId(null)} />
+        <DetalleSeguimiento
+          presupuesto={obraSeleccionada}
+          ofertas={ofertasDeSeleccionada}
+          onCerrar={() => setObraSeleccionadaId(null)}
+          onCambio={handleCambio}
+        />
       )}
     </div>
   )
