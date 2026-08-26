@@ -4,9 +4,13 @@
 # del libro (con SheetJS un simple ida-y-vuelta sin cambios infla el archivo
 # de 149 KB a 5.4 MB).
 #
-# Importante: libera CADA objeto COM (Range, Sheet, Workbook, Application) o
-# Excel queda como proceso zombie con el archivo bloqueado -- eso ya causo
-# que una segunda corrida escribiera sobre una sesion vieja sin persistir.
+# Limpieza de proceso: ni liberar cada objeto COM ni matar por texto de la
+# linea de comando alcanza -- una vez que el workbook queda abierto, Windows
+# reporta la ruta del archivo en vez de "-Embedding" (asi que ese filtro de
+# texto ya no lo distingue de una sesion real), y liberar los COM no siempre
+# mata el proceso. La unica forma confiable: anotar el PID exacto de la
+# instancia que ESTE script lanza (por diferencia de procesos antes/despues)
+# y matar ESE PID al final, pase lo que pase con el COM.
 param(
   [Parameter(Mandatory=$true)][string]$RutaExcel,
   [Parameter(Mandatory=$true)][string]$RutaJson
@@ -19,7 +23,13 @@ function Release-Com($obj) {
   if ($obj) { [System.Runtime.Interopservices.Marshal]::ReleaseComObject($obj) | Out-Null }
 }
 
+$pidsAntes = @((Get-Process -Name EXCEL -ErrorAction SilentlyContinue).Id)
+
 $excel = New-Object -ComObject Excel.Application
+Start-Sleep -Milliseconds 300
+$pidsDespues = @((Get-Process -Name EXCEL -ErrorAction SilentlyContinue).Id)
+$miPid = $pidsDespues | Where-Object { $pidsAntes -notcontains $_ } | Select-Object -First 1
+
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
 $wb = $null
@@ -53,9 +63,15 @@ try {
   Release-Com $ws
   if ($wb) { $wb.Close($false) }
   Release-Com $wb
-  $excel.Quit()
+  try { $excel.Quit() } catch {}
   Release-Com $excel
   Remove-Variable excel, wb, ws -ErrorAction SilentlyContinue
   [System.GC]::Collect()
   [System.GC]::WaitForPendingFinalizers()
+
+  if ($miPid) {
+    Start-Sleep -Milliseconds 500
+    $sigueVivo = Get-Process -Id $miPid -ErrorAction SilentlyContinue
+    if ($sigueVivo) { Stop-Process -Id $miPid -Force -ErrorAction SilentlyContinue }
+  }
 }
