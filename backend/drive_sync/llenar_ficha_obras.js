@@ -217,10 +217,17 @@ async function procesarObra(nombreObra) {
 }
 
 async function main() {
-  const args = process.argv.slice(2);
+  let args = process.argv.slice(2);
   if (args.length === 0) {
-    console.error('Uso: node llenar_ficha_obras.js "Obra 1" "Obra 2" ...  (o --todas)');
+    console.error('Uso: node llenar_ficha_obras.js "Obra 1" "Obra 2" ...  (o --todas, o --lista archivo.json)');
     process.exit(1);
+  }
+
+  // --lista evita problemas de escapado de acentos/comas por consola: el
+  // archivo es un array JSON de nombres de obra, ej. ["Prado Jerez", ...].
+  if (args[0] === '--lista') {
+    const nombres = JSON.parse(fs.readFileSync(args[1], 'utf8'));
+    args = nombres;
   }
 
   const resultados = { ok: [], omitidas: [] };
