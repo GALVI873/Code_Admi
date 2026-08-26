@@ -4,7 +4,6 @@ import { useAuth, MOCK_AUTH } from '../context/AuthContext.jsx'
 // Cada módulo de departamento agrega su entrada aquí cuando se construya
 // (Gestión de Obras, Transporte, etc.) — el filtro por permiso ya queda listo.
 const NAV_ITEMS = [
-  { to: '/presupuestos', label: 'Presupuestos', icono: '📋', permiso: 'presupuestos.ver_propios' },
   { to: '/presupuestos-en-estudio', label: 'Presupuestos en Estudio', icono: '🔍', permiso: 'presupuestos.ver_todos' },
   // Espacio de trabajo personal de Geraldinne. Permiso propio
   // (ver_seguimiento), no ver_todos — así no comparte puerta con

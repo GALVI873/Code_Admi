@@ -14,7 +14,7 @@ export default function LoginPage() {
     return <div className="pantalla-cargando">Cargando…</div>
   }
   if (usuario) {
-    return <Navigate to="/presupuestos" replace />
+    return <Navigate to="/" replace />
   }
 
   async function handleSubmit(e) {
@@ -23,7 +23,7 @@ export default function LoginPage() {
     setEnviando(true)
     try {
       await login(email, password)
-      navigate('/presupuestos')
+      navigate('/')
     } catch (err) {
       setError(err.message)
     } finally {
