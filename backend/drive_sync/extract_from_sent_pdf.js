@@ -154,39 +154,38 @@ async function buscarVariantesEnCarpetaObra(drive, obraFolderId) {
     .map(([etiqueta, archivo]) => ({ etiqueta, archivo }));
 }
 
-// Resume la descripción larga del "Compacto" (cajón + color + motor) a lo
-// esencial: tipo de cajón y tipo de motor, sin todo el detalle de colores
-// repetido línea por línea.
-function resumirPersiana(texto) {
-  if (!texto) return null;
-  const cajonMatch = texto.match(/^([^,]+)/);
-  const motorMatch = texto.match(/motor\s+(vía?\s*radio|mec[aá]nico)/i);
+// Arma un resumen de una línea (tipo de lama + motor) a partir de los
+// campos YA extraídos por extraerCamposFicha (ver más abajo), que delimita
+// cada ítem del presupuesto en vez de tomar la primera coincidencia de
+// "Compacto:"/"Metros Cuadrados:" de todo el documento.
+function resumenPersiana(campos) {
+  if (!campos.persianas) return null;
   const partes = [];
-  if (cajonMatch) partes.push(cajonMatch[1].trim());
-  if (motorMatch) partes.push(`Motor ${motorMatch[1].trim()}`);
-  return partes.length > 0 ? partes.join(' — ') : texto;
+  if (campos.modeloLamas) partes.push(campos.modeloLamas);
+  if (campos.motorRadio) partes.push('Motor vía radio');
+  if (campos.motorMecanico) partes.push('Motor mecánico');
+  return partes.length > 0 ? partes.join(' — ') : 'SI';
 }
 
+// Campos para el panel (distinto de extraerCamposFicha, que es lo que llena
+// la hoja "Ficha" del Excel — ver más abajo). Antes esta función tenía su
+// propia extracción con un solo regex por campo tomando la PRIMERA
+// coincidencia en todo el documento (no por ítem) — en presupuestos con
+// varios tipos de ventana eso podía mezclar Vidrio con Serie de carpintería,
+// o el vidrio de un ítem con la persiana de otro. Ahora reutiliza
+// extraerCamposFicha, que sí delimita cada ítem, y solo agrega lo que le es
+// propio (Cliente, que sale de la cabecera "OBRA:", no de un ítem).
 function parseTextoPresupuestoEnviado(text) {
   const clienteMatch = text.match(/OBRA:.*\n(.+)\n/);
   const cliente = clienteMatch ? clienteMatch[1].trim() : null;
 
-  const colorMatch = text.match(/Color:\s*(.+)/);
-  const color = colorMatch ? colorMatch[1].trim() : null;
+  const campos = extraerCamposFicha(text);
+  // "Ral de carpintería si existe, si no el color" — mismo criterio pedido
+  // para el panel, ya resuelto por extraerCamposFicha vía ralSilicona (Ral:
+  // real) con este mismo respaldo a colorCarpinteria (Color:) acá.
+  const ral = campos.ralSilicona || campos.colorCarpinteria || null;
 
-  const ralMatch = text.match(/Ral:\s*(.+)/);
-  let ral = ralMatch ? ralMatch[1].trim() : null;
-  // "Ral: ." es como se marca "sin RAL" en proyectos de PVC/lacado — en ese
-  // caso el color (ej. "LACADO BLANCO") es el dato útil que sí existe.
-  if (ral === '.' || ral === '') ral = color;
-
-  const vidrioMatch = text.match(/Superficie:\s*(.+)/);
-  const vidrio = vidrioMatch ? vidrioMatch[1].trim() : null;
-
-  const persianaMatch = text.match(/Compacto:\s*([\s\S]*?)Metros Cuadrados:/);
-  const persiana = persianaMatch ? resumirPersiana(persianaMatch[1].replace(/\s+/g, ' ').trim()) : null;
-
-  return { cliente, ral, vidrio, persiana };
+  return { cliente, ral, vidrio: campos.vidrio, persiana: resumenPersiana(campos) };
 }
 
 // Fabricante -> material de carpintería. No hay una etiqueta explícita en
