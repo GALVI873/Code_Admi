@@ -17,6 +17,25 @@ const CLASE_ESTATUS = {
   Aceptado: 'select-estatus-aceptado',
 }
 
+// "Pdt Aprobación" puesto a mano sin que exista un PDF en la carpeta
+// Enviados de la obra es un estado inconsistente — igual que en
+// Presupuestos en Estudio, se avisa pero no se bloquea.
+function faltaEnvio(presupuesto) {
+  return presupuesto.estatus === 'Pdt Aprobación' && !presupuesto.fecha_ultimo_envio
+}
+
+function InsigniaAlerta() {
+  return (
+    <span
+      className="obra-card-insignia-alerta"
+      title="Pdt Aprobación sin ningún presupuesto enviado registrado en Drive"
+      onClick={(e) => e.stopPropagation()}
+    >
+      ⚠
+    </span>
+  )
+}
+
 function formatoFecha(iso) {
   if (!iso) return null
   const [anio, mes, dia] = iso.split('-')
@@ -146,9 +165,10 @@ function SelectEstatus({ presupuesto, onCambio }) {
 }
 
 function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio }) {
+  const alerta = faltaEnvio(presupuesto)
   return (
     <div
-      className="obra-card"
+      className={`obra-card ${alerta ? 'obra-card-alerta' : ''}`}
       role="button"
       tabIndex={0}
       onClick={() => onAbrir(presupuesto.id)}
@@ -156,6 +176,7 @@ function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio }) {
         if (e.key === 'Enter' || e.key === ' ') onAbrir(presupuesto.id)
       }}
     >
+      {alerta && <InsigniaAlerta />}
       <div className="obra-card-titulo" title={presupuesto.obra}>{presupuesto.obra}</div>
       <div className="obra-card-cliente" title={presupuesto.cliente || ''}>{presupuesto.cliente || 'Sin cliente'}</div>
       <div className="obra-card-meta">
@@ -184,6 +205,10 @@ function DetalleSeguimiento({ presupuesto, ofertas, onCerrar, onCambio }) {
           </div>
           <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
         </div>
+
+        {faltaEnvio(presupuesto) && (
+          <p className="modal-aviso">⚠ "Pdt Aprobación" sin ningún presupuesto enviado registrado en Drive.</p>
+        )}
 
         <div className="modal-meta">
           <div className="modal-campo">
