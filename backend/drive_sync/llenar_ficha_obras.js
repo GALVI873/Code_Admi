@@ -16,7 +16,7 @@ const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
 const pdfParse = require('pdf-parse');
-const { extraerCamposFicha } = require('./extract_from_sent_pdf.js');
+const { extraerCamposFicha, extraerNumeroPpto, esPdfDeCarpinteria } = require('./extract_from_sent_pdf.js');
 
 const BASE = 'Z:/DRIVE GALVI/1. GALVI/1.OBRAS/1. ESTUDIOS Y SEGUIMIENTO/HOJAS DE CALCULO (PPTOS)/2026';
 const PS_SCRIPT = path.join(__dirname, 'llenar_ficha_com.ps1');
@@ -95,15 +95,40 @@ function elegirCalculoVigente(rutaObra) {
   return candidatos[0];
 }
 
-function elegirPdfEnviadoMasReciente(rutaObra) {
+function listarPdfsEnviados(rutaObra) {
   const subcarpetasEnviados = listarDirs(rutaObra).filter((d) => /envia/i.test(d.name));
   let pdfs = [];
   for (const carpeta of subcarpetasEnviados) {
     pdfs = pdfs.concat(archivosRecursivo(path.join(rutaObra, carpeta.name), (n) => /\.pdf$/i.test(n) && !n.startsWith('~$')));
   }
-  if (pdfs.length === 0) return null;
-  pdfs.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  return pdfs[0];
+  return pdfs;
+}
+
+// Clasifica los PDF de Enviados en "principal" (el de carpintería más
+// reciente — entre varias opciones "Opción A/Op.1" vs "Opción B/Op.2", gana
+// la más reciente, ya que la Ficha es un solo Excel y no hay dónde poner
+// dos) y "complementarios" (presupuestos de otro producto que acompañan a
+// la obra, ej. motorización de persianas existentes — no tienen la
+// estructura de un presupuesto de carpintería). Si no hay ningún PDF de
+// carpintería, la obra queda para llenado manual (motivo específico, no se
+// escribe nada).
+async function elegirPdfPrincipalYComplementarios(rutaObra) {
+  const pdfs = listarPdfsEnviados(rutaObra);
+  if (pdfs.length === 0) return { principal: null, complementarios: [], motivo: 'sin PDF en Enviados' };
+
+  const clasificados = [];
+  for (const rutaPdf of pdfs) {
+    const buffer = fs.readFileSync(rutaPdf);
+    const { text } = await pdfParse(buffer);
+    clasificados.push({ ruta: rutaPdf, text, esCarpinteria: esPdfDeCarpinteria(text), mtime: fs.statSync(rutaPdf).mtimeMs });
+  }
+
+  const deCarpinteria = clasificados.filter((c) => c.esCarpinteria).sort((a, b) => b.mtime - a.mtime);
+  if (deCarpinteria.length === 0) {
+    return { principal: null, complementarios: [], motivo: 'ningún PDF con formato de carpintería reconocido (revisar a mano)' };
+  }
+  const complementarios = clasificados.filter((c) => !c.esCarpinteria);
+  return { principal: deCarpinteria[0], complementarios, motivo: null };
 }
 
 // Red de seguridad: la automatización COM de Excel desde PowerShell deja
@@ -164,18 +189,25 @@ async function procesarObraInfo(nombreObra, info) {
   const rutaCalculo = elegirCalculoVigente(info.rutaObra);
   if (!rutaCalculo) return { obra: nombreObra, ok: false, motivo: 'sin Excel de cálculo' };
 
-  const rutaPdf = elegirPdfEnviadoMasReciente(info.rutaObra);
-  if (!rutaPdf) return { obra: nombreObra, ok: false, motivo: 'sin PDF en Enviados' };
+  const { principal, complementarios, motivo } = await elegirPdfPrincipalYComplementarios(info.rutaObra);
+  if (!principal) return { obra: nombreObra, ok: false, motivo };
 
-  const buffer = fs.readFileSync(rutaPdf);
-  const { text } = await pdfParse(buffer);
-  const campos = extraerCamposFicha(text);
-  const fechaPdf = fs.statSync(rutaPdf).mtime;
+  const campos = extraerCamposFicha(principal.text);
+  const fechaPdf = fs.statSync(principal.ruta).mtime;
+
+  // Los números de presupuestos complementarios (ej. motorización de
+  // persianas) se agregan al Nº Ppto para que quede visible que la obra se
+  // compone de varios presupuestos ligados — la Fecha sigue siendo la del
+  // presupuesto principal (de carpintería) únicamente.
+  const numerosComplementarios = complementarios
+    .map((c) => extraerNumeroPpto(c.text))
+    .filter((n) => n && n !== campos.numeroPpto);
+  const numeroPptoCompleto = [campos.numeroPpto, ...numerosComplementarios].filter(Boolean).join(', ') || null;
 
   const celdas = {
     C6: path.basename(info.rutaObra),
     B8: info.contacto || info.categoria,
-    B11: campos.numeroPpto,
+    B11: numeroPptoCompleto,
     B12: fechaASerialExcel(fechaPdf),
     B13: campos.carpinteria,
     B14: campos.proveedor,
@@ -207,7 +239,14 @@ async function procesarObraInfo(nombreObra, info) {
     cerrarExcelHuerfano();
   }
 
-  return { obra: nombreObra, ok: true, rutaCalculo, rutaPdf, celdas };
+  return {
+    obra: nombreObra,
+    ok: true,
+    rutaCalculo,
+    rutaPdf: principal.ruta,
+    complementarios: complementarios.map((c) => path.basename(c.ruta)),
+    celdas,
+  };
 }
 
 async function procesarObra(nombreObra) {

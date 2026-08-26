@@ -110,12 +110,18 @@ async function pdfsEnCarpetaObra(drive, obraFolderId) {
 }
 
 // Distingue "opciones" (alternativas del mismo proyecto: distinto material,
-// distinto precio) de simples revisiones cronológicas. Convención: el
-// nombre del PDF incluye "Opción A", "Opción B"... — quien no lleve esa
-// etiqueta se trata como revisión normal (se queda solo la más reciente).
+// distinto precio) de simples revisiones cronológicas. Dos convenciones en
+// uso: "Opción A"/"Opción B" (letra) y la abreviada "Op.1"/"Op.2" (número,
+// ej. "(Alfonso XIII, Bajo 2) Op.1 Inox."). Quien no lleve ninguna se trata
+// como revisión normal (se queda solo la más reciente).
 function extraerEtiquetaOpcion(nombreArchivo) {
-  const m = nombreArchivo.match(/opci[oó]n\s*([a-z0-9]+)/i);
-  return m ? m[1].toUpperCase() : null;
+  const mPalabra = nombreArchivo.match(/\bopci[oó]n\s*([a-z0-9]+)/i);
+  if (mPalabra) return mPalabra[1].toUpperCase();
+  // \b...\d+\b evita falsos positivos con palabras que empiezan "op" sin
+  // ser la abreviatura (ej. "Operacion123" no matchea: after "op" no hay
+  // "." ni espacio ni dígito inmediato).
+  const mAbrev = nombreArchivo.match(/\bop\.?\s*(\d+)\b/i);
+  return mAbrev ? mAbrev[1] : null;
 }
 
 // Devuelve una "variante" por resultado: { etiqueta, archivo }. etiqueta es
@@ -219,12 +225,27 @@ function normalizarClave(texto) {
 //   Compacto: Cajón monobloc pvc 200mm, lama térmica de aluminio ...
 //     con color de cajón lacado blanco -9010 con color de lamas
 //     lacado blanco -9010, motor via radio
-function extraerCamposFicha(text) {
-  // "A / 202600140 - 1": el "-1" es la versión del presupuesto (un mismo
-  // número puede tener varias versiones), hay que conservarlo — no es un
-  // número puro entonces, se guarda como texto "202600140-1".
+// "A / 202600140 - 1": el "-1" es la versión del presupuesto (un mismo
+// número puede tener varias versiones), hay que conservarlo — no es un
+// número puro entonces, se guarda como texto "202600140-1".
+function extraerNumeroPpto(text) {
   const numeroMatch = text.match(/PRESUPUESTO\s*N[ºo]:\s*[^\d]*(\d{5,})\s*-\s*(\d+)/i);
-  const numeroPpto = numeroMatch ? `${numeroMatch[1]}-${numeroMatch[2]}` : null;
+  return numeroMatch ? `${numeroMatch[1]}-${numeroMatch[2]}` : null;
+}
+
+// Un PDF de presupuesto Galvi puede ser un presupuesto de carpintería
+// (ventanas/puertas, con Fabricante/Serie/Superficie por ítem) o un
+// complemento de otro tipo de producto (ej. "incorporación de motor a
+// persianas propiedad del cliente" — sin ninguna de esas etiquetas). Sirve
+// para no elegir por error un PDF complementario como el principal de la
+// obra (se pisaría el Nº Ppto/Fecha con el del complemento) y para saber
+// cuándo una obra necesita llenado manual (ningún PDF de carpintería).
+function esPdfDeCarpinteria(text) {
+  return /Fabricante:/i.test(text) && /Serie:/i.test(text);
+}
+
+function extraerCamposFicha(text) {
+  const numeroPpto = extraerNumeroPpto(text);
 
   const proveedorMatch = text.match(/Fabricante:\s*(.+)/i);
   const proveedor = proveedorMatch ? proveedorMatch[1].trim() : null;
@@ -405,4 +426,6 @@ module.exports = {
   coincideConObra,
   extraerEtiquetaOpcion,
   extraerCamposFicha,
+  extraerNumeroPpto,
+  esPdfDeCarpinteria,
 };
