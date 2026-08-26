@@ -9,7 +9,8 @@
 //
 // Uso:
 //   node llenar_ficha_obras.js "Prado Jerez" "Sauceda,8"   (obras puntuales, para pilotear)
-//   node llenar_ficha_obras.js --todas                      (todas las que tengan Enviados con PDF)
+//   node llenar_ficha_obras.js --todas                      (todas las que tengan Enviados con PDF;
+//                                                             deja resultado_llenar_ficha.json con el detalle)
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -132,10 +133,34 @@ function fechaASerialExcel(fecha) {
   return Math.round((Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth(), fecha.getUTCDate()) - epoch) / 86400000);
 }
 
-async function procesarObra(nombreObra) {
-  const info = buscarObra(nombreObra);
-  if (!info) return { obra: nombreObra, ok: false, motivo: 'obra no encontrada' };
+// Recorre toda la carpeta de "en estudio" y devuelve una entrada por cada
+// carpeta de obra (Categoria/[Contacto]/Obra), sin bajar a subcarpetas de
+// organización. No filtra por si tiene Enviados o no — eso lo decide
+// procesarObraInfo, para poder reportar el motivo de cada omisión.
+function listarTodasLasObras() {
+  const obras = [];
+  for (const cat of listarDirs(BASE)) {
+    if (cat.name === 'Particulares') {
+      for (const obra of listarDirs(path.join(BASE, cat.name))) {
+        obras.push({ nombre: obra.name, rutaObra: path.join(BASE, cat.name, obra.name), categoria: cat.name, contacto: null });
+      }
+      continue;
+    }
+    for (const contacto of listarDirs(path.join(BASE, cat.name))) {
+      for (const obra of listarDirs(path.join(BASE, cat.name, contacto.name))) {
+        obras.push({
+          nombre: obra.name,
+          rutaObra: path.join(BASE, cat.name, contacto.name, obra.name),
+          categoria: cat.name,
+          contacto: contacto.name,
+        });
+      }
+    }
+  }
+  return obras;
+}
 
+async function procesarObraInfo(nombreObra, info) {
   const rutaCalculo = elegirCalculoVigente(info.rutaObra);
   if (!rutaCalculo) return { obra: nombreObra, ok: false, motivo: 'sin Excel de cálculo' };
 
@@ -185,28 +210,59 @@ async function procesarObra(nombreObra) {
   return { obra: nombreObra, ok: true, rutaCalculo, rutaPdf, celdas };
 }
 
+async function procesarObra(nombreObra) {
+  const info = buscarObra(nombreObra);
+  if (!info) return { obra: nombreObra, ok: false, motivo: 'obra no encontrada' };
+  return procesarObraInfo(nombreObra, info);
+}
+
 async function main() {
   const args = process.argv.slice(2);
   if (args.length === 0) {
     console.error('Uso: node llenar_ficha_obras.js "Obra 1" "Obra 2" ...  (o --todas)');
     process.exit(1);
   }
+
+  const resultados = { ok: [], omitidas: [] };
+
   if (args[0] === '--todas') {
-    console.error('--todas todavía no implementado a propósito: primero el piloto.');
-    process.exit(1);
+    const todas = listarTodasLasObras();
+    console.log(`Recorriendo ${todas.length} obras...\n`);
+    for (const info of todas) {
+      const resultado = await procesarObraInfo(info.nombre, info);
+      if (!resultado.ok) {
+        console.log(`OMITIDA (${resultado.motivo}): ${info.nombre}`);
+        resultados.omitidas.push({ obra: info.nombre, motivo: resultado.motivo });
+        continue;
+      }
+      console.log(`OK: ${info.nombre}`);
+      resultados.ok.push({ obra: info.nombre, rutaCalculo: resultado.rutaCalculo, rutaPdf: resultado.rutaPdf, celdas: resultado.celdas });
+    }
+  } else {
+    for (const nombreObra of args) {
+      console.log(`\n=== ${nombreObra} ===`);
+      const resultado = await procesarObra(nombreObra);
+      if (!resultado.ok) {
+        console.log(`OMITIDA: ${resultado.motivo}`);
+        resultados.omitidas.push({ obra: nombreObra, motivo: resultado.motivo });
+        continue;
+      }
+      console.log(`Excel: ${resultado.rutaCalculo}`);
+      console.log(`PDF:   ${resultado.rutaPdf}`);
+      console.log('Celdas escritas:', JSON.stringify(resultado.celdas, null, 2));
+      resultados.ok.push({ obra: nombreObra, rutaCalculo: resultado.rutaCalculo, rutaPdf: resultado.rutaPdf, celdas: resultado.celdas });
+    }
   }
 
-  for (const nombreObra of args) {
-    console.log(`\n=== ${nombreObra} ===`);
-    const resultado = await procesarObra(nombreObra);
-    if (!resultado.ok) {
-      console.log(`OMITIDA: ${resultado.motivo}`);
-      continue;
-    }
-    console.log(`Excel: ${resultado.rutaCalculo}`);
-    console.log(`PDF:   ${resultado.rutaPdf}`);
-    console.log('Celdas escritas:', JSON.stringify(resultado.celdas, null, 2));
-  }
+  console.log(`\n=== Resumen ===`);
+  console.log(`OK: ${resultados.ok.length}`);
+  console.log(`Omitidas: ${resultados.omitidas.length}`);
+  const resumenPorMotivo = {};
+  for (const o of resultados.omitidas) resumenPorMotivo[o.motivo] = (resumenPorMotivo[o.motivo] || 0) + 1;
+  console.log('Motivos:', JSON.stringify(resumenPorMotivo, null, 2));
+
+  fs.writeFileSync(path.join(__dirname, 'resultado_llenar_ficha.json'), JSON.stringify(resultados, null, 2), 'utf8');
+  console.log('\nDetalle completo guardado en resultado_llenar_ficha.json');
 }
 
 main().catch((err) => {
