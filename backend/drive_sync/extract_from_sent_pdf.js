@@ -263,7 +263,7 @@ function extraerCamposFicha(text) {
   // ni aparecen siempre (ej. "Premarco"/"Cremona" solo en algunos ítems) —
   // sin incluirlas acá se colaban dentro del valor anterior.
   const HASTA_SIGUIENTE_ETIQUETA =
-    '(?=\\s*⦁?\\s*(?:Fabricante:|Serie:|Color:|Ral:|Medida:|Superficie:|Compacto:|Premarco:?|Cremona:?|Tapajunta:|Metros Cuadrados:|$))';
+    '(?=\\s*⦁?\\s*(?:Fabricante:|Serie:|Color:|Ral:|Medida:|Superficie:|Compacto:|Premarco:?|Cremona:?|Maneta:?|Tapajunta:|Metros Cuadrados:|$))';
 
   for (const item of items) {
     const serieItem = item
