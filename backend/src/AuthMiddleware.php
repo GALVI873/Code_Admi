@@ -23,4 +23,18 @@ final class AuthMiddleware
             Response::error('No autorizado para esta acción', 403);
         }
     }
+
+    // Para endpoints compartidos por dos vistas con permisos distintos (ej.
+    // "Presupuestos en Estudio" con ver_todos y "Presupuesto" —el espacio de
+    // Geraldinne— con ver_seguimiento): basta con tener cualquiera de los dos.
+    public static function requiereAlgunPermiso(array $usuario, array $permisos): void
+    {
+        $propios = $usuario['permisos'] ?? [];
+        foreach ($permisos as $permiso) {
+            if (in_array($permiso, $propios, true)) {
+                return;
+            }
+        }
+        Response::error('No autorizado para esta acción', 403);
+    }
 }

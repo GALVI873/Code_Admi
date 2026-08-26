@@ -29,7 +29,7 @@ const MOCK_USUARIOS = {
     email: 'presupuestos@galvi.es',
     roles: ['presupuestos'],
     permisos: [
-      'presupuestos.crear', 'presupuestos.ver_propios', 'presupuestos.ver_todos',
+      'presupuestos.crear', 'presupuestos.ver_propios', 'presupuestos.ver_seguimiento',
       'presupuestos.editar', 'presupuestos.enviar', 'presupuestos.reemplazar_version',
     ],
   },

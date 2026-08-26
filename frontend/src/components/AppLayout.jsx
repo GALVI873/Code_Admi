@@ -6,14 +6,17 @@ import { useAuth, MOCK_AUTH } from '../context/AuthContext.jsx'
 const NAV_ITEMS = [
   { to: '/presupuestos', label: 'Presupuestos', icono: '📋', permiso: 'presupuestos.ver_propios' },
   { to: '/presupuestos-en-estudio', label: 'Presupuestos en Estudio', icono: '🔍', permiso: 'presupuestos.ver_todos' },
-  // Espacio de trabajo personal de Geraldinne: no es un permiso compartido
-  // con nadie más (a diferencia de los otros ítems), es exclusivamente para
-  // su correo — por eso se filtra por email además del permiso.
+  // Espacio de trabajo personal de Geraldinne. Permiso propio
+  // (ver_seguimiento), no ver_todos — así no comparte puerta con
+  // Presupuestos en Estudio (la vista de admin). El filtro por email es
+  // una segunda capa además del permiso, ya que hoy es la única persona
+  // con ese permiso, pero es exclusivamente su vista, no una capacidad
+  // pensada para compartir.
   {
     to: '/seguimiento',
-    label: 'Seguimiento',
+    label: 'Presupuesto',
     icono: '🧭',
-    permiso: 'presupuestos.ver_todos',
+    permiso: 'presupuestos.ver_seguimiento',
     soloEmail: 'presupuestos@galvi.es',
   },
 ]

@@ -97,7 +97,7 @@ export default function SeguimientoPage() {
     <div className="dashboard dashboard-ancho">
       <header className="dashboard-header">
         <div>
-          <h1>Seguimiento</h1>
+          <h1>Presupuesto</h1>
           <p>Línea de tiempo por obra — desde la solicitud hasta el envío del presupuesto</p>
         </div>
       </header>

@@ -107,18 +107,28 @@ try {
         WHERE r.nombre = 'admin' AND p.clave = 'presupuestos.marcar_interesante'
     ");
 
-    // Página "Seguimiento": espacio de trabajo de Geraldinne, única persona
-    // con el rol 'presupuestos' — en la práctica equivale a dárselo solo a
-    // ella, sin abrir ver_todos a nadie más de ese rol.
+    // Página "Presupuesto": espacio de trabajo de Geraldinne, única persona
+    // con el rol 'presupuestos'. Permiso propio (no ver_todos) para que no
+    // se le abra de paso la vista de Presupuestos en Estudio de admin — esa
+    // sigue exigiendo ver_todos exclusivamente.
+    $db->exec("INSERT OR IGNORE INTO permisos (clave, descripcion) VALUES ('presupuestos.ver_seguimiento', 'Ver la línea de tiempo de obras en la página Presupuesto')");
     $db->exec("
         INSERT OR IGNORE INTO rol_permisos (rol_id, permiso_id)
         SELECT r.id, p.id FROM roles r, permisos p
-        WHERE r.nombre = 'presupuestos' AND p.clave = 'presupuestos.ver_todos'
+        WHERE r.nombre = 'presupuestos' AND p.clave = 'presupuestos.ver_seguimiento'
+    ");
+    // Revertir el ver_todos que se le había dado por error al rol
+    // 'presupuestos' en un cambio anterior — con ver_seguimiento ya no hace
+    // falta, y ver_todos le abría de paso Presupuestos en Estudio.
+    $db->exec("
+        DELETE FROM rol_permisos
+        WHERE rol_id = (SELECT id FROM roles WHERE nombre = 'presupuestos')
+          AND permiso_id = (SELECT id FROM permisos WHERE clave = 'presupuestos.ver_todos')
     ");
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
-        AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_todos');
+        AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento']);
 
         // Más reciente a más antiguo por fecha de envío; las obras sin envío
         // (fecha_ultimo_envio NULL) quedan al final (SQLite ordena NULL como
