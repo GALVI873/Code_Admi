@@ -6,6 +6,16 @@ import { useAuth, MOCK_AUTH } from '../context/AuthContext.jsx'
 const NAV_ITEMS = [
   { to: '/presupuestos', label: 'Presupuestos', icono: '📋', permiso: 'presupuestos.ver_propios' },
   { to: '/presupuestos-en-estudio', label: 'Presupuestos en Estudio', icono: '🔍', permiso: 'presupuestos.ver_todos' },
+  // Espacio de trabajo personal de Geraldinne: no es un permiso compartido
+  // con nadie más (a diferencia de los otros ítems), es exclusivamente para
+  // su correo — por eso se filtra por email además del permiso.
+  {
+    to: '/seguimiento',
+    label: 'Seguimiento',
+    icono: '🧭',
+    permiso: 'presupuestos.ver_todos',
+    soloEmail: 'presupuestos@galvi.es',
+  },
 ]
 
 export default function AppLayout() {
@@ -22,7 +32,9 @@ export default function AppLayout() {
       <aside className="app-sidebar">
         <div className="app-logo">🏗️ Panel Galvi</div>
         <nav className="app-nav">
-          {NAV_ITEMS.filter((item) => tienePermiso(item.permiso)).map((item) => (
+          {NAV_ITEMS.filter(
+            (item) => tienePermiso(item.permiso) && (!item.soloEmail || usuario?.email === item.soloEmail),
+          ).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

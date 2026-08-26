@@ -59,15 +59,22 @@ function categoriaYContacto(cadenaNombres) {
   return { categoria, contacto };
 }
 
-async function recorrer(drive, folderId, cadenaNombres, cadenaIds, encontrados) {
+async function recorrer(drive, folderId, cadenaNombres, cadenaIds, cadenaCreatedTimes, encontrados) {
   const res = await drive.files.list({
     q: `'${folderId}' in parents and trashed = false`,
-    fields: 'files(id, name, mimeType, modifiedTime)',
+    fields: 'files(id, name, mimeType, modifiedTime, createdTime)',
     pageSize: 1000,
   });
   for (const file of res.data.files) {
     if (file.mimeType === 'application/vnd.google-apps.folder') {
-      await recorrer(drive, file.id, [...cadenaNombres, file.name], [...cadenaIds, file.id], encontrados);
+      await recorrer(
+        drive,
+        file.id,
+        [...cadenaNombres, file.name],
+        [...cadenaIds, file.id],
+        [...cadenaCreatedTimes, file.createdTime],
+        encontrados,
+      );
     } else if (/CALCULO.*\.xlsx$/i.test(file.name) && esArchivoValido(file.name)) {
       const idx = indiceCarpetaObra(cadenaNombres);
       encontrados.push({
@@ -76,6 +83,10 @@ async function recorrer(drive, folderId, cadenaNombres, cadenaIds, encontrados) 
         modifiedTime: file.modifiedTime,
         obra: cadenaNombres[idx].trim(),
         obraFolderId: cadenaIds[idx],
+        // Se toma como fecha de "solicitud" para la línea de tiempo de
+        // seguimiento (ver PresupuestosEnEstudioPage/SeguimientoPage) — el
+        // día que se creó la carpeta de la obra en Drive.
+        fechaCreacionCarpeta: cadenaCreatedTimes[idx] ? cadenaCreatedTimes[idx].slice(0, 10) : null,
         ...categoriaYContacto(cadenaNombres),
       });
     }
@@ -129,12 +140,12 @@ async function main() {
 
   const categorias = await drive.files.list({
     q: `'${process.env.GOOGLE_DRIVE_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-    fields: 'files(id, name)',
+    fields: 'files(id, name, createdTime)',
   });
 
   let encontrados = [];
   for (const cat of categorias.data.files) {
-    await recorrer(drive, cat.id, [cat.name], [cat.id], encontrados);
+    await recorrer(drive, cat.id, [cat.name], [cat.id], [cat.createdTime], encontrados);
   }
   const antesDedup = encontrados.length;
   encontrados = deduplicarPorObra(encontrados);
@@ -207,6 +218,7 @@ async function main() {
             obra: obraFinal,
             categoria: archivo.categoria,
             contacto: archivo.contacto,
+            fecha_creacion_carpeta: archivo.fechaCreacionCarpeta,
             ...campos,
           }),
         });

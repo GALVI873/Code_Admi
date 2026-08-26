@@ -48,6 +48,9 @@ try {
           porcentaje_ganancia REAL,
           prioridad TEXT NOT NULL DEFAULT 'Normal',
           interesante INTEGER NOT NULL DEFAULT 0,
+          numero_ppto TEXT,
+          carpinteria TEXT,
+          fecha_creacion_carpeta TEXT,
           fecha_ultimo_envio TEXT,
           actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
@@ -70,6 +73,15 @@ try {
     }
     if (!in_array('interesante', $columnas, true)) {
         $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN interesante INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!in_array('numero_ppto', $columnas, true)) {
+        $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN numero_ppto TEXT');
+    }
+    if (!in_array('carpinteria', $columnas, true)) {
+        $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN carpinteria TEXT');
+    }
+    if (!in_array('fecha_creacion_carpeta', $columnas, true)) {
+        $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN fecha_creacion_carpeta TEXT');
     }
 
     // Renombre de estatus: "Seguimiento" pasó a llamarse "Pdt Aprobación"
@@ -200,8 +212,8 @@ try {
         $estatusPreEnvio = "'" . implode("','", ESTATUS_PRE_ENVIO) . "'";
         $stmt = $db->prepare("
             INSERT INTO presupuestos_en_estudio
-                (obra, cliente, estatus, no_ventanas, precio_m2, ral, persiana, vidrio, precio_ultimo_presupuesto, porcentaje_ganancia, fecha_ultimo_envio, categoria, contacto, actualizado_en)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                (obra, cliente, estatus, no_ventanas, precio_m2, ral, persiana, vidrio, numero_ppto, carpinteria, precio_ultimo_presupuesto, porcentaje_ganancia, fecha_ultimo_envio, fecha_creacion_carpeta, categoria, contacto, actualizado_en)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(obra) DO UPDATE SET
                 cliente = excluded.cliente,
                 estatus = CASE
@@ -214,9 +226,12 @@ try {
                 ral = excluded.ral,
                 persiana = excluded.persiana,
                 vidrio = excluded.vidrio,
+                numero_ppto = excluded.numero_ppto,
+                carpinteria = excluded.carpinteria,
                 precio_ultimo_presupuesto = excluded.precio_ultimo_presupuesto,
                 porcentaje_ganancia = excluded.porcentaje_ganancia,
                 fecha_ultimo_envio = excluded.fecha_ultimo_envio,
+                fecha_creacion_carpeta = excluded.fecha_creacion_carpeta,
                 categoria = excluded.categoria,
                 contacto = excluded.contacto,
                 actualizado_en = datetime('now')
@@ -230,9 +245,12 @@ try {
             $body['ral'] ?? null,
             $body['persiana'] ?? null,
             $body['vidrio'] ?? null,
+            $body['numero_ppto'] ?? null,
+            $body['carpinteria'] ?? null,
             $body['precio_ultimo_presupuesto'] ?? null,
             $body['porcentaje_ganancia'] ?? null,
             $body['fecha_ultimo_envio'] ?? null,
+            $body['fecha_creacion_carpeta'] ?? null,
             $body['categoria'] ?? null,
             $body['contacto'] ?? null,
         ]);

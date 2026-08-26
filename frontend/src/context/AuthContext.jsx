@@ -26,10 +26,10 @@ const MOCK_USUARIOS = {
   presupuestos: {
     id: 2,
     nombre: 'Geraldinne (mock)',
-    email: 'geraldinne@galvi.es',
+    email: 'presupuestos@galvi.es',
     roles: ['presupuestos'],
     permisos: [
-      'presupuestos.crear', 'presupuestos.ver_propios',
+      'presupuestos.crear', 'presupuestos.ver_propios', 'presupuestos.ver_todos',
       'presupuestos.editar', 'presupuestos.enviar', 'presupuestos.reemplazar_version',
     ],
   },

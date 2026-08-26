@@ -63,6 +63,10 @@ function extraerCampos(filePath) {
   const ral = findByLabel(ficha, /RAL/i);
   const vidrio = findByLabel(ficha, /^Vidrio$/i);
   const persiana = findByLabel(ficha, /^Persianas?$/i);
+  // Para saber si la Ficha ya está diligenciada (línea de tiempo de
+  // seguimiento) — mismas etiquetas que ya usa el llenado automático.
+  const numeroPpto = findByLabel(ficha, /N.\s*Ppto/i);
+  const carpinteria = findByLabel(ficha, /^\s*Carpinteria/i);
 
   // Maestro: fila "Totales", columna "Uds"
   const maestroHeaderIdx = maestro.findIndex((r) => r.includes('Uds'));
@@ -100,6 +104,8 @@ function extraerCampos(filePath) {
     ral: ral || null,
     persiana: persiana || null,
     vidrio: vidrio || null,
+    numero_ppto: numeroPpto || null,
+    carpinteria: carpinteria || null,
     precio_ultimo_presupuesto: precioPpto,
     porcentaje_ganancia: ganancia,
   };

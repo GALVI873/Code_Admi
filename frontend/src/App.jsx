@@ -5,6 +5,7 @@ import AppLayout from './components/AppLayout.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import PresupuestosPage from './pages/PresupuestosPage.jsx'
 import PresupuestosEnEstudioPage from './pages/PresupuestosEnEstudioPage.jsx'
+import SeguimientoPage from './pages/SeguimientoPage.jsx'
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
             <Route path="/" element={<Navigate to="/presupuestos" replace />} />
             <Route path="/presupuestos" element={<PresupuestosPage />} />
             <Route path="/presupuestos-en-estudio" element={<PresupuestosEnEstudioPage />} />
+            <Route path="/seguimiento" element={<SeguimientoPage />} />
           </Route>
         </Route>
       </Routes>
