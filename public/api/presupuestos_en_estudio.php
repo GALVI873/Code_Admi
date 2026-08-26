@@ -107,6 +107,15 @@ try {
         WHERE r.nombre = 'admin' AND p.clave = 'presupuestos.marcar_interesante'
     ");
 
+    // Página "Seguimiento": espacio de trabajo de Geraldinne, única persona
+    // con el rol 'presupuestos' — en la práctica equivale a dárselo solo a
+    // ella, sin abrir ver_todos a nadie más de ese rol.
+    $db->exec("
+        INSERT OR IGNORE INTO rol_permisos (rol_id, permiso_id)
+        SELECT r.id, p.id FROM roles r, permisos p
+        WHERE r.nombre = 'presupuestos' AND p.clave = 'presupuestos.ver_todos'
+    ");
+
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
         AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_todos');
