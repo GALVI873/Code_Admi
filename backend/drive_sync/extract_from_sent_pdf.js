@@ -258,12 +258,18 @@ function extraerCamposFicha(text) {
   let hayMotorMecanico = false;
 
   // Etiqueta siguiente conocida — corta ahí en vez de en el primer salto de
-  // línea, porque varios valores (Superficie, Compacto) envuelven a la
-  // línea siguiente en algunos formatos de PDF.
-  const HASTA_SIGUIENTE_ETIQUETA = '(?=\\s*⦁?\\s*(?:Compacto:|Tapajunta:|Metros Cuadrados:|Fabricante:|$))';
+  // línea. Varios valores (Serie, Superficie, Compacto) envuelven a la línea
+  // siguiente según el formato de PDF, y no todas las etiquetas llevan ":"
+  // ni aparecen siempre (ej. "Premarco"/"Cremona" solo en algunos ítems) —
+  // sin incluirlas acá se colaban dentro del valor anterior.
+  const HASTA_SIGUIENTE_ETIQUETA =
+    '(?=\\s*⦁?\\s*(?:Fabricante:|Serie:|Color:|Ral:|Medida:|Superficie:|Compacto:|Premarco:?|Cremona:?|Tapajunta:|Metros Cuadrados:|$))';
 
   for (const item of items) {
-    const serieItem = item.match(/Serie:\s*(.+)/i)?.[1]?.trim();
+    const serieItem = item
+      .match(new RegExp(`Serie:\\s*([\\s\\S]*?)${HASTA_SIGUIENTE_ETIQUETA}`, 'i'))?.[1]
+      ?.replace(/\s+/g, ' ')
+      .trim();
     if (/corredera/i.test(item) && serieItem) seriesCorrederas.add(serieItem);
     if (/oscilobatiente|abatible|practicable/i.test(item) && serieItem) seriesAbatibles.add(serieItem);
 
@@ -274,7 +280,7 @@ function extraerCamposFicha(text) {
     if (vidrioItem) tiposVidrio.add(vidrioItem);
 
     const compactoItem = item
-      .match(/Compacto:\s*([\s\S]*?)(?=\s*⦁?\s*(?:Tapajunta:|Metros Cuadrados:|$))/i)?.[1]
+      .match(new RegExp(`Compacto:\\s*([\\s\\S]*?)${HASTA_SIGUIENTE_ETIQUETA}`, 'i'))?.[1]
       ?.replace(/\s+/g, ' ')
       .trim();
     if (compactoItem) {
