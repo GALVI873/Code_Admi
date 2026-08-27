@@ -18,6 +18,14 @@ function normalizar(s) {
   return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 }
 
+// El panel guarda "Obra \u2014 Opci\u00f3n A"/"\u2014 Opci\u00f3n B" como filas separadas
+// cuando la carpeta de la obra tiene varias ofertas alternativas (ver
+// sync_all.js), pero es la MISMA carpeta f\u00edsica en Drive -- no hay dos
+// carpetas, as\u00ed que hay que quitar el sufijo antes de buscarla.
+function nombreCarpeta(nombreObra) {
+  return nombreObra.replace(/\s*\u2014\s*Opci[o\u00f3]n\s+\w+\s*$/i, '');
+}
+
 function listarDirs(dir) {
   try {
     return fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory());
@@ -95,7 +103,7 @@ async function main() {
 
   const objetivos = args[0] === '--todas'
     ? listarTodasLasObras()
-    : args.map((nombre) => ({ nombre, rutaObra: buscarObra(nombre) }));
+    : args.map((nombre) => ({ nombre, rutaObra: buscarObra(nombreCarpeta(nombre)) }));
 
   for (const { nombre, rutaObra } of objetivos) {
     if (!rutaObra) {

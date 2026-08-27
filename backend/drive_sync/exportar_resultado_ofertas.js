@@ -33,6 +33,14 @@ function buscarObra(nombreObjetivo) {
   return null;
 }
 
+// El panel guarda "Obra — Opción A"/"— Opción B" como filas separadas
+// cuando la carpeta de la obra tiene varias ofertas alternativas, pero es
+// la MISMA carpeta física en Drive -- hay que quitar el sufijo para
+// encontrarla (las dos opciones comparten la misma carpeta "Valoración").
+function nombreCarpeta(nombreObra) {
+  return nombreObra.replace(/\s*—\s*Opci[oó]n\s+\w+\s*$/i, '');
+}
+
 function motivoSinOfertas(rutaObra) {
   const rutaVal = carpetaValoracion(rutaObra);
   if (!rutaVal) return 'Sin carpeta "Valoración"';
@@ -44,19 +52,24 @@ function motivoSinOfertas(rutaObra) {
 
 async function main() {
   const listaActivas = JSON.parse(fs.readFileSync('obras_activas_ficha.json', 'utf8'));
+  const filasResumen = [];
   const filasOfertas = [];
   const filasSinOfertas = [];
 
   for (const nombreObra of listaActivas) {
-    const rutaObra = buscarObra(nombreObra);
+    const rutaObra = buscarObra(nombreCarpeta(nombreObra));
     if (!rutaObra) {
+      filasResumen.push({ Obra: nombreObra, 'Tiene ofertas': 'No', Detalle: 'Carpeta de obra no encontrada' });
       filasSinOfertas.push({ Obra: nombreObra, Motivo: 'Carpeta de obra no encontrada' });
       continue;
     }
     const ofertas = await extraerOfertasDeObra(rutaObra);
     if (ofertas.length === 0) {
-      filasSinOfertas.push({ Obra: nombreObra, Motivo: motivoSinOfertas(rutaObra) });
+      const motivo = motivoSinOfertas(rutaObra);
+      filasResumen.push({ Obra: nombreObra, 'Tiene ofertas': 'No', Detalle: motivo });
+      filasSinOfertas.push({ Obra: nombreObra, Motivo: motivo });
     } else {
+      filasResumen.push({ Obra: nombreObra, 'Tiene ofertas': 'Sí', Detalle: `${ofertas.length} oferta(s)` });
       for (const o of ofertas) {
         filasOfertas.push({
           Obra: nombreObra,
@@ -71,6 +84,13 @@ async function main() {
 
   const wb = XLSX.utils.book_new();
 
+  // Primera hoja: las 48 obras activas, una fila cada una, para que se vea
+  // de un vistazo que el archivo las cubre todas (no solo las que tienen
+  // ofertas) — el resto de hojas son el detalle de cada caso.
+  const wsResumen = XLSX.utils.json_to_sheet(filasResumen);
+  wsResumen['!cols'] = [{ wch: 32 }, { wch: 12 }, { wch: 60 }];
+  XLSX.utils.book_append_sheet(wb, wsResumen, `Resumen (${filasResumen.length} obras)`);
+
   const wsOfertas = XLSX.utils.json_to_sheet(filasOfertas);
   wsOfertas['!cols'] = [{ wch: 32 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 55 }];
   XLSX.utils.book_append_sheet(wb, wsOfertas, 'Ofertas encontradas');
@@ -81,7 +101,7 @@ async function main() {
 
   const salida = process.argv[2];
   XLSX.writeFile(wb, salida);
-  console.log(`${filasOfertas.length} ofertas en ${new Set(filasOfertas.map((f) => f.Obra)).size} obras, ${filasSinOfertas.length} obras sin ofertas -> ${salida}`);
+  console.log(`${filasResumen.length} obras (${filasOfertas.length} ofertas en ${new Set(filasOfertas.map((f) => f.Obra)).size} de ellas, ${filasSinOfertas.length} sin ofertas) -> ${salida}`);
 }
 
 main().catch((err) => {
