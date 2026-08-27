@@ -750,6 +750,15 @@ body {
   color: var(--texto);
 }
 
+.modal-subtitulo {
+  font-size: 13px;
+  font-weight: 700;
+  color: #7a8699;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  margin: 22px 0 10px;
+}
+
 .modal-comentario-caja {
   background: #dde1e7;
   border-radius: 8px;

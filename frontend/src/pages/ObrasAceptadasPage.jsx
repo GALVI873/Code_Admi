@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { presupuestosEnEstudio } from '../api/client.js'
+import { presupuestosEnEstudio, seguimientoMateriales } from '../api/client.js'
 
 // Espacio de trabajo de Alfredo (Gestión de Obras). Primera versión: solo
 // lectura, la lista de obras que Geraldinne ya movió a "Aceptadas" — según
@@ -11,7 +11,19 @@ import { presupuestosEnEstudio } from '../api/client.js'
 const EMAIL_AUTORIZADO = 'alfredo@galvi.es'
 const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista']
 
-function TarjetaObraAceptada({ presupuesto, onAbrir }) {
+// Estos dos estados de la hoja "SEG" (ver sync_obras_aceptadas.js) son los
+// que todavía necesitan que Alfredo haga algo — "EN OBRA"/"FABRICACIÓN" ya
+// están en marcha, no reclaman atención inmediata.
+const ESTADOS_PENDIENTES = ['PEDIR MATERIAL', 'MEDIR']
+
+function formatoFecha(iso) {
+  if (!iso) return null
+  const [anio, mes, dia] = iso.split('-')
+  return `${dia}/${mes}/${anio}`
+}
+
+function TarjetaObraAceptada({ presupuesto, materiales, onAbrir }) {
+  const pendientes = materiales.filter((m) => ESTADOS_PENDIENTES.includes(m.estado)).length
   return (
     <div
       className="obra-card"
@@ -26,12 +38,53 @@ function TarjetaObraAceptada({ presupuesto, onAbrir }) {
       <div className="obra-card-cliente" title={presupuesto.cliente || ''}>{presupuesto.cliente || 'Sin cliente'}</div>
       <div className="obra-card-meta">
         <span className="badge badge-borrador">{presupuesto.carpinteria || 'Sin carpintería'}</span>
+        {pendientes > 0 && (
+          <span className="badge badge-rechazado">{pendientes} pendiente{pendientes > 1 ? 's' : ''}</span>
+        )}
       </div>
     </div>
   )
 }
 
-function DetalleObraAceptada({ presupuesto, onCerrar }) {
+function TablaSeguimientoMateriales({ materiales }) {
+  if (materiales.length === 0) {
+    return <p className="seguimiento-ofertas-vacio">Todavía no hay seguimiento de material cargado para esta obra.</p>
+  }
+  return (
+    <div className="tabla-scroll">
+      <table className="tabla-ofertas">
+        <thead>
+          <tr>
+            <th>Posición</th>
+            <th>Material</th>
+            <th>Estado</th>
+            <th>Proveedor</th>
+            <th>Fecha Pedido</th>
+            <th>Nº Orden</th>
+            <th>Fecha Estimada</th>
+            <th>Comentario</th>
+          </tr>
+        </thead>
+        <tbody>
+          {materiales.map((m) => (
+            <tr key={m.id}>
+              <td>{m.posicion || '—'}</td>
+              <td className="seguimiento-oferta-proveedor">{m.material || '—'}</td>
+              <td>{m.estado || '—'}</td>
+              <td>{m.proveedor || '—'}</td>
+              <td>{formatoFecha(m.fecha_pedido) || '—'}</td>
+              <td>{m.numero_orden || '—'}</td>
+              <td>{formatoFecha(m.fecha_estimada) || '—'}</td>
+              <td>{m.comentario || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function DetalleObraAceptada({ presupuesto, materiales, onCerrar }) {
   useEffect(() => {
     function alEscape(e) {
       if (e.key === 'Escape') onCerrar()
@@ -42,7 +95,7 @@ function DetalleObraAceptada({ presupuesto, onCerrar }) {
 
   return (
     <div className="modal-fondo" onClick={onCerrar}>
-      <div className="modal-caja" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-caja modal-caja-ancha" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div>
             <h2>{presupuesto.obra}</h2>
@@ -60,6 +113,9 @@ function DetalleObraAceptada({ presupuesto, onCerrar }) {
           <div><dt>Persiana</dt><dd>{presupuesto.persiana || '—'}</dd></div>
           <div><dt>Vidrio</dt><dd>{presupuesto.vidrio || '—'}</dd></div>
         </dl>
+
+        <h3 className="modal-subtitulo">Seguimiento de material</h3>
+        <TablaSeguimientoMateriales materiales={materiales} />
       </div>
     </div>
   )
@@ -68,6 +124,7 @@ function DetalleObraAceptada({ presupuesto, onCerrar }) {
 export default function ObrasAceptadasPage() {
   const { usuario, accessToken } = useAuth()
   const [filas, setFilas] = useState([])
+  const [materiales, setMateriales] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [busquedaObra, setBusquedaObra] = useState('')
@@ -76,11 +133,25 @@ export default function ObrasAceptadasPage() {
   const [obraSeleccionadaId, setObraSeleccionadaId] = useState(null)
 
   useEffect(() => {
-    presupuestosEnEstudio(accessToken)
-      .then((data) => setFilas(data.presupuestos))
+    Promise.all([presupuestosEnEstudio(accessToken), seguimientoMateriales(accessToken)])
+      .then(([datosFicha, datosMateriales]) => {
+        setFilas(datosFicha.presupuestos)
+        setMateriales(datosMateriales.materiales || [])
+      })
       .catch((err) => setError(err.message))
       .finally(() => setCargando(false))
   }, [accessToken])
+
+  // Agrupado por nombre de obra para cruzarlo con la ficha — mismo nombre
+  // de carpeta que usa presupuestos_en_estudio (ver sync_obras_aceptadas.js).
+  const materialesPorObra = useMemo(() => {
+    const mapa = new Map()
+    for (const m of materiales) {
+      if (!mapa.has(m.obra)) mapa.set(m.obra, [])
+      mapa.get(m.obra).push(m)
+    }
+    return mapa
+  }, [materiales])
 
   // Esta vista es exclusivamente las obras ya aceptadas — a diferencia de
   // Presupuestos en Estudio/Presupuesto, acá no hay otros estatus que
@@ -188,13 +259,22 @@ export default function ObrasAceptadasPage() {
       {!cargando && !error && filasFiltradas.length > 0 && (
         <div className="obras-grid">
           {filasFiltradas.map((p) => (
-            <TarjetaObraAceptada key={p.id} presupuesto={p} onAbrir={setObraSeleccionadaId} />
+            <TarjetaObraAceptada
+              key={p.id}
+              presupuesto={p}
+              materiales={materialesPorObra.get(p.obra) || []}
+              onAbrir={setObraSeleccionadaId}
+            />
           ))}
         </div>
       )}
 
       {obraSeleccionada && (
-        <DetalleObraAceptada presupuesto={obraSeleccionada} onCerrar={() => setObraSeleccionadaId(null)} />
+        <DetalleObraAceptada
+          presupuesto={obraSeleccionada}
+          materiales={materialesPorObra.get(obraSeleccionada.obra) || []}
+          onCerrar={() => setObraSeleccionadaId(null)}
+        />
       )}
     </div>
   )

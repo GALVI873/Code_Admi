@@ -71,3 +71,9 @@ export function cambiarEstatusOferta(accessToken, ofertaId, estatus) {
     body: JSON.stringify({ accion: 'cambiar_estatus_oferta', oferta_id: ofertaId, estatus }),
   })
 }
+
+export function seguimientoMateriales(accessToken) {
+  return request('/seguimiento_materiales.php', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
