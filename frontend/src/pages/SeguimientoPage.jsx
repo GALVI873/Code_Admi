@@ -5,6 +5,7 @@ import {
   actualizarPresupuestoEnEstudio,
   agregarSolicitudOferta,
   eliminarOferta,
+  cambiarEstatusOferta,
 } from '../api/client.js'
 
 // Espacio de trabajo personal de Geraldinne. Nunca muestra Descartadas —a
@@ -193,22 +194,41 @@ function FormularioSolicitudOferta({ onAgregar }) {
   )
 }
 
-function ItemOferta({ oferta, onEliminar }) {
-  const pendiente = oferta.estatus === 'Pendiente'
+// "Recibido" nunca se toca desde acá a propósito — esa lo pone solo la
+// sincronización con Drive cuando encuentra de verdad el PDF. Lo único que
+// Geraldinne puede decidir a mano es si sigue "Pendiente" o si el proveedor
+// ya la rechazó / nunca contestó ("No recibido").
+function SelectEstatusOferta({ oferta, onCambiar }) {
+  if (oferta.estatus === 'Recibido') {
+    return <span className="badge-estatus-oferta badge-estatus-oferta-recibido">Recibido</span>
+  }
   return (
-    <li className={`seguimiento-oferta-item ${pendiente ? 'seguimiento-oferta-item-pendiente' : ''}`}>
-      <span className={`badge-estatus-oferta ${pendiente ? 'badge-estatus-oferta-pendiente' : 'badge-estatus-oferta-recibido'}`}>
-        {oferta.estatus}
-      </span>
+    <select
+      className={`select-inline badge-estatus-oferta-select ${oferta.estatus === 'No recibido' ? 'badge-estatus-oferta-select-no-recibido' : 'badge-estatus-oferta-select-pendiente'}`}
+      value={oferta.estatus}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onCambiar(oferta.id, e.target.value)}
+    >
+      <option value="Pendiente">Pendiente</option>
+      <option value="No recibido">No recibido</option>
+    </select>
+  )
+}
+
+function ItemOferta({ oferta, onEliminar, onCambiarEstatus }) {
+  const recibido = oferta.estatus === 'Recibido'
+  return (
+    <li className={`seguimiento-oferta-item ${!recibido ? 'seguimiento-oferta-item-pendiente' : ''}`}>
+      <SelectEstatusOferta oferta={oferta} onCambiar={onCambiarEstatus} />
       <span className="seguimiento-oferta-proveedor">{oferta.proveedor || 'Proveedor sin detectar'}</span>
-      {pendiente ? (
-        <span className="seguimiento-oferta-fecha">Solicitada el {formatoFecha(oferta.fecha_solicitud) || '—'}</span>
-      ) : (
+      {recibido ? (
         <>
           <span className="seguimiento-oferta-valor">{oferta.valor != null ? formatoMoneda(oferta.valor) : 'Valor sin detectar'}</span>
           <span className="seguimiento-oferta-fecha">Llegó el {formatoFecha(oferta.fecha_llegada) || '—'}</span>
           <span className="seguimiento-oferta-archivo" title={oferta.archivo}>{oferta.archivo}</span>
         </>
+      ) : (
+        <span className="seguimiento-oferta-fecha">Solicitada el {formatoFecha(oferta.fecha_solicitud) || '—'}</span>
       )}
       <button
         type="button"
@@ -225,9 +245,9 @@ function ItemOferta({ oferta, onEliminar }) {
   )
 }
 
-function ListaOfertas({ ofertas, onAgregar, onEliminar }) {
-  const pendientes = ofertas.filter((o) => o.estatus === 'Pendiente')
-  const recibidas = ofertas.filter((o) => o.estatus !== 'Pendiente')
+function ListaOfertas({ ofertas, onAgregar, onEliminar, onCambiarEstatus }) {
+  const abiertas = ofertas.filter((o) => o.estatus !== 'Recibido')
+  const recibidas = ofertas.filter((o) => o.estatus === 'Recibido')
 
   return (
     <div className="seguimiento-ofertas-contenido">
@@ -237,22 +257,22 @@ function ListaOfertas({ ofertas, onAgregar, onEliminar }) {
         <p className="seguimiento-ofertas-vacio">Todavía no hay ninguna solicitud de valoración registrada para esta obra.</p>
       )}
 
-      {pendientes.length > 0 && (
+      {abiertas.length > 0 && (
         <ul className="seguimiento-ofertas-lista">
-          {pendientes.map((o) => <ItemOferta key={o.id} oferta={o} onEliminar={onEliminar} />)}
+          {abiertas.map((o) => <ItemOferta key={o.id} oferta={o} onEliminar={onEliminar} onCambiarEstatus={onCambiarEstatus} />)}
         </ul>
       )}
 
       {recibidas.length > 0 && (
         <ul className="seguimiento-ofertas-lista">
-          {recibidas.map((o) => <ItemOferta key={o.id} oferta={o} onEliminar={onEliminar} />)}
+          {recibidas.map((o) => <ItemOferta key={o.id} oferta={o} onEliminar={onEliminar} onCambiarEstatus={onCambiarEstatus} />)}
         </ul>
       )}
     </div>
   )
 }
 
-function LineaTiempo({ presupuesto, ofertas, ofertasAbiertas, onToggleOfertas, onAgregarOferta, onEliminarOferta }) {
+function LineaTiempo({ presupuesto, ofertas, ofertasAbiertas, onToggleOfertas, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta }) {
   const pasos = construirPasos(presupuesto)
 
   return (
@@ -279,7 +299,7 @@ function LineaTiempo({ presupuesto, ofertas, ofertasAbiertas, onToggleOfertas, o
       </ol>
       {ofertasAbiertas && (
         <div className="seguimiento-ofertas-panel">
-          <ListaOfertas ofertas={ofertas} onAgregar={onAgregarOferta} onEliminar={onEliminarOferta} />
+          <ListaOfertas ofertas={ofertas} onAgregar={onAgregarOferta} onEliminar={onEliminarOferta} onCambiarEstatus={onCambiarEstatusOferta} />
         </div>
       )}
     </>
@@ -370,7 +390,7 @@ function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio }) {
   )
 }
 
-function DetalleSeguimiento({ presupuesto, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta }) {
+function DetalleSeguimiento({ presupuesto, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta }) {
   const [ofertasAbiertas, setOfertasAbiertas] = useState(false)
 
   useEffect(() => {
@@ -420,6 +440,7 @@ function DetalleSeguimiento({ presupuesto, ofertas, onCerrar, onCambio, onAgrega
           onToggleOfertas={() => setOfertasAbiertas((v) => !v)}
           onAgregarOferta={(proveedor, fechaSolicitud) => onAgregarOferta(presupuesto.obra, proveedor, fechaSolicitud)}
           onEliminarOferta={onEliminarOferta}
+          onCambiarEstatusOferta={onCambiarEstatusOferta}
         />
 
         {!ofertasAbiertas && (
@@ -559,6 +580,17 @@ export default function SeguimientoPage() {
     }
   }
 
+  async function handleCambiarEstatusOferta(ofertaId, estatus) {
+    const anteriores = ofertas
+    setOfertas((o) => o.map((x) => (x.id === ofertaId ? { ...x, estatus } : x)))
+    try {
+      await cambiarEstatusOferta(accessToken, ofertaId, estatus)
+    } catch (err) {
+      setOfertas(anteriores)
+      setError(err.message)
+    }
+  }
+
   if (usuario?.email !== EMAIL_AUTORIZADO) {
     return (
       <div className="dashboard">
@@ -668,6 +700,7 @@ export default function SeguimientoPage() {
           onCambio={handleCambio}
           onAgregarOferta={handleAgregarOferta}
           onEliminarOferta={handleEliminarOferta}
+          onCambiarEstatusOferta={handleCambiarEstatusOferta}
         />
       )}
     </div>

@@ -63,3 +63,11 @@ export function eliminarOferta(accessToken, ofertaId) {
     body: JSON.stringify({ accion: 'eliminar_oferta', oferta_id: ofertaId }),
   })
 }
+
+export function cambiarEstatusOferta(accessToken, ofertaId, estatus) {
+  return request('/presupuestos_en_estudio.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'cambiar_estatus_oferta', oferta_id: ofertaId, estatus }),
+  })
+}

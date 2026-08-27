@@ -20,9 +20,11 @@ declare(strict_types=1);
 //   - "estatus" requiere ver_todos o ver_seguimiento (cualquiera que pueda ver la tabla).
 //   - "comentario_geraldinne"/"fecha_limite_entrega" requieren presupuestos.ver_seguimiento
 //     (solo Geraldinne — Álvaro las ve en su vista pero no las edita).
-//   - {accion:"agregar_solicitud_oferta", obra, proveedor, fecha_solicitud} y
-//     {accion:"eliminar_oferta", oferta_id} requieren presupuestos.ver_seguimiento
-//     (solo Geraldinne).
+//   - {accion:"agregar_solicitud_oferta", obra, proveedor, fecha_solicitud},
+//     {accion:"eliminar_oferta", oferta_id} y {accion:"cambiar_estatus_oferta",
+//     oferta_id, estatus:"Pendiente"|"No recibido"} requieren
+//     presupuestos.ver_seguimiento (solo Geraldinne). "Recibido" nunca se
+//     pone a mano, solo lo pone la sincronización con Drive.
 // DELETE: protegido por SYNC_TOKEN igual que POST. Con {obras:[...]} borra esas
 // filas puntuales sin importar su estatus; con {obras_activas:[...]} reconcilia
 // tras un sync (borra lo que no está en la lista, solo en estatus por defecto).
@@ -82,14 +84,17 @@ try {
         )
     ");
 
-    // Ofertas de proveedor de cada obra — relación 1 a N. Dos orígenes:
-    // Geraldinne registra a mano a quién le pidió valoración (estatus
-    // "Pendiente", solo fecha_solicitud) y, cuando la sincronización
+    // Ofertas de proveedor de cada obra — relación 1 a N. Geraldinne
+    // registra a mano a quién le pidió valoración (estatus "Pendiente", solo
+    // fecha_solicitud); si el proveedor rechaza el pedido o nunca contesta,
+    // ella misma la pasa a "No recibido". Cuando la sincronización con Drive
     // encuentra el PDF correspondiente en la carpeta "Valoración", esa fila
-    // pasa a "Recibido" con valor/fecha/archivo/fecha_llegada. Si no hay
-    // ninguna "Pendiente" que le calce, se crea igual como "Recibido" (no se
-    // pierde una oferta real detectada solo porque no se había registrado el
-    // pedido) — ver accion:"sincronizar_ofertas_detectadas" más abajo.
+    // pasa a "Recibido" con valor/fecha/archivo/fecha_llegada — ese último
+    // paso nunca se hace a mano, solo lo pone la sincronización. Si no hay
+    // ninguna fila abierta (Pendiente o No recibido) que le calce, se crea
+    // igual como "Recibido" (no se pierde una oferta real detectada solo
+    // porque no se había registrado el pedido) — ver
+    // accion:"sincronizar_ofertas_detectadas" más abajo.
     $db->exec("
         CREATE TABLE IF NOT EXISTS ofertas_proveedor (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -243,6 +248,26 @@ try {
             Response::json(['ok' => true]);
         }
 
+        // "No recibido": el proveedor rechazó el pedido o nunca contestó.
+        // Solo se puede pasar entre "Pendiente" y "No recibido" a mano —
+        // "Recibido" queda reservado para cuando la sincronización encuentra
+        // de verdad el PDF en la carpeta "Valoración" (ver
+        // sincronizar_ofertas_detectadas más abajo), nunca se pone a mano.
+        if (($body['accion'] ?? '') === 'cambiar_estatus_oferta') {
+            AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_seguimiento');
+            $ofertaId = (int) ($body['oferta_id'] ?? 0);
+            $estatusOferta = trim((string) ($body['estatus'] ?? ''));
+            if ($ofertaId <= 0) {
+                Response::error('Falta "oferta_id"', 422);
+            }
+            if (!in_array($estatusOferta, ['Pendiente', 'No recibido'], true)) {
+                Response::error('"estatus" debe ser "Pendiente" o "No recibido"', 422);
+            }
+            $db->prepare("UPDATE ofertas_proveedor SET estatus = ?, actualizado_en = datetime('now') WHERE id = ? AND estatus != 'Recibido'")
+                ->execute([$estatusOferta, $ofertaId]);
+            Response::json(['ok' => true]);
+        }
+
         $id = (int) ($body['id'] ?? 0);
         if ($id <= 0) {
             Response::error('Falta "id"', 422);
@@ -317,9 +342,11 @@ try {
         // había cargado a mano). Por cada oferta detectada:
         //   1) si ya existe una fila con el mismo archivo (de una corrida
         //      anterior), se actualiza en vez de duplicar;
-        //   2) si no, se busca una "Pendiente" de esa obra cuyo proveedor
-        //      calce (comparación sin tildes/mayúsculas, en cualquier
-        //      dirección) y se completa esa fila;
+        //   2) si no, se busca una fila de esa obra que todavía no esté
+        //      "Recibido" (o sea "Pendiente" o "No recibido" — un proveedor
+        //      que se había dado por perdido puede terminar contestando)
+        //      cuyo proveedor calce (comparación sin tildes/mayúsculas, en
+        //      cualquier dirección) y se completa esa fila;
         //   3) si no hay ninguna de las dos, se crea igual como "Recibido"
         //      (mejor mostrar una oferta real sin solicitud registrada que
         //      perderla) — Geraldinne puede borrarla a mano si no corresponde.
@@ -330,7 +357,7 @@ try {
                 Response::error('Faltan "obra" y/o "ofertas" (array)', 422);
             }
 
-            $stmtPendientes = $db->prepare("SELECT * FROM ofertas_proveedor WHERE obra = ? AND estatus = 'Pendiente'");
+            $stmtPendientes = $db->prepare("SELECT * FROM ofertas_proveedor WHERE obra = ? AND estatus != 'Recibido'");
             $stmtPendientes->execute([$obra]);
             $pendientes = $stmtPendientes->fetchAll();
             $usadas = [];

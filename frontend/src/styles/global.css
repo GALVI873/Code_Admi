@@ -895,14 +895,29 @@ body {
   white-space: nowrap;
 }
 
-.badge-estatus-oferta-pendiente {
+.badge-estatus-oferta-recibido {
+  background: #e7f7ee;
+  color: #1e8a52;
+}
+
+.badge-estatus-oferta-select {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  padding: 3px 20px 3px 8px;
+  border-radius: 20px;
+  border: none;
+}
+
+.badge-estatus-oferta-select-pendiente {
   background: #fef5e9;
   color: #a3620a;
 }
 
-.badge-estatus-oferta-recibido {
-  background: #e7f7ee;
-  color: #1e8a52;
+.badge-estatus-oferta-select-no-recibido {
+  background: #fdedec;
+  color: var(--rojo);
 }
 
 .seguimiento-oferta-proveedor {
