@@ -175,10 +175,14 @@ async function main() {
       // Una entrada por PDF encontrado: normalmente una sola (la más
       // reciente), o varias si la carpeta de la obra tiene "opciones"
       // (alternativas del mismo proyecto, ej. "Opción A"/"Opción B") — cada
-      // una sube como fila separada del panel.
+      // una sube como fila separada del panel. fechaCreacionCarpeta descarta
+      // cualquier PDF más viejo que la propia carpeta de la obra (no puede
+      // ser un envío de ESTA obra) — evita enganchar por error un
+      // presupuesto de años atrás para el mismo cliente en un proyecto
+      // distinto que reusa el mismo nombre de lugar (caso real: Navacerrada).
       let envios;
       try {
-        envios = await resolverEnviosDeObra(obra, faltantes, archivo.obraFolderId);
+        envios = await resolverEnviosDeObra(obra, faltantes, archivo.obraFolderId, archivo.fechaCreacionCarpeta);
       } catch {
         envios = [{ sufijo: '', campos: {} }]; // sigue sin el respaldo/fecha si la búsqueda falla
       }

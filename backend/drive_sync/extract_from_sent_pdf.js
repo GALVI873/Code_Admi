@@ -78,10 +78,25 @@ function coincideConObra(obra, nombreArchivo) {
   return coincidentes.length / palabrasObra.length >= UMBRAL_COINCIDENCIA_PALABRAS;
 }
 
-async function buscarPdfEnviado(drive, enviadosFolderId, obra) {
+// Un PDF no puede ser el envío de una obra si se creó en Drive ANTES de que
+// la carpeta de esa obra existiera — caso real: "Navacerrada" (Arq. Silvia
+// San Martín) no tiene carpeta "Enviados" propia, así que se cae a la
+// búsqueda global por nombre; ahí "Navacerrada" (una sola palabra
+// significativa, coincide con casi cualquier cosa) enganchó un presupuesto
+// de 2024 de la MISMA arquitecta para un proyecto distinto que reusa el
+// mismo nombre de lugar — el archivo es real, pero no es de esta obra. Sin
+// esta fecha de corte, cualquier obra con nombre corto/común y sin carpeta
+// de Enviados propia corre el mismo riesgo.
+function esPosterior(archivo, fechaCreacionCarpeta) {
+  if (!fechaCreacionCarpeta) return true;
+  return archivo.createdTime.slice(0, 10) >= fechaCreacionCarpeta;
+}
+
+async function buscarPdfEnviado(drive, enviadosFolderId, obra, fechaCreacionCarpeta) {
   const indice = await obtenerIndicePdfsEnviados(drive, enviadosFolderId);
   const coincidencias = indice
     .filter((f) => coincideConObra(obra, f.name))
+    .filter((f) => esPosterior(f, fechaCreacionCarpeta))
     .sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
   return coincidencias[0] || null;
 }
@@ -93,7 +108,7 @@ async function buscarPdfEnviado(drive, enviadosFolderId, obra) {
 // porque no depende de adivinar el nombre, está guardado a propósito junto
 // a la obra. Recorrido acotado a la carpeta de la obra, no al árbol
 // completo de Drive.
-async function pdfsEnCarpetaObra(drive, obraFolderId) {
+async function pdfsEnCarpetaObra(drive, obraFolderId, fechaCreacionCarpeta) {
   const res = await drive.files.list({
     q: `'${obraFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
     fields: 'files(id, name)',
@@ -106,7 +121,7 @@ async function pdfsEnCarpetaObra(drive, obraFolderId) {
   for (const carpeta of subcarpetasEnviados) {
     await listarPdfsRecursivo(drive, carpeta.id, pdfs);
   }
-  return pdfs;
+  return pdfs.filter((f) => esPosterior(f, fechaCreacionCarpeta));
 }
 
 // Distingue "opciones" (alternativas del mismo proyecto: distinto material,
@@ -147,8 +162,8 @@ async function pdfsConTexto(drive, archivos) {
 // carpintería (se asume que son borradores previos a separar en opciones) y
 // se devuelve un resultado por etiqueta distinta, con el más reciente de
 // cada una.
-async function buscarVariantesEnCarpetaObra(drive, obraFolderId) {
-  const archivos = await pdfsEnCarpetaObra(drive, obraFolderId);
+async function buscarVariantesEnCarpetaObra(drive, obraFolderId, fechaCreacionCarpeta) {
+  const archivos = await pdfsEnCarpetaObra(drive, obraFolderId, fechaCreacionCarpeta);
   if (archivos.length === 0) return { variantes: [], precioComplementario: null };
 
   const pdfs = await pdfsConTexto(drive, archivos);
@@ -449,18 +464,18 @@ async function extraerRellenoDePdf(archivo, camposFaltantes) {
   return construirRelleno(archivo, text, camposFaltantes);
 }
 
-async function completarDesdeEnviado(obra, camposFaltantes, obraFolderId) {
+async function completarDesdeEnviado(obra, camposFaltantes, obraFolderId, fechaCreacionCarpeta) {
   const drive = getDrive();
 
   let archivo = null;
   if (obraFolderId) {
-    const { variantes } = await buscarVariantesEnCarpetaObra(drive, obraFolderId);
+    const { variantes } = await buscarVariantesEnCarpetaObra(drive, obraFolderId, fechaCreacionCarpeta);
     archivo = variantes[0] ? variantes[0].archivo : null;
   }
   if (!archivo) {
     const enviadosFolderId = process.env.GOOGLE_DRIVE_ENVIADOS_FOLDER_ID;
     if (enviadosFolderId) {
-      archivo = await buscarPdfEnviado(drive, enviadosFolderId, obra);
+      archivo = await buscarPdfEnviado(drive, enviadosFolderId, obra, fechaCreacionCarpeta);
     }
   }
   if (!archivo) return {};
@@ -473,18 +488,18 @@ async function completarDesdeEnviado(obra, camposFaltantes, obraFolderId) {
 // vez de una sola. Cada entrada trae su propio sufijo para el nombre de
 // obra en el panel ("" si no hay opciones, " — Opción A" / " — Opción B" si
 // las hay) y sus propios campos extraídos de ESE PDF puntual.
-async function resolverEnviosDeObra(obra, camposFaltantes, obraFolderId) {
+async function resolverEnviosDeObra(obra, camposFaltantes, obraFolderId, fechaCreacionCarpeta) {
   const drive = getDrive();
 
   let variantes = [];
   let precioComplementario = null;
   if (obraFolderId) {
-    ({ variantes, precioComplementario } = await buscarVariantesEnCarpetaObra(drive, obraFolderId));
+    ({ variantes, precioComplementario } = await buscarVariantesEnCarpetaObra(drive, obraFolderId, fechaCreacionCarpeta));
   }
   if (variantes.length === 0) {
     const enviadosFolderId = process.env.GOOGLE_DRIVE_ENVIADOS_FOLDER_ID;
     if (enviadosFolderId) {
-      const archivo = await buscarPdfEnviado(drive, enviadosFolderId, obra);
+      const archivo = await buscarPdfEnviado(drive, enviadosFolderId, obra, fechaCreacionCarpeta);
       if (archivo) {
         const buffer = await descargarComoBuffer(drive, archivo.id);
         const { text } = await pdfParse(buffer);
