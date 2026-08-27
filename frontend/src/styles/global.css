@@ -658,6 +658,13 @@ body {
   letter-spacing: .03em;
 }
 
+.input-fecha-limite {
+  flex: none;
+  width: 150px;
+  padding: 4px 8px;
+  font-size: 12.5px;
+}
+
 .modal-campo-ancho {
   margin-bottom: 20px;
   padding-bottom: 18px;

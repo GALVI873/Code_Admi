@@ -179,7 +179,7 @@ function FechaLimiteEntrega({ presupuesto, onCambio }) {
   return (
     <input
       type="date"
-      className="input-filtro"
+      className="input-filtro input-fecha-limite"
       value={presupuesto.fecha_limite_entrega || ''}
       onClick={(e) => e.stopPropagation()}
       onChange={(e) => onCambio(presupuesto.id, { fecha_limite_entrega: e.target.value })}
