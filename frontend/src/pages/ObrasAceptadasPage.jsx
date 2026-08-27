@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { presupuestosEnEstudio, seguimientoMateriales } from '../api/client.js'
+import { obrasAceptadas, seguimientoMateriales } from '../api/client.js'
 
 // Espacio de trabajo de Alfredo (Gestión de Obras). Primera versión: solo
 // lectura, la lista de obras que Geraldinne ya movió a "Aceptadas" — según
@@ -133,9 +133,9 @@ export default function ObrasAceptadasPage() {
   const [obraSeleccionadaId, setObraSeleccionadaId] = useState(null)
 
   useEffect(() => {
-    Promise.all([presupuestosEnEstudio(accessToken), seguimientoMateriales(accessToken)])
-      .then(([datosFicha, datosMateriales]) => {
-        setFilas(datosFicha.presupuestos)
+    Promise.all([obrasAceptadas(accessToken), seguimientoMateriales(accessToken)])
+      .then(([datosObras, datosMateriales]) => {
+        setFilas(datosObras.obras)
         setMateriales(datosMateriales.materiales || [])
       })
       .catch((err) => setError(err.message))
@@ -143,7 +143,7 @@ export default function ObrasAceptadasPage() {
   }, [accessToken])
 
   // Agrupado por nombre de obra para cruzarlo con la ficha — mismo nombre
-  // de carpeta que usa presupuestos_en_estudio (ver sync_obras_aceptadas.js).
+  // de carpeta que sube sync_obras_aceptadas.js para ambas tablas.
   const materialesPorObra = useMemo(() => {
     const mapa = new Map()
     for (const m of materiales) {
@@ -153,10 +153,11 @@ export default function ObrasAceptadasPage() {
     return mapa
   }, [materiales])
 
-  // Esta vista es exclusivamente las obras ya aceptadas — a diferencia de
+  // Cada fila de obras_aceptadas.php ya es, por definición, una obra
+  // aceptada (la tabla solo existe para eso) — a diferencia de
   // Presupuestos en Estudio/Presupuesto, acá no hay otros estatus que
-  // filtrar ni agrupar, es el único que le interesa a Alfredo.
-  const aceptadas = useMemo(() => filas.filter((p) => p.estatus === 'Aceptado'), [filas])
+  // filtrar ni agrupar.
+  const aceptadas = filas
 
   const contactosDisponibles = useMemo(() => {
     if (filtroCategoria === 'Todos') return []

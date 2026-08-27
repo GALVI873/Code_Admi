@@ -77,3 +77,9 @@ export function seguimientoMateriales(accessToken) {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
 }
+
+export function obrasAceptadas(accessToken) {
+  return request('/obras_aceptadas.php', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
