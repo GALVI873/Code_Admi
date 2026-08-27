@@ -114,9 +114,8 @@ function ListaOfertas({ ofertas }) {
   )
 }
 
-function LineaTiempo({ presupuesto, ofertas }) {
+function LineaTiempo({ presupuesto, ofertas, ofertasAbiertas, onToggleOfertas }) {
   const pasos = construirPasos(presupuesto)
-  const [ofertasAbiertas, setOfertasAbiertas] = useState(false)
 
   return (
     <>
@@ -125,7 +124,7 @@ function LineaTiempo({ presupuesto, ofertas }) {
           <li
             key={paso.clave}
             className={`seguimiento-paso ${paso.hecho ? 'seguimiento-paso-hecho' : 'seguimiento-paso-pendiente'} ${paso.desplegable ? 'seguimiento-paso-clicable' : ''}`}
-            onClick={paso.desplegable ? () => setOfertasAbiertas((v) => !v) : undefined}
+            onClick={paso.desplegable ? onToggleOfertas : undefined}
             role={paso.desplegable ? 'button' : undefined}
             tabIndex={paso.desplegable ? 0 : undefined}
           >
@@ -187,6 +186,8 @@ function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio }) {
 }
 
 function DetalleSeguimiento({ presupuesto, ofertas, onCerrar, onCambio }) {
+  const [ofertasAbiertas, setOfertasAbiertas] = useState(false)
+
   useEffect(() => {
     function alEscape(e) {
       if (e.key === 'Escape') onCerrar()
@@ -217,22 +218,29 @@ function DetalleSeguimiento({ presupuesto, ofertas, onCerrar, onCambio }) {
           </div>
         </div>
 
-        <LineaTiempo presupuesto={presupuesto} ofertas={ofertas} />
+        <LineaTiempo
+          presupuesto={presupuesto}
+          ofertas={ofertas}
+          ofertasAbiertas={ofertasAbiertas}
+          onToggleOfertas={() => setOfertasAbiertas((v) => !v)}
+        />
 
-        <dl className="modal-detalle">
-          <div><dt>Nº Ppto</dt><dd>{presupuesto.numero_ppto || '—'}</dd></div>
-          <div><dt>Nº Ventanas</dt><dd>{presupuesto.no_ventanas ?? '—'}</dd></div>
-          <div><dt>Carpintería</dt><dd>{presupuesto.carpinteria || '—'}</dd></div>
-          <div><dt>Proveedor</dt><dd>{presupuesto.proveedor || '—'}</dd></div>
-          <div><dt>RAL / Color</dt><dd>{presupuesto.ral || '—'}</dd></div>
-          <div><dt>Persiana</dt><dd>{presupuesto.persiana || '—'}</dd></div>
-          <div><dt>Vidrio</dt><dd>{presupuesto.vidrio || '—'}</dd></div>
-          <div><dt>Precio/m²</dt><dd>{formatoMoneda(presupuesto.precio_m2)}</dd></div>
-          <div><dt>Precio total oferta</dt><dd>{formatoMoneda(presupuesto.precio_ultimo_presupuesto)}</dd></div>
-          <div><dt>% Ganancia</dt><dd>{formatoPorcentaje(presupuesto.porcentaje_ganancia)}</dd></div>
-          <div><dt>Fecha solicitud</dt><dd>{formatoFecha(presupuesto.fecha_creacion_carpeta) || '—'}</dd></div>
-          <div><dt>Fecha última oferta</dt><dd>{formatoFecha(presupuesto.fecha_ultimo_envio) || '—'}</dd></div>
-        </dl>
+        {!ofertasAbiertas && (
+          <dl className="modal-detalle">
+            <div><dt>Nº Ppto</dt><dd>{presupuesto.numero_ppto || '—'}</dd></div>
+            <div><dt>Nº Ventanas</dt><dd>{presupuesto.no_ventanas ?? '—'}</dd></div>
+            <div><dt>Carpintería</dt><dd>{presupuesto.carpinteria || '—'}</dd></div>
+            <div><dt>Proveedor</dt><dd>{presupuesto.proveedor || '—'}</dd></div>
+            <div><dt>RAL / Color</dt><dd>{presupuesto.ral || '—'}</dd></div>
+            <div><dt>Persiana</dt><dd>{presupuesto.persiana || '—'}</dd></div>
+            <div><dt>Vidrio</dt><dd>{presupuesto.vidrio || '—'}</dd></div>
+            <div><dt>Precio/m²</dt><dd>{formatoMoneda(presupuesto.precio_m2)}</dd></div>
+            <div><dt>Precio total oferta</dt><dd>{formatoMoneda(presupuesto.precio_ultimo_presupuesto)}</dd></div>
+            <div><dt>% Ganancia</dt><dd>{formatoPorcentaje(presupuesto.porcentaje_ganancia)}</dd></div>
+            <div><dt>Fecha solicitud</dt><dd>{formatoFecha(presupuesto.fecha_creacion_carpeta) || '—'}</dd></div>
+            <div><dt>Fecha última oferta</dt><dd>{formatoFecha(presupuesto.fecha_ultimo_envio) || '—'}</dd></div>
+          </dl>
+        )}
       </div>
     </div>
   )
