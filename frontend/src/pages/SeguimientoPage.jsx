@@ -36,6 +36,15 @@ function InsigniaAlerta() {
   )
 }
 
+// Geraldinne no puede cambiar la prioridad (eso es de Álvaro/Valentina,
+// permiso presupuestos.gestionar_prioridad) — acá es solo lectura, y solo se
+// muestra cuando es "Alta" para no llenar cada tarjeta con una insignia
+// "Normal" que no aporta nada.
+function InsigniaPrioridad({ presupuesto }) {
+  if (presupuesto.prioridad !== 'Alta') return null
+  return <span className="badge badge-rechazado">Alta</span>
+}
+
 function formatoFecha(iso) {
   if (!iso) return null
   const [anio, mes, dia] = iso.split('-')
@@ -180,6 +189,7 @@ function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio }) {
       <div className="obra-card-cliente" title={presupuesto.cliente || ''}>{presupuesto.cliente || 'Sin cliente'}</div>
       <div className="obra-card-meta">
         <SelectEstatus presupuesto={presupuesto} onCambio={onCambio} />
+        <InsigniaPrioridad presupuesto={presupuesto} />
       </div>
     </div>
   )
@@ -204,6 +214,7 @@ function DetalleSeguimiento({ presupuesto, ofertas, onCerrar, onCambio }) {
             <h2>{presupuesto.obra}</h2>
             <p>{presupuesto.cliente || 'Sin cliente'}</p>
           </div>
+          <InsigniaPrioridad presupuesto={presupuesto} />
           <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
         </div>
 
@@ -272,6 +283,16 @@ export default function SeguimientoPage() {
   // Estudio, acá no hay forma de volver a mostrarlas.
   const filasVivas = useMemo(() => filas.filter((p) => p.estatus !== 'Descartado'), [filas])
 
+  // "Todos" oculta además "Pdt Aprobación" — a Geraldinne solo le interesa
+  // ese estatus cuando lo busca a propósito (filtrando por él), no como
+  // parte del vistazo general del día a día. Mismo patrón que Descartado en
+  // Presupuestos en Estudio, aplicado acá solo a este estatus y solo en
+  // esta página.
+  const filasSegunEstatus = useMemo(
+    () => filasVivas.filter((p) => (filtroEstatus === 'Todos' ? p.estatus !== 'Pdt Aprobación' : p.estatus === filtroEstatus)),
+    [filasVivas, filtroEstatus],
+  )
+
   const contactosDisponibles = useMemo(() => {
     if (filtroCategoria === 'Todos') return []
     const unicos = new Set(
@@ -282,13 +303,31 @@ export default function SeguimientoPage() {
 
   const filasFiltradas = useMemo(() => {
     const texto = busquedaObra.trim().toLowerCase()
-    return filasVivas
+    return filasSegunEstatus
       .filter((p) => !texto || p.obra?.toLowerCase().includes(texto))
       .filter((p) => filtroCategoria === 'Todos' || p.categoria === filtroCategoria)
       .filter((p) => filtroContacto === 'Todos' || p.contacto === filtroContacto)
-      .filter((p) => filtroEstatus === 'Todos' || p.estatus === filtroEstatus)
-      .sort((a, b) => (a.obra || '').localeCompare(b.obra || '', 'es'))
-  }, [filasVivas, busquedaObra, filtroCategoria, filtroContacto, filtroEstatus])
+      .sort((a, b) => {
+        // Cuando Álvaro marca una obra como prioridad "Alta" desde su
+        // panel, acá sube al principio de su grupo — es la señal de que
+        // Geraldinne debe atenderla primero.
+        if (a.prioridad === 'Alta' && b.prioridad !== 'Alta') return -1
+        if (a.prioridad !== 'Alta' && b.prioridad === 'Alta') return 1
+        return (a.obra || '').localeCompare(b.obra || '', 'es')
+      })
+  }, [filasSegunEstatus, busquedaObra, filtroCategoria, filtroContacto])
+
+  // Agrupadas por estatus para que el grid tenga secciones claras en vez de
+  // una sola pared de tarjetas (mismo patrón que Presupuestos en Estudio).
+  // "Pdt Aprobación" queda fuera del agrupamiento por defecto porque
+  // filasSegunEstatus ya lo excluyó de "Todos"; al filtrar puntualmente por
+  // ese estatus no hace falta agrupar, ya es un solo grupo.
+  const gruposVisibles = useMemo(() => {
+    if (filtroEstatus !== 'Todos') return [{ estatus: filtroEstatus, items: filasFiltradas }]
+    return ESTATUS_OPCIONES.filter((e) => e !== 'Pdt Aprobación')
+      .map((estatus) => ({ estatus, items: filasFiltradas.filter((p) => p.estatus === estatus) }))
+      .filter((g) => g.items.length > 0)
+  }, [filasFiltradas, filtroEstatus])
 
   function handleCambioCategoria(valor) {
     setFiltroCategoria(valor)
@@ -385,7 +424,7 @@ export default function SeguimientoPage() {
             </select>
           </div>
           <span className="filtro-contador">
-            {filasFiltradas.length} de {filasVivas.length}
+            {filasFiltradas.length} de {filasSegunEstatus.length}
           </span>
         </div>
       )}
@@ -396,13 +435,21 @@ export default function SeguimientoPage() {
         <p className="dashboard-nota">Ninguna obra coincide con los filtros aplicados.</p>
       )}
 
-      {!cargando && !error && filasFiltradas.length > 0 && (
-        <div className="obras-grid">
-          {filasFiltradas.map((p) => (
-            <TarjetaSeguimiento key={p.id} presupuesto={p} onAbrir={setObraSeleccionadaId} onCambio={handleCambio} />
-          ))}
-        </div>
-      )}
+      {!cargando && !error && filasFiltradas.length > 0 && gruposVisibles.map((grupo) => (
+        <section key={grupo.estatus} className="obras-seccion">
+          {filtroEstatus === 'Todos' && (
+            <h2 className={`obras-seccion-titulo ${CLASE_ESTATUS[grupo.estatus] || ''}`}>
+              {grupo.estatus}
+              <span className="obras-seccion-contador">{grupo.items.length}</span>
+            </h2>
+          )}
+          <div className="obras-grid">
+            {grupo.items.map((p) => (
+              <TarjetaSeguimiento key={p.id} presupuesto={p} onAbrir={setObraSeleccionadaId} onCambio={handleCambio} />
+            ))}
+          </div>
+        </section>
+      ))}
 
       {obraSeleccionada && (
         <DetalleSeguimiento
