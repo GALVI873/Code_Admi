@@ -198,7 +198,7 @@ function DetalleSeguimiento({ presupuesto, ofertas, onCerrar, onCambio }) {
 
   return (
     <div className="modal-fondo" onClick={onCerrar}>
-      <div className="modal-caja" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-caja modal-caja-ancha" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div>
             <h2>{presupuesto.obra}</h2>
