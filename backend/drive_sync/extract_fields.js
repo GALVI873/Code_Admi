@@ -101,7 +101,12 @@ function extraerCampos(filePath) {
 
   return {
     cliente: cliente || null,
-    estatus: 'En Estudio',
+    // "En Estudio" es solo mientras la carpeta existe sin que la hoja de
+    // cálculo tenga valores todavía (fila "Total general" vacía o en cero).
+    // En cuanto tiene un total real, pasa sola a "En Valoración" — "En
+    // Revisión" es la única fase previa al envío que se pone a mano (ver
+    // presupuestos_en_estudio.php, nunca se pisa acá).
+    estatus: precioPpto ? 'En Valoración' : 'En Estudio',
     no_ventanas: noVentanas,
     precio_m2: precioM2,
     ral: ral || null,

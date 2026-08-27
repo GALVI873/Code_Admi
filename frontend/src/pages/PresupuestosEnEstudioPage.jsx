@@ -3,10 +3,11 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { presupuestosEnEstudio, actualizarPresupuestoEnEstudio } from '../api/client.js'
 
 // Orden = flujo real: "En Estudio" es el default al descubrir la obra en
-// Drive; "En Valoración"/"En Revisión" son afinamientos manuales de esa
-// misma fase previa al envío; "Pdt Aprobación" se pone solo (o a mano) en
-// cuanto hay un PDF en la carpeta Enviados de la obra; Aceptado/Descartado
-// son decisiones finales.
+// Drive (solo existe la carpeta, sin valores en la hoja de cálculo);
+// "En Valoración" es automático en cuanto esa hoja tiene un total real;
+// "En Revisión" es la única fase previa al envío que se pone siempre a
+// mano; "Pdt Aprobación" se pone solo en cuanto hay un PDF en la carpeta
+// Enviados de la obra; Aceptado/Descartado son decisiones finales manuales.
 const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Pdt Aprobación', 'Aceptado', 'Descartado']
 
 // Categorías de contacto tal como las organiza Drive (Arquitectos/

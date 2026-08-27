@@ -31,12 +31,14 @@ declare(strict_types=1);
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
 
-// "En Estudio" es el default automático (recién descubierta en Drive, sin
-// envío todavía). "En Valoración"/"En Revisión" son afinamientos manuales de
-// esa misma fase — nadie los pone la sincronización, solo una persona. "Pdt
-// Aprobación" es automático en cuanto la sincronización encuentra un PDF en
-// la carpeta Enviados de la obra (para cualquiera de los tres estatus de
-// arriba). Descartado/Aceptado son decisiones finales manuales.
+// "En Estudio" es el default automático (recién descubierta en Drive, solo
+// existe la carpeta, la hoja de cálculo todavía no tiene valores). En cuanto
+// esa hoja tiene un total real pasa sola a "En Valoración" — también
+// automático. "En Revisión" es la única fase previa al envío que se pone
+// siempre a mano. "Pdt Aprobación" es automático en cuanto la sincronización
+// encuentra un PDF en la carpeta Enviados de la obra (para cualquiera de los
+// tres estatus previos). Descartado/Aceptado son decisiones finales
+// manuales.
 const ESTATUS_VALIDOS = ['En Estudio', 'En Valoración', 'En Revisión', 'Pdt Aprobación', 'Aceptado', 'Descartado'];
 const ESTATUS_PRE_ENVIO = ['En Estudio', 'En Valoración', 'En Revisión'];
 
@@ -457,12 +459,18 @@ try {
 
         // "prioridad" no se toca acá a propósito en el UPDATE: es un dato que
         // decide un usuario desde el panel, la sincronización con Drive nunca
-        // lo pisa. "estatus" es la única excepción: si la sincronización
-        // encuentra un envío nuevo (excluded.estatus = 'Pdt Aprobación') y la
-        // obra seguía en una de las fases previas al envío (En Estudio, En
-        // Valoración o En Revisión), se pasa a 'Pdt Aprobación'
-        // automáticamente. Cualquier otro estatus puesto a mano (Descartado,
-        // Aceptado, o un Pdt Aprobación ya existente) nunca se pisa. En el
+        // lo pisa. "estatus" tiene dos transiciones automáticas, ambas hacia
+        // adelante nada más (nunca hacia atrás):
+        //   1. "En Estudio" -> "En Valoración" en cuanto la hoja de cálculo
+        //      tiene un total real (ver extract_fields.js) — antes de eso
+        //      solo existe la carpeta, sin nada que valorar todavía.
+        //   2. Cualquier fase previa al envío ("En Estudio", "En Valoración"
+        //      o "En Revisión") -> "Pdt Aprobación" en cuanto la
+        //      sincronización encuentra un envío nuevo.
+        // "En Revisión" es la única fase previa al envío que se pone
+        // siempre a mano — nunca la asigna la sincronización, así que
+        // tampoco hay transición automática HACIA ella. Descartado,
+        // Aceptado o un Pdt Aprobación ya existente nunca se pisan. En el
         // INSERT sí se usa el valor por defecto para una obra nueva.
         $estatusPreEnvio = "'" . implode("','", ESTATUS_PRE_ENVIO) . "'";
         $stmt = $db->prepare("
@@ -474,6 +482,8 @@ try {
                 estatus = CASE
                     WHEN presupuestos_en_estudio.estatus IN ($estatusPreEnvio) AND excluded.estatus = 'Pdt Aprobación'
                         THEN 'Pdt Aprobación'
+                    WHEN presupuestos_en_estudio.estatus = 'En Estudio' AND excluded.estatus = 'En Valoración'
+                        THEN 'En Valoración'
                     ELSE presupuestos_en_estudio.estatus
                 END,
                 no_ventanas = excluded.no_ventanas,
