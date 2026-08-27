@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { obrasAceptadas, seguimientoMateriales, confirmarObraAceptada } from '../api/client.js'
+import { obrasAceptadas, seguimientoMateriales, confirmarCampoObraAceptada } from '../api/client.js'
 
 // Espacio de trabajo de Alfredo (Gestión de Obras). Primera versión: solo
 // lectura, la lista de obras que Geraldinne ya movió a "Aceptadas" — según
@@ -37,7 +37,7 @@ function TarjetaObraAceptada({ presupuesto, materiales, onAbrir }) {
       <div className="obra-card-titulo" title={presupuesto.obra}>{presupuesto.obra}</div>
       <div className="obra-card-cliente" title={presupuesto.cliente || ''}>{presupuesto.cliente || 'Sin cliente'}</div>
       <div className="obra-card-meta">
-        <span className="badge badge-borrador">{presupuesto.carpinteria || 'Sin carpintería'}</span>
+        <span className="badge badge-borrador">{presupuesto.proveedor || 'Sin proveedor'}</span>
         {pendientes > 0 && (
           <span className="badge badge-rechazado">{pendientes} pendiente{pendientes > 1 ? 's' : ''}</span>
         )}
@@ -105,66 +105,118 @@ function SeguimientoPorPosicion({ materiales }) {
   )
 }
 
-// Campo de ficha editable: Alfredo confirma o corrige el dato que trajo el
-// Excel. Guarda al salir del campo (como el comentario de Geraldinne), y
-// desde ese momento la sincronización con Drive ya no lo pisa (ver
-// obras_aceptadas.php) — la fuente de verdad pasa a ser lo que él confirmó,
-// y backend/drive_sync/escribir_confirmaciones_aceptadas.js lo escribe de
-// vuelta en la columna "Confirmación" del Excel real.
-function CampoConfirmable({ etiqueta, valor, campo, presupuesto, onConfirmar }) {
-  const [texto, setTexto] = useState(valor || '')
-
-  useEffect(() => {
-    setTexto(valor || '')
-  }, [presupuesto.id, valor])
-
-  function guardar() {
-    if (texto !== (valor || '')) {
-      onConfirmar(presupuesto.id, { [campo]: texto })
-    }
-  }
-
-  return (
-    <div className="modal-campo">
-      <span>{etiqueta}</span>
-      <input
-        type="text"
-        className="input-filtro"
-        value={texto}
-        onChange={(e) => setTexto(e.target.value)}
-        onBlur={guardar}
-      />
-    </div>
-  )
-}
+// Mismo orden que la sección "CONFIRMACION DETALLES DE PROYECTO" del Excel
+// real (ver backend/drive_sync/extract_ficha_aceptada.js — mismas claves).
+const CAMPOS_FICHA = [
+  { campo: 'proveedor', etiqueta: 'Proveedor' },
+  { campo: 'color_carpinteria', etiqueta: 'Color Carpintería' },
+  { campo: 'correderas', etiqueta: 'Serie Correderas' },
+  { campo: 'abatibles', etiqueta: 'Serie Abatibles' },
+  { campo: 'vidrio', etiqueta: 'Vidrio' },
+  { campo: 'ral', etiqueta: 'RAL Silicona' },
+  { campo: 'persiana', etiqueta: 'Persiana' },
+  { campo: 'color_persiana', etiqueta: 'Color Persiana' },
+  { campo: 'modelo_lamas', etiqueta: 'Tipo de Lama' },
+  { campo: 'motor_radio', etiqueta: 'Motor Vía Radio' },
+  { campo: 'motor_mecanico', etiqueta: 'Motor Mecánico' },
+]
 
 function formatoFechaHora(iso) {
   if (!iso) return null
   // "2026-08-27 10:52:16" (SQLite datetime) -> "27/08/2026"
-  const fecha = iso.slice(0, 10)
-  return formatoFecha(fecha)
+  return formatoFecha(iso.slice(0, 10))
 }
 
-function FichaObraAceptada({ presupuesto, onConfirmar }) {
+// Una fila por campo: "Presupuesto" es de solo lectura (lo que trajo la
+// sincronización con Drive); "Confirmación" arranca con un ✓ (aceptar tal
+// cual) y un ✎ (corregirlo) — una vez confirmado se ve el valor guardado
+// con la fecha, y el ✎ sigue disponible por si hay que corregirlo más
+// adelante. Guarda al tocar ✓ o al salir del campo en modo edición.
+function FilaFicha({ definicion, valorPresupuesto, confirmacion, onConfirmar }) {
+  const [editando, setEditando] = useState(false)
+  const [texto, setTexto] = useState('')
+
+  function empezarEdicion() {
+    setTexto(confirmacion ? confirmacion.valor || '' : valorPresupuesto || '')
+    setEditando(true)
+  }
+
+  function guardar(valor) {
+    onConfirmar(definicion.campo, valor)
+    setEditando(false)
+  }
+
+  return (
+    <tr>
+      <td className="seguimiento-oferta-proveedor">{definicion.etiqueta}</td>
+      <td>{valorPresupuesto || '—'}</td>
+      <td className="celda-confirmacion">
+        {editando ? (
+          <input
+            type="text"
+            className="input-filtro"
+            autoFocus
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            onBlur={() => guardar(texto)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+              if (e.key === 'Escape') setEditando(false)
+            }}
+          />
+        ) : confirmacion ? (
+          <span className="confirmacion-valor">
+            <span className="confirmacion-check" title={`Confirmado el ${formatoFechaHora(confirmacion.confirmado_en)}`}>✓</span>
+            {confirmacion.valor || '—'}
+            <button type="button" className="boton-lapiz" title="Corregir" onClick={empezarEdicion}>✎</button>
+          </span>
+        ) : (
+          <span className="confirmacion-acciones">
+            <button
+              type="button"
+              className="boton-icono boton-icono-agregar"
+              title="Confirmar tal cual"
+              onClick={() => guardar(valorPresupuesto || '')}
+            >
+              ✓
+            </button>
+            <button type="button" className="boton-lapiz" title="Corregir" onClick={empezarEdicion}>✎</button>
+          </span>
+        )}
+      </td>
+    </tr>
+  )
+}
+
+function FichaObraAceptada({ presupuesto, confirmaciones, onConfirmar }) {
+  const confirmacionPorCampo = useMemo(
+    () => new Map(confirmaciones.map((c) => [c.campo, c])),
+    [confirmaciones],
+  )
+
   return (
     <>
-      <p className={`aviso-confirmacion ${presupuesto.confirmado_en ? 'aviso-confirmacion-ok' : ''}`}>
-        {presupuesto.confirmado_en
-          ? `✓ Confirmado el ${formatoFechaHora(presupuesto.confirmado_en)}`
-          : 'Todavía sin confirmar — los datos de abajo vienen del presupuesto original.'}
-      </p>
-
-      <dl className="modal-detalle">
-        <div><dt>Nº Ppto</dt><dd>{presupuesto.numero_ppto || '—'}</dd></div>
-        <div><dt>Nº Ventanas</dt><dd>{presupuesto.no_ventanas ?? '—'}</dd></div>
-      </dl>
-
-      <div className="modal-meta modal-meta-envuelve">
-        <CampoConfirmable etiqueta="Carpintería" campo="carpinteria" valor={presupuesto.carpinteria} presupuesto={presupuesto} onConfirmar={onConfirmar} />
-        <CampoConfirmable etiqueta="Proveedor" campo="proveedor" valor={presupuesto.proveedor} presupuesto={presupuesto} onConfirmar={onConfirmar} />
-        <CampoConfirmable etiqueta="RAL / Color" campo="ral" valor={presupuesto.ral} presupuesto={presupuesto} onConfirmar={onConfirmar} />
-        <CampoConfirmable etiqueta="Persiana" campo="persiana" valor={presupuesto.persiana} presupuesto={presupuesto} onConfirmar={onConfirmar} />
-        <CampoConfirmable etiqueta="Vidrio" campo="vidrio" valor={presupuesto.vidrio} presupuesto={presupuesto} onConfirmar={onConfirmar} />
+      <div className="tabla-scroll">
+        <table className="tabla-ofertas tabla-ficha-confirmacion">
+          <thead>
+            <tr>
+              <th>Campo</th>
+              <th>Presupuesto</th>
+              <th>Confirmación</th>
+            </tr>
+          </thead>
+          <tbody>
+            {CAMPOS_FICHA.map((definicion) => (
+              <FilaFicha
+                key={definicion.campo}
+                definicion={definicion}
+                valorPresupuesto={presupuesto[definicion.campo]}
+                confirmacion={confirmacionPorCampo.get(definicion.campo)}
+                onConfirmar={(campo, valor) => onConfirmar(presupuesto.obra, campo, valor)}
+              />
+            ))}
+          </tbody>
+        </table>
       </div>
     </>
   )
@@ -172,7 +224,7 @@ function FichaObraAceptada({ presupuesto, onConfirmar }) {
 
 const PESTANAS_DETALLE = ['Ficha', 'Seguimiento']
 
-function DetalleObraAceptada({ presupuesto, materiales, onCerrar, onConfirmar }) {
+function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar, onConfirmar }) {
   const [pestana, setPestana] = useState('Ficha')
 
   useEffect(() => {
@@ -193,7 +245,11 @@ function DetalleObraAceptada({ presupuesto, materiales, onCerrar, onConfirmar })
         <div className="modal-header">
           <div>
             <h2>{presupuesto.obra}</h2>
-            <p>{presupuesto.cliente || 'Sin cliente'}</p>
+            <p>
+              {presupuesto.cliente || 'Sin cliente'}
+              {presupuesto.numero_ppto && ` · Nº Ppto ${presupuesto.numero_ppto}`}
+              {presupuesto.fecha_ppto && ` · Presupuesto ${formatoFecha(presupuesto.fecha_ppto)}`}
+            </p>
           </div>
           <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
         </div>
@@ -212,7 +268,7 @@ function DetalleObraAceptada({ presupuesto, materiales, onCerrar, onConfirmar })
         </div>
 
         {pestana === 'Ficha' ? (
-          <FichaObraAceptada presupuesto={presupuesto} onConfirmar={onConfirmar} />
+          <FichaObraAceptada presupuesto={presupuesto} confirmaciones={confirmaciones} onConfirmar={onConfirmar} />
         ) : (
           <SeguimientoPorPosicion materiales={materiales} />
         )}
@@ -225,6 +281,7 @@ export default function ObrasAceptadasPage() {
   const { usuario, accessToken } = useAuth()
   const [filas, setFilas] = useState([])
   const [materiales, setMateriales] = useState([])
+  const [confirmaciones, setConfirmaciones] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [busquedaObra, setBusquedaObra] = useState('')
@@ -236,6 +293,7 @@ export default function ObrasAceptadasPage() {
     Promise.all([obrasAceptadas(accessToken), seguimientoMateriales(accessToken)])
       .then(([datosObras, datosMateriales]) => {
         setFilas(datosObras.obras)
+        setConfirmaciones(datosObras.confirmaciones || [])
         setMateriales(datosMateriales.materiales || [])
       })
       .catch((err) => setError(err.message))
@@ -252,6 +310,15 @@ export default function ObrasAceptadasPage() {
     }
     return mapa
   }, [materiales])
+
+  const confirmacionesPorObra = useMemo(() => {
+    const mapa = new Map()
+    for (const c of confirmaciones) {
+      if (!mapa.has(c.obra)) mapa.set(c.obra, [])
+      mapa.get(c.obra).push(c)
+    }
+    return mapa
+  }, [confirmaciones])
 
   // Cada fila de obras_aceptadas.php ya es, por definición, una obra
   // aceptada (la tabla solo existe para eso) — a diferencia de
@@ -283,13 +350,17 @@ export default function ObrasAceptadasPage() {
 
   const obraSeleccionada = filas.find((p) => p.id === obraSeleccionadaId) || null
 
-  async function handleConfirmar(id, cambios) {
-    const anteriores = filas
-    setFilas((f) => f.map((p) => (p.id === id ? { ...p, ...cambios, confirmado_en: new Date().toISOString() } : p)))
+  async function handleConfirmarCampo(obra, campo, valor) {
+    const anteriores = confirmaciones
+    const ahora = new Date().toISOString()
+    setConfirmaciones((c) => {
+      const sinEsteCampo = c.filter((x) => !(x.obra === obra && x.campo === campo))
+      return [...sinEsteCampo, { obra, campo, valor, confirmado_en: ahora }]
+    })
     try {
-      await confirmarObraAceptada(accessToken, id, cambios)
+      await confirmarCampoObraAceptada(accessToken, obra, campo, valor)
     } catch (err) {
-      setFilas(anteriores)
+      setConfirmaciones(anteriores)
       setError(err.message)
     }
   }
@@ -385,8 +456,9 @@ export default function ObrasAceptadasPage() {
         <DetalleObraAceptada
           presupuesto={obraSeleccionada}
           materiales={materialesPorObra.get(obraSeleccionada.obra) || []}
+          confirmaciones={confirmacionesPorObra.get(obraSeleccionada.obra) || []}
           onCerrar={() => setObraSeleccionadaId(null)}
-          onConfirmar={handleConfirmar}
+          onConfirmar={handleConfirmarCampo}
         />
       )}
     </div>

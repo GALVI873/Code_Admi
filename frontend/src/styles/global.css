@@ -688,31 +688,6 @@ body {
   border-bottom: 1px solid #f0f0f0;
 }
 
-.modal-meta-envuelve {
-  flex-wrap: wrap;
-}
-
-.modal-meta-envuelve .modal-campo {
-  flex: 1 1 160px;
-  min-width: 140px;
-}
-
-.aviso-confirmacion {
-  background: #fef5e9;
-  border-left: 3px solid var(--naranja);
-  color: #a3620a;
-  font-size: 12.5px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  margin-bottom: 18px;
-}
-
-.aviso-confirmacion-ok {
-  background: #d5f5e3;
-  border-left-color: var(--verde);
-  color: #1e8449;
-}
-
 .posiciones-seguimiento {
   display: flex;
   flex-direction: column;
@@ -998,6 +973,51 @@ body {
 
 .boton-icono-eliminar:hover {
   background: #fbdbd9;
+}
+
+.boton-lapiz {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  opacity: .55;
+  padding: 2px 4px;
+}
+
+.boton-lapiz:hover {
+  opacity: 1;
+}
+
+.celda-confirmacion {
+  white-space: nowrap;
+}
+
+.celda-confirmacion .input-filtro {
+  width: 100%;
+  min-width: 140px;
+}
+
+.confirmacion-acciones {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.confirmacion-valor {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--texto);
+}
+
+.confirmacion-check {
+  color: var(--verde);
+  font-weight: 700;
+}
+
+.tabla-ficha-confirmacion th:nth-child(3),
+.tabla-ficha-confirmacion td:nth-child(3) {
+  min-width: 220px;
 }
 
 .tabla-ofertas {

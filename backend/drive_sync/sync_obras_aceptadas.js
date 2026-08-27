@@ -1,8 +1,11 @@
 // Recorre "SEGUIMIENTO DE OBRAS (Aceptadas)" (mismo criterio de carpeta
 // Categoría/[Contacto]/Obra que sync_all.js) y sube al panel, por cada
-// obra: una ficha operativa básica (leída de su Excel "...CALCULO...xlsx",
-// igual que extract_fields.js) y el seguimiento de pedidos de material
-// (leído de su "...MEDYSEG.xlsx" — ver extract_seguimiento_materiales.js).
+// obra: una ficha operativa básica (Cliente/Nº Ventanas/Nº Ppto, leída de
+// su Excel "...CALCULO...xlsx" igual que extract_fields.js), los campos
+// confirmables de la sección "CONFIRMACION DETALLES DE PROYECTO" de la
+// misma Ficha (ver extract_ficha_aceptada.js) y el seguimiento de pedidos
+// de material (leído de su "...MEDYSEG.xlsx" — ver
+// extract_seguimiento_materiales.js).
 //
 // Independiente de presupuestos_en_estudio a propósito: se confirmó que esa
 // tabla no sigue a la obra una vez que sale de "en estudio" (la
@@ -17,6 +20,7 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { extraerCampos } = require('./extract_fields.js');
+const { leerFichaConfirmable } = require('./extract_ficha_aceptada.js');
 const { listarDirs, archivoMedyseg, extraerMateriales } = require('./extract_seguimiento_materiales.js');
 
 const BASE = 'Z:/DRIVE GALVI/1. GALVI/1.OBRAS/1. ESTUDIOS Y SEGUIMIENTO/SEGUIMIENTO DE OBRAS (Aceptadas)/2026';
@@ -84,7 +88,7 @@ function archivoCalculo(rutaObra) {
   return path.join(rutaObra, candidatos[0]);
 }
 
-async function subirObra(info, campos) {
+async function subirObra(info, campos, confirmables) {
   const url = `${process.env.PANEL_API_URL}/obras_aceptadas.php?token=${process.env.SYNC_TOKEN}`;
   const res = await fetch(url, {
     method: 'POST',
@@ -96,11 +100,18 @@ async function subirObra(info, campos) {
       cliente: campos.cliente,
       no_ventanas: campos.no_ventanas,
       numero_ppto: campos.numero_ppto,
-      carpinteria: campos.carpinteria,
-      proveedor: campos.proveedor,
-      ral: campos.ral,
-      persiana: campos.persiana,
-      vidrio: campos.vidrio,
+      fecha_ppto: confirmables.fecha_ppto,
+      proveedor: confirmables.proveedor,
+      color_carpinteria: confirmables.color_carpinteria,
+      correderas: confirmables.correderas,
+      abatibles: confirmables.abatibles,
+      vidrio: confirmables.vidrio,
+      ral: confirmables.ral,
+      persiana: confirmables.persiana,
+      color_persiana: confirmables.color_persiana,
+      modelo_lamas: confirmables.modelo_lamas,
+      motor_radio: confirmables.motor_radio,
+      motor_mecanico: confirmables.motor_mecanico,
     }),
   });
   const data = await res.json();
@@ -147,7 +158,8 @@ async function main() {
 
     try {
       const campos = extraerCampos(rutaCalculo);
-      await subirObra(info, campos);
+      const confirmables = leerFichaConfirmable(rutaCalculo);
+      await subirObra(info, campos, confirmables);
       nombresActivos.push(info.nombre);
       resumen.obras++;
 

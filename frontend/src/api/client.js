@@ -84,10 +84,10 @@ export function obrasAceptadas(accessToken) {
   })
 }
 
-export function confirmarObraAceptada(accessToken, id, cambios) {
+export function confirmarCampoObraAceptada(accessToken, obra, campo, valor) {
   return request('/obras_aceptadas.php', {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ id, ...cambios }),
+    body: JSON.stringify({ obra, campo, valor }),
   })
 }

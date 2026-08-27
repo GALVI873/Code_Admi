@@ -1,11 +1,10 @@
 // Escribe en la columna "CONFIRMACIÓN" (columna C) de la hoja "Ficha" de
-// cada obra en "SEGUIMIENTO DE OBRAS (Aceptadas)" los 5 campos que Alfredo
-// confirmó/corrigió desde el panel (carpintería, proveedor, RAL, persiana,
-// vidrio) — mismo script de automatización COM que ya usa
-// llenar_ficha_obras.js (llenar_ficha_com.ps1), solo cambia la columna de
-// destino (3 en vez de 2) y la fuente de los valores (el panel, no un PDF).
-// Ver obras_aceptadas.php para el PATCH que guarda la confirmación y marca
-// confirmado_en.
+// cada obra en "SEGUIMIENTO DE OBRAS (Aceptadas)" los campos que Alfredo
+// confirmó/corrigió desde el panel — mismo script de automatización COM que
+// ya usa llenar_ficha_obras.js (llenar_ficha_com.ps1), solo cambia la
+// columna de destino (3 en vez de 2) y la fuente de los valores (el panel,
+// no un PDF). Ver obras_aceptadas.php para el PATCH que guarda cada
+// confirmación en obra_aceptada_confirmaciones.
 //
 // Uso:
 //   node escribir_confirmaciones_aceptadas.js
@@ -14,9 +13,29 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
+const { CAMPOS_CONFIRMABLES } = require('./extract_ficha_aceptada.js');
 
 const BASE = 'Z:/DRIVE GALVI/1. GALVI/1.OBRAS/1. ESTUDIOS Y SEGUIMIENTO/SEGUIMIENTO DE OBRAS (Aceptadas)/2026';
 const PS_SCRIPT = path.join(__dirname, 'llenar_ficha_com.ps1');
+
+// Mismo nombre de etiqueta que llenar_ficha_obras.js usa para escribir
+// estos mismos campos en la columna "Presupuesto" — acá van a la columna
+// "Confirmación". CAMPOS_CONFIRMABLES (de extract_ficha_aceptada.js) trae
+// la regex de cada campo; llenar_ficha_com.ps1 espera un string de regex,
+// no un objeto RegExp, así que se convierte con .source.
+const NOMBRE_CAMPO = {
+  proveedor: 'Proveedores',
+  color_carpinteria: 'Color Carpinteria',
+  correderas: 'Correderas',
+  abatibles: 'Abatibles',
+  vidrio: 'Vidrio',
+  ral: 'RAL Silicona',
+  persiana: 'Persianas',
+  color_persiana: 'Color Persianas',
+  modelo_lamas: 'Modelo de Lamas',
+  motor_radio: 'Motor Radio',
+  motor_mecanico: 'Motor mecanico',
+};
 
 function listarDirs(dir) {
   try {
@@ -48,8 +67,6 @@ function extraerPrefijoNumerico(nombreArchivo) {
   return m ? parseInt(m[1], 10) : null;
 }
 
-// Mismo criterio que sync_obras_aceptadas.js: prefijo numérico más alto y,
-// si empatan o no hay prefijo, el modificado más reciente.
 function archivoCalculo(rutaObra) {
   let archivos;
   try {
@@ -68,19 +85,6 @@ function archivoCalculo(rutaObra) {
   return path.join(rutaObra, candidatos[0]);
 }
 
-// Mismas etiquetas que ya usa llenar_ficha_obras.js para escribir la Ficha
-// "en estudio" (ahí van a la columna 2, Presupuesto) — acá van a la
-// columna 3 (Confirmación).
-function construirCamposConfirmacion(obra) {
-  return [
-    { nombre: 'Carpinteria', etiqueta: '^\\s*Carpinteria', columna: 3, valor: obra.carpinteria },
-    { nombre: 'Proveedores', etiqueta: 'Proveedor', columna: 3, valor: obra.proveedor },
-    { nombre: 'RAL Silicona', etiqueta: 'RAL Silicona', columna: 3, valor: obra.ral },
-    { nombre: 'Persianas', etiqueta: '^Persianas?\\s*:?\\s*$', columna: 3, valor: obra.persiana },
-    { nombre: 'Vidrio', etiqueta: '^Vidrio', columna: 3, valor: obra.vidrio },
-  ];
-}
-
 function cerrarExcelHuerfano() {
   try {
     execFileSync(
@@ -97,7 +101,7 @@ function cerrarExcelHuerfano() {
   }
 }
 
-async function listarObrasConfirmadas() {
+async function listarConfirmaciones() {
   const url = `${process.env.PANEL_API_URL}/obras_aceptadas.php?token=${process.env.SYNC_TOKEN}`;
   const res = await fetch(url, {
     method: 'POST',
@@ -106,7 +110,30 @@ async function listarObrasConfirmadas() {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(JSON.stringify(data));
-  return data.obras.filter((o) => o.confirmado_en);
+  return data.confirmaciones || [];
+}
+
+// Agrupa las confirmaciones (filas sueltas, una por campo) por obra, para
+// escribir todos los campos confirmados de una misma obra en una sola
+// apertura de Excel.
+function agruparPorObra(confirmaciones) {
+  const mapa = new Map();
+  for (const c of confirmaciones) {
+    if (!mapa.has(c.obra)) mapa.set(c.obra, []);
+    mapa.get(c.obra).push(c);
+  }
+  return mapa;
+}
+
+function construirCamposParaEscribir(confirmacionesDeLaObra) {
+  return confirmacionesDeLaObra
+    .filter((c) => CAMPOS_CONFIRMABLES[c.campo])
+    .map((c) => ({
+      nombre: NOMBRE_CAMPO[c.campo] || c.campo,
+      etiqueta: CAMPOS_CONFIRMABLES[c.campo].source,
+      columna: 3,
+      valor: c.valor,
+    }));
 }
 
 function escribirEnExcel(rutaCalculo, campos) {
@@ -125,32 +152,35 @@ function escribirEnExcel(rutaCalculo, campos) {
 }
 
 async function main() {
-  const obras = await listarObrasConfirmadas();
-  if (obras.length === 0) {
-    console.log('No hay obras confirmadas pendientes de escribir.');
+  const confirmaciones = await listarConfirmaciones();
+  if (confirmaciones.length === 0) {
+    console.log('No hay confirmaciones pendientes de escribir.');
     return;
   }
 
+  const porObra = agruparPorObra(confirmaciones);
   const resumen = { ok: 0, omitidas: 0, errores: 0 };
-  for (const obra of obras) {
-    const rutaObra = buscarCarpetaObra(obra.obra);
+
+  for (const [nombreObra, confirmacionesDeLaObra] of porObra) {
+    const rutaObra = buscarCarpetaObra(nombreObra);
     if (!rutaObra) {
-      console.log(`OMITIDA (carpeta no encontrada): ${obra.obra}`);
+      console.log(`OMITIDA (carpeta no encontrada): ${nombreObra}`);
       resumen.omitidas++;
       continue;
     }
     const rutaCalculo = archivoCalculo(rutaObra);
     if (!rutaCalculo) {
-      console.log(`OMITIDA (sin Excel de cálculo): ${obra.obra}`);
+      console.log(`OMITIDA (sin Excel de cálculo): ${nombreObra}`);
       resumen.omitidas++;
       continue;
     }
     try {
-      escribirEnExcel(rutaCalculo, construirCamposConfirmacion(obra));
-      console.log(`OK: ${obra.obra}`);
+      const campos = construirCamposParaEscribir(confirmacionesDeLaObra);
+      escribirEnExcel(rutaCalculo, campos);
+      console.log(`OK (${campos.length} campo(s)): ${nombreObra}`);
       resumen.ok++;
     } catch (err) {
-      console.error(`ERROR en "${obra.obra}": ${err.message}`);
+      console.error(`ERROR en "${nombreObra}": ${err.message}`);
       resumen.errores++;
     }
   }
