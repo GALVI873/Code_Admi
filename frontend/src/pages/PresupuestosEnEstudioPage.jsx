@@ -131,7 +131,7 @@ function NotificacionFechaLimite({ presupuesto }) {
   if (!presupuesto.fecha_limite_entrega) return null
   return (
     <span className="notificacion-fecha-limite" title="Fecha límite de entrega puesta por Geraldinne">
-      📅 {formatoFecha(presupuesto.fecha_limite_entrega)}
+      {formatoFecha(presupuesto.fecha_limite_entrega)}
     </span>
   )
 }
