@@ -194,6 +194,12 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, p
           <div><dt>Precio último ppto.</dt><dd>{formatoMoneda(presupuesto.precio_ultimo_presupuesto)}</dd></div>
           <div><dt>% Ganancia</dt><dd>{formatoPorcentaje(presupuesto.porcentaje_ganancia)}</dd></div>
           <div><dt>Fecha último envío</dt><dd>{formatoFecha(presupuesto.fecha_ultimo_envio)}</dd></div>
+          {presupuesto.comentario_geraldinne && (
+            <div className="modal-detalle-ancho">
+              <dt>Comentario de Geraldinne</dt>
+              <dd>{presupuesto.comentario_geraldinne}</dd>
+            </div>
+          )}
         </dl>
       </div>
     </div>

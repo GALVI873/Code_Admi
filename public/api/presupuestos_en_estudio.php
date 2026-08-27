@@ -11,10 +11,12 @@ declare(strict_types=1);
 // importar cuál tenía, a diferencia del upsert). Con
 // {accion:"reemplazar_ofertas", obra:"...", ofertas:[...]}  reemplaza todas
 // las ofertas de proveedor de esa obra (leídas de su carpeta "Valoración").
-// PATCH: cambia prioridad, interesante y/o estatus:
+// PATCH: cambia prioridad, interesante, estatus y/o el comentario/fecha límite de Geraldinne:
 //   - "prioridad" requiere el permiso presupuestos.gestionar_prioridad (solo admin).
 //   - "interesante" requiere presupuestos.marcar_interesante (solo admin — Álvaro/Valentina).
 //   - "estatus" requiere ver_todos o ver_seguimiento (cualquiera que pueda ver la tabla).
+//   - "comentario_geraldinne"/"fecha_limite_entrega" requieren presupuestos.ver_seguimiento
+//     (solo Geraldinne — Álvaro las ve en su vista pero no las edita).
 // DELETE: protegido por SYNC_TOKEN igual que POST. Con {obras:[...]} borra esas
 // filas puntuales sin importar su estatus; con {obras_activas:[...]} reconcilia
 // tras un sync (borra lo que no está en la lista, solo en estatus por defecto).
@@ -56,6 +58,8 @@ try {
           proveedor TEXT,
           fecha_creacion_carpeta TEXT,
           fecha_ultimo_envio TEXT,
+          comentario_geraldinne TEXT,
+          fecha_limite_entrega TEXT,
           actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
     ");
@@ -105,6 +109,12 @@ try {
     }
     if (!in_array('fecha_creacion_carpeta', $columnas, true)) {
         $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN fecha_creacion_carpeta TEXT');
+    }
+    if (!in_array('comentario_geraldinne', $columnas, true)) {
+        $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN comentario_geraldinne TEXT');
+    }
+    if (!in_array('fecha_limite_entrega', $columnas, true)) {
+        $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN fecha_limite_entrega TEXT');
     }
 
     // Renombre de estatus: "Seguimiento" pasó a llamarse "Pdt Aprobación"
@@ -195,6 +205,23 @@ try {
             }
             $db->prepare("UPDATE presupuestos_en_estudio SET estatus = ?, actualizado_en = datetime('now') WHERE id = ?")
                 ->execute([$estatus, $id]);
+        }
+
+        if (array_key_exists('comentario_geraldinne', $body)) {
+            AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_seguimiento');
+            $comentario = trim((string) $body['comentario_geraldinne']);
+            $db->prepare("UPDATE presupuestos_en_estudio SET comentario_geraldinne = ?, actualizado_en = datetime('now') WHERE id = ?")
+                ->execute([$comentario === '' ? null : $comentario, $id]);
+        }
+
+        if (array_key_exists('fecha_limite_entrega', $body)) {
+            AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_seguimiento');
+            $fecha = trim((string) $body['fecha_limite_entrega']);
+            if ($fecha !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)) {
+                Response::error('"fecha_limite_entrega" debe tener formato AAAA-MM-DD', 422);
+            }
+            $db->prepare("UPDATE presupuestos_en_estudio SET fecha_limite_entrega = ?, actualizado_en = datetime('now') WHERE id = ?")
+                ->execute([$fecha === '' ? null : $fecha, $id]);
         }
 
         Response::json(['ok' => true]);

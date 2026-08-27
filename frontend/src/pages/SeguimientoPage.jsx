@@ -172,6 +172,52 @@ function SelectEstatus({ presupuesto, onCambio }) {
   )
 }
 
+// Fecha límite que Geraldinne le pone a la obra — a Álvaro no le sirve
+// (por eso Presupuestos en Estudio ni la muestra), es solo para que ella
+// organice su propio trabajo.
+function FechaLimiteEntrega({ presupuesto, onCambio }) {
+  return (
+    <input
+      type="date"
+      className="input-filtro"
+      value={presupuesto.fecha_limite_entrega || ''}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onCambio(presupuesto.id, { fecha_limite_entrega: e.target.value })}
+    />
+  )
+}
+
+// Comentario libre de Geraldinne para Álvaro sobre la obra — a diferencia
+// de los selects (que guardan en cada cambio), un textarea guarda recién al
+// salir del campo para no mandar un PATCH por cada letra tecleada. Estado
+// local propio porque el valor puede quedar "sucio" mientras se escribe,
+// antes de confirmar con onBlur.
+function ComentarioParaAlvaro({ presupuesto, onCambio }) {
+  const [valor, setValor] = useState(presupuesto.comentario_geraldinne || '')
+
+  useEffect(() => {
+    setValor(presupuesto.comentario_geraldinne || '')
+  }, [presupuesto.id, presupuesto.comentario_geraldinne])
+
+  function guardar() {
+    if (valor !== (presupuesto.comentario_geraldinne || '')) {
+      onCambio(presupuesto.id, { comentario_geraldinne: valor })
+    }
+  }
+
+  return (
+    <textarea
+      className="textarea-inline"
+      rows={3}
+      placeholder="Dejar un comentario para Álvaro sobre esta obra…"
+      value={valor}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => setValor(e.target.value)}
+      onBlur={guardar}
+    />
+  )
+}
+
 function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio }) {
   const alerta = faltaEnvio(presupuesto)
   return (
@@ -227,6 +273,15 @@ function DetalleSeguimiento({ presupuesto, ofertas, onCerrar, onCambio }) {
             <span>Estatus</span>
             <SelectEstatus presupuesto={presupuesto} onCambio={onCambio} />
           </div>
+          <div className="modal-campo">
+            <span>Fecha límite de entrega</span>
+            <FechaLimiteEntrega presupuesto={presupuesto} onCambio={onCambio} />
+          </div>
+        </div>
+
+        <div className="modal-campo modal-campo-ancho">
+          <span>Comentario para Álvaro</span>
+          <ComentarioParaAlvaro presupuesto={presupuesto} onCambio={onCambio} />
         </div>
 
         <LineaTiempo

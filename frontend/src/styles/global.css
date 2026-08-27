@@ -658,6 +658,27 @@ body {
   letter-spacing: .03em;
 }
 
+.modal-campo-ancho {
+  margin-bottom: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.textarea-inline {
+  border: 1px solid #dfe6e9;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  font-family: inherit;
+  background: white;
+  resize: vertical;
+}
+
+.textarea-inline:focus {
+  outline: none;
+  border-color: var(--azul-clar);
+}
+
 .modal-detalle {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -676,6 +697,10 @@ body {
 .modal-detalle dd {
   font-size: 14.5px;
   color: var(--texto);
+}
+
+.modal-detalle-ancho {
+  grid-column: 1 / -1;
 }
 
 /* Página Presupuesto (espacio de trabajo de Geraldinne) — reusa
