@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth, MOCK_AUTH } from '../context/AuthContext.jsx'
 
 // Cada módulo de departamento agrega su entrada aquí cuando se construya
-// (Gestión de Obras, Transporte, etc.) — el filtro por permiso ya queda listo.
+// (Transporte, Taller, etc.) — el filtro por permiso ya queda listo.
 const NAV_ITEMS = [
   { to: '/presupuestos-en-estudio', label: 'Presupuestos en Estudio', icono: '🔍', permiso: 'presupuestos.ver_todos' },
   // Espacio de trabajo personal de Geraldinne. Permiso propio
@@ -17,6 +17,16 @@ const NAV_ITEMS = [
     icono: '🧭',
     permiso: 'presupuestos.ver_seguimiento',
     soloEmail: 'presupuestos@galvi.es',
+  },
+  // Espacio de trabajo personal de Alfredo (Gestión de Obras). Mismo
+  // criterio que Presupuesto: permiso propio (ver_aceptadas) + filtro por
+  // email como segunda capa, porque hoy es exclusivamente su vista.
+  {
+    to: '/obras-aceptadas',
+    label: 'Obras Aceptadas',
+    icono: '🧱',
+    permiso: 'obras.ver_aceptadas',
+    soloEmail: 'alfredo@galvi.es',
   },
 ]
 

@@ -33,6 +33,13 @@ const MOCK_USUARIOS = {
       'presupuestos.editar', 'presupuestos.enviar', 'presupuestos.reemplazar_version',
     ],
   },
+  gestion_obras: {
+    id: 3,
+    nombre: 'Alfredo (mock)',
+    email: 'alfredo@galvi.es',
+    roles: ['gestion_obras'],
+    permisos: ['obras.ver_aceptadas'],
+  },
 }
 
 function usuarioMock() {

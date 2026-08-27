@@ -1,8 +1,8 @@
 <?php
 declare(strict_types=1);
 
-// GET: lista los presupuestos en estudio (requiere sesión + presupuestos.ver_todos
-// o presupuestos.ver_seguimiento).
+// GET: lista los presupuestos en estudio (requiere sesión + presupuestos.ver_todos,
+// presupuestos.ver_seguimiento u obras.ver_aceptadas).
 // POST: upsert de un registro, usado por el proceso de sincronización con Drive
 // (protegido por SYNC_TOKEN, no por sesión de usuario — es máquina a máquina).
 // Con {accion:"listar"} devuelve obra/estatus/fecha_ultimo_envio de todas las
@@ -206,9 +206,21 @@ try {
           AND permiso_id = (SELECT id FROM permisos WHERE clave = 'presupuestos.ver_todos')
     ");
 
+    // Página "Obras Aceptadas": espacio de trabajo de Alfredo (Gestión de
+    // Obras, rol 'gestion_obras' ya sembrado en schema_auth.sql sin permisos
+    // propios). Reusa este mismo endpoint/tabla — filtra en el frontend a
+    // estatus 'Aceptado' y no expone precio/% ganancia, información
+    // comercial que no es parte de su rol operativo.
+    $db->exec("INSERT OR IGNORE INTO permisos (clave, descripcion) VALUES ('obras.ver_aceptadas', 'Ver las obras aceptadas en la página Obras Aceptadas')");
+    $db->exec("
+        INSERT OR IGNORE INTO rol_permisos (rol_id, permiso_id)
+        SELECT r.id, p.id FROM roles r, permisos p
+        WHERE r.nombre = 'gestion_obras' AND p.clave = 'obras.ver_aceptadas'
+    ");
+
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
-        AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento']);
+        AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento', 'obras.ver_aceptadas']);
 
         // Más reciente a más antiguo por fecha de envío; las obras sin envío
         // (fecha_ultimo_envio NULL) quedan al final (SQLite ordena NULL como
