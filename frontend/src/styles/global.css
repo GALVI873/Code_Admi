@@ -706,8 +706,25 @@ body {
   color: var(--texto);
 }
 
-.modal-detalle-ancho {
-  grid-column: 1 / -1;
+.modal-comentario-lectura {
+  font-size: 14px;
+  color: var(--texto);
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.notificacion-fecha-limite {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #fef5e9;
+  border: 1px solid #f6d9ae;
+  color: #a3620a;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
 }
 
 /* Página Presupuesto (espacio de trabajo de Geraldinne) — reusa

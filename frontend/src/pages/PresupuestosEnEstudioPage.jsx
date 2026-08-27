@@ -123,6 +123,19 @@ function BotonInteresante({ presupuesto, onCambio, puedeMarcar }) {
   )
 }
 
+// Fecha límite que Geraldinne le puso a la obra desde su vista — acá es
+// solo lectura (Álvaro no la gestiona, es información de ella para
+// organizarse), pero se avisa igual como una notificación arriba a la
+// derecha de la ficha para que no pase desapercibida.
+function NotificacionFechaLimite({ presupuesto }) {
+  if (!presupuesto.fecha_limite_entrega) return null
+  return (
+    <span className="notificacion-fecha-limite" title="Fecha límite de entrega puesta por Geraldinne">
+      📅 {formatoFecha(presupuesto.fecha_limite_entrega)}
+    </span>
+  )
+}
+
 function TarjetaObra({ presupuesto, onAbrir, onCambio, puedeCambiarPrioridad, puedeMarcarInteresante }) {
   const alerta = faltaEnvio(presupuesto)
   return (
@@ -165,6 +178,7 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, p
             <p>{presupuesto.cliente || 'Sin cliente'}</p>
           </div>
           <div className="modal-header-acciones">
+            <NotificacionFechaLimite presupuesto={presupuesto} />
             <BotonInteresante presupuesto={presupuesto} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
             <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
           </div>
@@ -185,6 +199,13 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, p
           </div>
         </div>
 
+        {presupuesto.comentario_geraldinne && (
+          <div className="modal-campo modal-campo-ancho">
+            <span>Comentario de Geraldinne</span>
+            <p className="modal-comentario-lectura">{presupuesto.comentario_geraldinne}</p>
+          </div>
+        )}
+
         <dl className="modal-detalle">
           <div><dt>Nº Ventanas</dt><dd>{presupuesto.no_ventanas ?? '—'}</dd></div>
           <div><dt>Precio/m²</dt><dd>{formatoMoneda(presupuesto.precio_m2)}</dd></div>
@@ -194,12 +215,6 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, p
           <div><dt>Precio último ppto.</dt><dd>{formatoMoneda(presupuesto.precio_ultimo_presupuesto)}</dd></div>
           <div><dt>% Ganancia</dt><dd>{formatoPorcentaje(presupuesto.porcentaje_ganancia)}</dd></div>
           <div><dt>Fecha último envío</dt><dd>{formatoFecha(presupuesto.fecha_ultimo_envio)}</dd></div>
-          {presupuesto.comentario_geraldinne && (
-            <div className="modal-detalle-ancho">
-              <dt>Comentario de Geraldinne</dt>
-              <dd>{presupuesto.comentario_geraldinne}</dd>
-            </div>
-          )}
         </dl>
       </div>
     </div>
