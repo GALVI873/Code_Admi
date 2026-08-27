@@ -125,12 +125,45 @@ function extraerFecha(text) {
   return `${m[3]}-${String(mes).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
 }
 
-// Nombre de la empresa proveedora — se busca junto al CIF, que es el único
-// ancla que se repitió igual en los ejemplos reales (el membrete y el
-// formato de cabecera cambian de un proveedor a otro).
+// En varios PDF el nombre de la empresa está metido como logo/imagen en el
+// membrete, no como texto — ahí no hay nada que un regex pueda leer. Pero
+// según la entrevista de Presupuestos, Geraldinne siempre pide precios a
+// los MISMOS proveedores de confianza por tipo de material (no cambian de
+// un presupuesto a otro) — así que en vez de perseguir un parser genérico
+// de logos, se identifica cada plantilla "sin nombre" por su CIF (que sí
+// suele venir en texto aunque el nombre no) y se mapea a mano una sola vez.
+// Agregar acá cuando aparezca un CIF nuevo sin identificar.
+const PROVEEDOR_POR_CIF = {
+  B72862899: 'Persyvex',
+};
+
+// CIF de Galvi (aparece en todas las ofertas recibidas, como cliente) —
+// hay que descartarlo antes de buscar el del proveedor.
+const CIF_GALVI = 'B84530955';
+
+function normalizarCif(cif) {
+  return cif.replace(/-/g, '').toUpperCase();
+}
+
+function extraerCifProveedor(text) {
+  const matches = [...text.matchAll(/C\.?I\.?F\.?:?\s*([A-Z]-?\d{7,8}[0-9A-Z]?)/gi)];
+  for (const m of matches) {
+    const cif = normalizarCif(m[1]);
+    if (cif !== CIF_GALVI) return cif;
+  }
+  return null;
+}
+
+// Nombre de la empresa proveedora — primero se busca junto al CIF en el
+// propio texto (funciona cuando el proveedor sí escribe su nombre, ej.
+// "ALUMINIOS VILLAR, SL. | CIF: ..."); si no aparece, se cae al mapeo por
+// CIF de proveedores conocidos.
 function extraerProveedor(text) {
   const m = text.match(/([A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9 .,&'-]{2,50}?),?\s*S\.?\s?[LA]\.?U?\.?\s*\|?\s*CIF/);
-  return m ? m[1].trim().replace(/,$/, '') : null;
+  if (m) return m[1].trim().replace(/,$/, '');
+
+  const cif = extraerCifProveedor(text);
+  return cif && PROVEEDOR_POR_CIF[cif] ? PROVEEDOR_POR_CIF[cif] : null;
 }
 
 function listarDirs(dir) {
