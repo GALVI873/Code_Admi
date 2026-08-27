@@ -99,3 +99,9 @@ export function quitarConfirmacionObraAceptada(accessToken, obra, campo) {
     body: JSON.stringify({ obra, campo, eliminar: true }),
   })
 }
+
+export function diarioGeneral(accessToken) {
+  return request('/diario_general.php', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}

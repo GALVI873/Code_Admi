@@ -21,6 +21,7 @@ const MOCK_USUARIOS = {
       'presupuestos.editar', 'presupuestos.enviar', 'presupuestos.aprobar',
       'presupuestos.reemplazar_version', 'usuarios.gestionar',
       'presupuestos.gestionar_prioridad', 'presupuestos.marcar_interesante',
+      'obras.ver_diario_general',
     ],
   },
   presupuestos: {
@@ -38,7 +39,7 @@ const MOCK_USUARIOS = {
     nombre: 'Alfredo (mock)',
     email: 'alfredo@galvi.es',
     roles: ['gestion_obras'],
-    permisos: ['obras.ver_aceptadas'],
+    permisos: ['obras.ver_aceptadas', 'obras.ver_diario_general'],
   },
 }
 

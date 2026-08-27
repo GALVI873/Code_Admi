@@ -28,6 +28,16 @@ const NAV_ITEMS = [
     permiso: 'obras.ver_aceptadas',
     soloEmail: 'alfredo@galvi.es',
   },
+  // A diferencia de las anteriores, esta SÍ es compartida a propósito: la
+  // entrevista de Fase 1 confirma que tanto Alfredo como Álvaro la
+  // necesitan (pedidos de material y transporte/montaje) — solo permiso,
+  // sin filtro de email.
+  {
+    to: '/diario-general',
+    label: 'Diario General',
+    icono: '📋',
+    permiso: 'obras.ver_diario_general',
+  },
 ]
 
 export default function AppLayout() {
