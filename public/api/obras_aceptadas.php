@@ -24,7 +24,8 @@ declare(strict_types=1);
 // PATCH: {obra, campo, valor} — Alfredo confirma/corrige un campo puntual de
 // una obra (requiere sesión + obras.ver_aceptadas). "campo" tiene que ser
 // uno de los confirmables (ver CAMPOS_CONFIRMABLES); cualquier otro se
-// rechaza.
+// rechaza. Con {obra, campo, eliminar:true} se deshace la confirmación
+// (vuelve el campo a sin confirmar, por si se tocó ✓ sin querer).
 // POST: {accion:"listar"} lectura administrativa para el script de
 // escritura (protegido por SYNC_TOKEN, sin sesión). Upsert de una obra
 // puntual, usado por la sincronización con Drive (mismo token).
@@ -113,6 +114,15 @@ try {
         if (!in_array($campo, CAMPOS_CONFIRMABLES, true)) {
             Response::error('"campo" debe ser uno de: ' . implode(', ', CAMPOS_CONFIRMABLES), 422);
         }
+
+        // Deshacer una confirmación (por si se tocó ✓ sin querer): vuelve el
+        // campo a su estado sin confirmar, no deja un valor vacío guardado.
+        if ($body['eliminar'] ?? false) {
+            $db->prepare('DELETE FROM obra_aceptada_confirmaciones WHERE obra = ? AND campo = ?')
+                ->execute([$obra, $campo]);
+            Response::json(['ok' => true]);
+        }
+
         $valor = trim((string) ($body['valor'] ?? ''));
 
         $db->prepare("

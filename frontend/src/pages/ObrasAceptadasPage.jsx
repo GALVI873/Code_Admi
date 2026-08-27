@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { obrasAceptadas, seguimientoMateriales, confirmarCampoObraAceptada } from '../api/client.js'
+import { obrasAceptadas, seguimientoMateriales, confirmarCampoObraAceptada, quitarConfirmacionObraAceptada } from '../api/client.js'
 
 // Espacio de trabajo de Alfredo (Gestión de Obras). Primera versión: solo
 // lectura, la lista de obras que Geraldinne ya movió a "Aceptadas" — según
@@ -129,10 +129,11 @@ function formatoFechaHora(iso) {
 
 // Una fila por campo: "Presupuesto" es de solo lectura (lo que trajo la
 // sincronización con Drive); "Confirmación" arranca con un ✓ (aceptar tal
-// cual) y un ✎ (corregirlo) — una vez confirmado se ve el valor guardado
-// con la fecha, y el ✎ sigue disponible por si hay que corregirlo más
-// adelante. Guarda al tocar ✓ o al salir del campo en modo edición.
-function FilaFicha({ definicion, valorPresupuesto, confirmacion, onConfirmar }) {
+// cual) y un ✎ (corregirlo) — una vez confirmado, el mismo ✓ queda
+// clickeable para deshacer la confirmación (por si se tocó sin querer),
+// y el ✎ sigue disponible por si hay que corregirlo. Guarda al tocar ✓ o
+// al salir del campo en modo edición.
+function FilaFicha({ definicion, valorPresupuesto, confirmacion, onConfirmar, onQuitar }) {
   const [editando, setEditando] = useState(false)
   const [texto, setTexto] = useState('')
 
@@ -166,7 +167,14 @@ function FilaFicha({ definicion, valorPresupuesto, confirmacion, onConfirmar }) 
           />
         ) : confirmacion ? (
           <span className="confirmacion-valor">
-            <span className="confirmacion-check" title={`Confirmado el ${formatoFechaHora(confirmacion.confirmado_en)}`}>✓</span>
+            <button
+              type="button"
+              className="boton-icono boton-icono-agregar boton-icono-chico"
+              title={`Confirmado el ${formatoFechaHora(confirmacion.confirmado_en)} — click para deshacer`}
+              onClick={() => onQuitar(definicion.campo)}
+            >
+              ✓
+            </button>
             {confirmacion.valor || '—'}
             <button type="button" className="boton-lapiz" title="Corregir" onClick={empezarEdicion}>✎</button>
           </span>
@@ -174,7 +182,7 @@ function FilaFicha({ definicion, valorPresupuesto, confirmacion, onConfirmar }) 
           <span className="confirmacion-acciones">
             <button
               type="button"
-              className="boton-icono boton-icono-agregar"
+              className="boton-icono boton-icono-agregar boton-icono-chico"
               title="Confirmar tal cual"
               onClick={() => guardar(valorPresupuesto || '')}
             >
@@ -188,7 +196,7 @@ function FilaFicha({ definicion, valorPresupuesto, confirmacion, onConfirmar }) 
   )
 }
 
-function FichaObraAceptada({ presupuesto, confirmaciones, onConfirmar }) {
+function FichaObraAceptada({ presupuesto, confirmaciones, onConfirmar, onQuitar }) {
   const confirmacionPorCampo = useMemo(
     () => new Map(confirmaciones.map((c) => [c.campo, c])),
     [confirmaciones],
@@ -213,6 +221,7 @@ function FichaObraAceptada({ presupuesto, confirmaciones, onConfirmar }) {
                 valorPresupuesto={presupuesto[definicion.campo]}
                 confirmacion={confirmacionPorCampo.get(definicion.campo)}
                 onConfirmar={(campo, valor) => onConfirmar(presupuesto.obra, campo, valor)}
+                onQuitar={(campo) => onQuitar(presupuesto.obra, campo)}
               />
             ))}
           </tbody>
@@ -224,7 +233,7 @@ function FichaObraAceptada({ presupuesto, confirmaciones, onConfirmar }) {
 
 const PESTANAS_DETALLE = ['Ficha', 'Seguimiento']
 
-function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar, onConfirmar }) {
+function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar, onConfirmar, onQuitar }) {
   const [pestana, setPestana] = useState('Ficha')
 
   useEffect(() => {
@@ -268,7 +277,7 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar
         </div>
 
         {pestana === 'Ficha' ? (
-          <FichaObraAceptada presupuesto={presupuesto} confirmaciones={confirmaciones} onConfirmar={onConfirmar} />
+          <FichaObraAceptada presupuesto={presupuesto} confirmaciones={confirmaciones} onConfirmar={onConfirmar} onQuitar={onQuitar} />
         ) : (
           <SeguimientoPorPosicion materiales={materiales} />
         )}
@@ -359,6 +368,17 @@ export default function ObrasAceptadasPage() {
     })
     try {
       await confirmarCampoObraAceptada(accessToken, obra, campo, valor)
+    } catch (err) {
+      setConfirmaciones(anteriores)
+      setError(err.message)
+    }
+  }
+
+  async function handleQuitarConfirmacion(obra, campo) {
+    const anteriores = confirmaciones
+    setConfirmaciones((c) => c.filter((x) => !(x.obra === obra && x.campo === campo)))
+    try {
+      await quitarConfirmacionObraAceptada(accessToken, obra, campo)
     } catch (err) {
       setConfirmaciones(anteriores)
       setError(err.message)
@@ -459,6 +479,7 @@ export default function ObrasAceptadasPage() {
           confirmaciones={confirmacionesPorObra.get(obraSeleccionada.obra) || []}
           onCerrar={() => setObraSeleccionadaId(null)}
           onConfirmar={handleConfirmarCampo}
+          onQuitar={handleQuitarConfirmacion}
         />
       )}
     </div>

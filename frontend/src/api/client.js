@@ -91,3 +91,11 @@ export function confirmarCampoObraAceptada(accessToken, obra, campo, valor) {
     body: JSON.stringify({ obra, campo, valor }),
   })
 }
+
+export function quitarConfirmacionObraAceptada(accessToken, obra, campo) {
+  return request('/obras_aceptadas.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ obra, campo, eliminar: true }),
+  })
+}

@@ -957,6 +957,13 @@ body {
   cursor: default;
 }
 
+.boton-icono-chico {
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+  border-radius: 4px;
+}
+
 .boton-icono-agregar {
   background: #d5f5e3;
   color: #1e8449;
@@ -1008,11 +1015,6 @@ body {
   align-items: center;
   gap: 6px;
   color: var(--texto);
-}
-
-.confirmacion-check {
-  color: var(--verde);
-  font-weight: 700;
 }
 
 .tabla-ficha-confirmacion th:nth-child(3),
