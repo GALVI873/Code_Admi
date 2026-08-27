@@ -62,6 +62,21 @@ function faltaEnvio(presupuesto) {
   return presupuesto.estatus === 'Pdt Aprobación' && !presupuesto.fecha_ultimo_envio
 }
 
+// Una obra con varias alternativas de presupuesto (ej. "Alfonso XIII, Bajo
+// 2 — Opción A" / "— Opción B") vive en Drive y en el panel como filas
+// separadas — cada opción tiene vida propia, puede aceptarse o descartarse
+// en momentos distintos. Pero para Geraldinne es UNA obra con pestañas
+// adentro, no dos tarjetas repetidas: nombreBase() quita el sufijo para
+// agruparlas, etiquetaOpcion() lo recupera para nombrar cada pestaña.
+function nombreBase(obra) {
+  return (obra || '').replace(/\s*—\s*Opci[oó]n\s+\w+\s*$/i, '')
+}
+
+function etiquetaOpcion(obra) {
+  const m = (obra || '').match(/—\s*(Opci[oó]n\s+\w+)\s*$/i)
+  return m ? m[1] : null
+}
+
 function InsigniaAlerta() {
   return (
     <span
@@ -391,9 +406,9 @@ function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio }) {
       className={`obra-card ${alerta ? 'obra-card-alerta' : ''}`}
       role="button"
       tabIndex={0}
-      onClick={() => onAbrir(presupuesto.id)}
+      onClick={() => onAbrir(nombreBase(presupuesto.obra))}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') onAbrir(presupuesto.id)
+        if (e.key === 'Enter' || e.key === ' ') onAbrir(nombreBase(presupuesto.obra))
       }}
     >
       {alerta && <InsigniaAlerta />}
@@ -407,8 +422,55 @@ function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio }) {
   )
 }
 
-function DetalleSeguimiento({ presupuesto, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta }) {
+// Tarjeta de una obra con varias opciones vivas: mismo look que
+// TarjetaSeguimiento (de hecho lo reusa cuando hay una sola opción, caso más
+// común y sin cambios visuales) pero cuando hay más de una, en vez de un
+// único select de Estatus muestra una insignia por opción — cada una con su
+// propio color de estatus — porque acá no hay un solo estatus que mostrar.
+function TarjetaGrupoSeguimiento({ grupo, onAbrir, onCambio }) {
+  const { base, opciones } = grupo
+  if (opciones.length === 1) {
+    return <TarjetaSeguimiento presupuesto={opciones[0]} onAbrir={onAbrir} onCambio={onCambio} />
+  }
+
+  const alerta = opciones.some(faltaEnvio)
+  return (
+    <div
+      className={`obra-card ${alerta ? 'obra-card-alerta' : ''}`}
+      role="button"
+      tabIndex={0}
+      onClick={() => onAbrir(base)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onAbrir(base)
+      }}
+    >
+      {alerta && <InsigniaAlerta />}
+      <div className="obra-card-titulo" title={base}>{base}</div>
+      <div className="obra-card-cliente" title={opciones[0].cliente || ''}>{opciones[0].cliente || 'Sin cliente'}</div>
+      <div className="seguimiento-opciones-chips">
+        {opciones.map((o) => (
+          <span key={o.id} className={`seguimiento-chip-opcion ${CLASE_ESTATUS[o.estatus] || ''}`}>
+            {etiquetaOpcion(o.obra) || o.obra}
+          </span>
+        ))}
+      </div>
+      {grupo.prioridadAlta && <span className="badge badge-rechazado">Alta</span>}
+    </div>
+  )
+}
+
+function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta }) {
   const [ofertasAbiertas, setOfertasAbiertas] = useState(false)
+  const [pestanaActivaId, setPestanaActivaId] = useState(opciones[0]?.id)
+
+  // Se resetea a la primera pestaña solo cuando se abre una obra distinta
+  // (por base, no por el array de opciones, que cambia de referencia cada
+  // vez que se guarda algo aunque sea la misma obra).
+  useEffect(() => {
+    setPestanaActivaId(opciones[0]?.id)
+    setOfertasAbiertas(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base])
 
   useEffect(() => {
     function alEscape(e) {
@@ -418,62 +480,83 @@ function DetalleSeguimiento({ presupuesto, ofertas, onCerrar, onCambio, onAgrega
     return () => window.removeEventListener('keydown', alEscape)
   }, [onCerrar])
 
+  const activo = opciones.find((o) => o.id === pestanaActivaId) || opciones[0]
+  const ofertasDelActivo = ofertas.filter((o) => o.obra === activo.obra)
+
   return (
     <div className="modal-fondo" onClick={onCerrar}>
       <div className="modal-caja modal-caja-ancha" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <h2>{presupuesto.obra}</h2>
-            <p>{presupuesto.cliente || 'Sin cliente'}</p>
+            <h2>{base}</h2>
+            <p>{activo.cliente || 'Sin cliente'}</p>
           </div>
-          <InsigniaPrioridad presupuesto={presupuesto} />
+          <InsigniaPrioridad presupuesto={activo} />
           <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
         </div>
 
-        {faltaEnvio(presupuesto) && (
+        {opciones.length > 1 && (
+          <div className="seguimiento-pestanas">
+            {opciones.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                className={`seguimiento-pestana ${CLASE_ESTATUS[o.estatus] || ''} ${o.id === activo.id ? 'seguimiento-pestana-activa' : ''}`}
+                onClick={() => {
+                  setPestanaActivaId(o.id)
+                  setOfertasAbiertas(false)
+                }}
+              >
+                {etiquetaOpcion(o.obra) || o.obra}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {faltaEnvio(activo) && (
           <p className="modal-aviso">⚠ "Pdt Aprobación" sin ningún presupuesto enviado registrado en Drive.</p>
         )}
 
         <div className="modal-meta">
           <div className="modal-campo">
             <span>Estatus</span>
-            <SelectEstatus presupuesto={presupuesto} onCambio={onCambio} />
+            <SelectEstatus presupuesto={activo} onCambio={onCambio} />
           </div>
           <div className="modal-campo">
             <span>Fecha límite de entrega</span>
-            <FechaLimiteEntrega presupuesto={presupuesto} onCambio={onCambio} />
+            <FechaLimiteEntrega presupuesto={activo} onCambio={onCambio} />
           </div>
         </div>
 
         <div className="modal-campo modal-campo-ancho">
           <span>Comentario para Álvaro</span>
-          <ComentarioParaAlvaro presupuesto={presupuesto} onCambio={onCambio} />
+          <ComentarioParaAlvaro presupuesto={activo} onCambio={onCambio} />
         </div>
 
         <LineaTiempo
-          presupuesto={presupuesto}
-          ofertas={ofertas}
+          presupuesto={activo}
+          ofertas={ofertasDelActivo}
           ofertasAbiertas={ofertasAbiertas}
           onToggleOfertas={() => setOfertasAbiertas((v) => !v)}
-          onAgregarOferta={(proveedor, fechaSolicitud) => onAgregarOferta(presupuesto.obra, proveedor, fechaSolicitud)}
+          onAgregarOferta={(proveedor, fechaSolicitud) => onAgregarOferta(activo.obra, proveedor, fechaSolicitud)}
           onEliminarOferta={onEliminarOferta}
           onCambiarEstatusOferta={onCambiarEstatusOferta}
         />
 
         {!ofertasAbiertas && (
           <dl className="modal-detalle">
-            <div><dt>Nº Ppto</dt><dd>{presupuesto.numero_ppto || '—'}</dd></div>
-            <div><dt>Nº Ventanas</dt><dd>{presupuesto.no_ventanas ?? '—'}</dd></div>
-            <div><dt>Carpintería</dt><dd>{presupuesto.carpinteria || '—'}</dd></div>
-            <div><dt>Proveedor</dt><dd>{presupuesto.proveedor || '—'}</dd></div>
-            <div><dt>RAL / Color</dt><dd>{presupuesto.ral || '—'}</dd></div>
-            <div><dt>Persiana</dt><dd>{presupuesto.persiana || '—'}</dd></div>
-            <div><dt>Vidrio</dt><dd>{presupuesto.vidrio || '—'}</dd></div>
-            <div><dt>Precio/m²</dt><dd>{formatoMoneda(presupuesto.precio_m2)}</dd></div>
-            <div><dt>Precio total oferta</dt><dd>{formatoMoneda(presupuesto.precio_ultimo_presupuesto)}</dd></div>
-            <div><dt>% Ganancia</dt><dd>{formatoPorcentaje(presupuesto.porcentaje_ganancia)}</dd></div>
-            <div><dt>Fecha solicitud</dt><dd>{formatoFecha(presupuesto.fecha_creacion_carpeta) || '—'}</dd></div>
-            <div><dt>Fecha última oferta</dt><dd>{formatoFecha(presupuesto.fecha_ultimo_envio) || '—'}</dd></div>
+            <div><dt>Nº Ppto</dt><dd>{activo.numero_ppto || '—'}</dd></div>
+            <div><dt>Nº Ventanas</dt><dd>{activo.no_ventanas ?? '—'}</dd></div>
+            <div><dt>Carpintería</dt><dd>{activo.carpinteria || '—'}</dd></div>
+            <div><dt>Proveedor</dt><dd>{activo.proveedor || '—'}</dd></div>
+            <div><dt>RAL / Color</dt><dd>{activo.ral || '—'}</dd></div>
+            <div><dt>Persiana</dt><dd>{activo.persiana || '—'}</dd></div>
+            <div><dt>Vidrio</dt><dd>{activo.vidrio || '—'}</dd></div>
+            <div><dt>Precio/m²</dt><dd>{formatoMoneda(activo.precio_m2)}</dd></div>
+            <div><dt>Precio total oferta</dt><dd>{formatoMoneda(activo.precio_ultimo_presupuesto)}</dd></div>
+            <div><dt>% Ganancia</dt><dd>{formatoPorcentaje(activo.porcentaje_ganancia)}</dd></div>
+            <div><dt>Fecha solicitud</dt><dd>{formatoFecha(activo.fecha_creacion_carpeta) || '—'}</dd></div>
+            <div><dt>Fecha última oferta</dt><dd>{formatoFecha(activo.fecha_ultimo_envio) || '—'}</dd></div>
           </dl>
         )}
       </div>
@@ -491,7 +574,7 @@ export default function SeguimientoPage() {
   const [filtroCategoria, setFiltroCategoria] = useState('Todos')
   const [filtroContacto, setFiltroContacto] = useState('Todos')
   const [filtroEstatus, setFiltroEstatus] = useState('Todos')
-  const [obraSeleccionadaId, setObraSeleccionadaId] = useState(null)
+  const [obraSeleccionadaBase, setObraSeleccionadaBase] = useState(null)
 
   useEffect(() => {
     presupuestosEnEstudio(accessToken)
@@ -531,36 +614,81 @@ export default function SeguimientoPage() {
       .filter((p) => !texto || p.obra?.toLowerCase().includes(texto))
       .filter((p) => filtroCategoria === 'Todos' || p.categoria === filtroCategoria)
       .filter((p) => filtroContacto === 'Todos' || p.contacto === filtroContacto)
-      .sort((a, b) => {
-        // Cuando Álvaro marca una obra como prioridad "Alta" desde su
-        // panel, acá sube al principio de su grupo — es la señal de que
-        // Geraldinne debe atenderla primero.
-        if (a.prioridad === 'Alta' && b.prioridad !== 'Alta') return -1
-        if (a.prioridad !== 'Alta' && b.prioridad === 'Alta') return 1
-        return (a.obra || '').localeCompare(b.obra || '', 'es')
-      })
   }, [filasSegunEstatus, busquedaObra, filtroCategoria, filtroContacto])
+
+  // Agrupa las opciones de una misma obra ("— Opción A"/"— Opción B") bajo
+  // una sola tarjeta. El estatus que decide en qué sección aparece el grupo
+  // es el menos avanzado entre sus opciones vivas (el orden de
+  // ESTATUS_OPCIONES) — si una opción sigue "En Estudio" y otra ya está
+  // "Aceptado", la obra sigue necesitando trabajo activo, así que se queda
+  // en la sección de "En Estudio" en vez de esconderse en "Aceptado".
+  const gruposObra = useMemo(() => {
+    const mapa = new Map()
+    for (const p of filasFiltradas) {
+      const base = nombreBase(p.obra)
+      if (!mapa.has(base)) mapa.set(base, [])
+      mapa.get(base).push(p)
+    }
+    return Array.from(mapa.entries())
+      .map(([base, opciones]) => {
+        const estatusRepresentativo = opciones.reduce((mejor, o) => {
+          const iActual = ESTATUS_OPCIONES.indexOf(o.estatus)
+          const iMejor = ESTATUS_OPCIONES.indexOf(mejor)
+          if (iActual === -1) return mejor
+          if (iMejor === -1) return o.estatus
+          return iActual < iMejor ? o.estatus : mejor
+        }, opciones[0].estatus)
+        return {
+          base,
+          opciones,
+          prioridadAlta: opciones.some((o) => o.prioridad === 'Alta'),
+          estatusRepresentativo,
+        }
+      })
+      .sort((a, b) => {
+        // Cuando Álvaro marca alguna opción como prioridad "Alta" desde su
+        // panel, la obra entera sube al principio de su grupo — es la señal
+        // de que Geraldinne debe atenderla primero.
+        if (a.prioridadAlta && !b.prioridadAlta) return -1
+        if (!a.prioridadAlta && b.prioridadAlta) return 1
+        return a.base.localeCompare(b.base, 'es')
+      })
+  }, [filasFiltradas])
+
+  const totalGruposSegunEstatus = useMemo(
+    () => new Set(filasSegunEstatus.map((p) => nombreBase(p.obra))).size,
+    [filasSegunEstatus],
+  )
 
   // Agrupadas por estatus para que el grid tenga secciones claras en vez de
   // una sola pared de tarjetas (mismo patrón que Presupuestos en Estudio).
   // "Pdt Aprobación" queda fuera del agrupamiento por defecto porque
   // filasSegunEstatus ya lo excluyó de "Todos"; al filtrar puntualmente por
-  // ese estatus no hace falta agrupar, ya es un solo grupo.
+  // ese estatus no hace falta agrupar, ya es un solo grupo (y solo entran
+  // las obras que tengan AL MENOS una opción en ese estatus puntual).
   const gruposVisibles = useMemo(() => {
-    if (filtroEstatus !== 'Todos') return [{ estatus: filtroEstatus, items: filasFiltradas }]
+    if (filtroEstatus !== 'Todos') {
+      return [{ estatus: filtroEstatus, items: gruposObra.filter((g) => g.opciones.some((o) => o.estatus === filtroEstatus)) }]
+    }
     return ESTATUS_OPCIONES.filter((e) => e !== 'Pdt Aprobación')
-      .map((estatus) => ({ estatus, items: filasFiltradas.filter((p) => p.estatus === estatus) }))
+      .map((estatus) => ({ estatus, items: gruposObra.filter((g) => g.estatusRepresentativo === estatus) }))
       .filter((g) => g.items.length > 0)
-  }, [filasFiltradas, filtroEstatus])
+  }, [gruposObra, filtroEstatus])
 
   function handleCambioCategoria(valor) {
     setFiltroCategoria(valor)
     setFiltroContacto('Todos')
   }
 
-  const obraSeleccionada = filas.find((p) => p.id === obraSeleccionadaId) || null
-  const ofertasDeSeleccionada = obraSeleccionada
-    ? ofertas.filter((o) => o.obra === obraSeleccionada.obra)
+  // Todas las opciones vivas de la obra abierta (no solo las que pasan los
+  // filtros del grid) para que, una vez adentro, las pestañas no dependan
+  // de qué se estaba filtrando afuera cuando se abrió la tarjeta.
+  const opcionesSeleccionadas = useMemo(
+    () => (obraSeleccionadaBase ? filasVivas.filter((p) => nombreBase(p.obra) === obraSeleccionadaBase) : []),
+    [filasVivas, obraSeleccionadaBase],
+  )
+  const ofertasDeSeleccionada = obraSeleccionadaBase
+    ? ofertas.filter((o) => nombreBase(o.obra) === obraSeleccionadaBase)
     : []
 
   async function handleCambio(id, cambios) {
@@ -682,18 +810,18 @@ export default function SeguimientoPage() {
             </select>
           </div>
           <span className="filtro-contador">
-            {filasFiltradas.length} de {filasSegunEstatus.length}
+            {gruposObra.length} de {totalGruposSegunEstatus}
           </span>
         </div>
       )}
 
       {cargando && <p className="dashboard-nota">Cargando…</p>}
       {error && <div className="auth-error">{error}</div>}
-      {!cargando && !error && filasFiltradas.length === 0 && (
+      {!cargando && !error && gruposObra.length === 0 && (
         <p className="dashboard-nota">Ninguna obra coincide con los filtros aplicados.</p>
       )}
 
-      {!cargando && !error && filasFiltradas.length > 0 && gruposVisibles.map((grupo) => (
+      {!cargando && !error && gruposObra.length > 0 && gruposVisibles.map((grupo) => (
         <section key={grupo.estatus} className="obras-seccion">
           {filtroEstatus === 'Todos' && (
             <h2 className={`obras-seccion-titulo ${CLASE_ESTATUS[grupo.estatus] || ''}`}>
@@ -702,18 +830,19 @@ export default function SeguimientoPage() {
             </h2>
           )}
           <div className="obras-grid">
-            {grupo.items.map((p) => (
-              <TarjetaSeguimiento key={p.id} presupuesto={p} onAbrir={setObraSeleccionadaId} onCambio={handleCambio} />
+            {grupo.items.map((g) => (
+              <TarjetaGrupoSeguimiento key={g.base} grupo={g} onAbrir={setObraSeleccionadaBase} onCambio={handleCambio} />
             ))}
           </div>
         </section>
       ))}
 
-      {obraSeleccionada && (
+      {obraSeleccionadaBase && opcionesSeleccionadas.length > 0 && (
         <DetalleSeguimiento
-          presupuesto={obraSeleccionada}
+          base={obraSeleccionadaBase}
+          opciones={opcionesSeleccionadas}
           ofertas={ofertasDeSeleccionada}
-          onCerrar={() => setObraSeleccionadaId(null)}
+          onCerrar={() => setObraSeleccionadaBase(null)}
           onCambio={handleCambio}
           onAgregarOferta={handleAgregarOferta}
           onEliminarOferta={handleEliminarOferta}
