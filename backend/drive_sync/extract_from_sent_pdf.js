@@ -281,12 +281,16 @@ function esPdfDeCarpinteria(text) {
 
 // Plantilla propia de Galvi (a diferencia de las ofertas de proveedor, que
 // no tienen una plantilla común): siempre cierra con "Suma total" (sin IVA),
-// "Total presupuesto" (con IVA, el precio real) y el desglose del IVA. Se
-// ancla al número que aparece INMEDIATAMENTE antes de la etiqueta "Total
-// presupuesto" — en el texto extraído por pdf-parse el valor queda antes que
-// su etiqueta por el orden de columnas del PDF, no al revés.
+// "Total presupuesto" (con IVA) y el desglose del IVA. Se ancla a "Suma
+// total", no a "Total presupuesto": precio_ultimo_presupuesto para TODAS las
+// demás obras del panel sale de la hoja "Comparativa" del Excel de cálculo
+// (ver extract_fields.js), que también es sin IVA (columna "Suma de Total
+// Presupesto") — hay que usar la misma base acá para que el valor de una
+// obra con varias opciones sea comparable con el de cualquier otra. En el
+// texto extraído por pdf-parse el valor queda antes que su etiqueta por el
+// orden de columnas del PDF, no al revés.
 function extraerTotalPresupuesto(text) {
-  const m = text.match(/([\d.]+,\d{2})\s*€\s*Total presupuesto/i);
+  const m = text.match(/([\d.]+,\d{2})\s*€\s*Suma total/i);
   if (!m) return null;
   const num = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
   return Number.isNaN(num) ? null : num;
