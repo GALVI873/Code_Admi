@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { presupuestosEnEstudio, actualizarPresupuestoEnEstudio } from '../api/client.js'
+import {
+  presupuestosEnEstudio,
+  actualizarPresupuestoEnEstudio,
+  agregarSolicitudOferta,
+  eliminarOferta,
+} from '../api/client.js'
 
 // Espacio de trabajo personal de Geraldinne. Nunca muestra Descartadas —a
 // diferencia de Presupuestos en Estudio, acá ni siquiera es una opción de
@@ -8,6 +13,38 @@ import { presupuestosEnEstudio, actualizarPresupuestoEnEstudio } from '../api/cl
 const EMAIL_AUTORIZADO = 'presupuestos@galvi.es'
 const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Pdt Aprobación', 'Aceptado']
 const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista']
+
+// Del Vademecum (Z:\DRIVE GALVI\Vademecum.xlsx, hoja "Proveedores") — solo
+// como sugerencias del campo de texto libre (datalist), no como opción
+// cerrada: son demasiados para un desplegable y a veces se pide valoración a
+// alguien que todavía no está en la lista.
+const PROVEEDORES_SUGERIDOS = [
+  'Accesorios y perfiles Villa', 'Airmetal', 'Aerocrom lacado', 'Alegor Obras', 'Instalaciones SGGP',
+  'Aliste y Alonso (Albañiles)', 'Altex', 'Alu y PVC', 'Alucenter', 'Alucoil', 'Alugal', 'Alugom',
+  'Alumespa', 'Alumisan', 'Alumital', 'Alu-Stock', 'Aluporta', 'Aluterms(Joel)', 'Aluminios Ordax',
+  'Angel Ramos Ondero', 'Antea', 'Aramar', 'Aranluz', 'Armycon', 'Azulejos Hermanos Herrero, S.L.',
+  'Becker', 'Berner', 'Bigmat', 'Brisa', 'Bur 2000', 'Carpinteria Caraballo', 'Cerrajeria Marquez',
+  'Clandes', 'Codalmha', 'Comercial arteplastica', 'Compresores Madrid', 'Cortizo', 'Crimasa',
+  'Cristalerias Morales', 'Cristian Herraiz Muñoz', 'Curvados técnicos', 'Cyper', 'Dimeca',
+  'Decometalisteria', 'Decoraciones Rodrisol', 'Exlabesa', 'Extrugasa', 'Fachadas Alumital',
+  'Ferreteria Eurofer', 'Ferreteria Ibermadrid', 'Ferreteria Ortiz', 'Ferreteria Leonesa',
+  'GEZE Iberica,', 'Gradhermetic', 'Gradual', 'Gruas Lozano', 'Unic Rentals', 'Grupo Ferditrans',
+  'Hierros y Tubos Lorca', 'Hiper Hierros', 'IDF Suministros Industriales', 'Imelsa', 'Intertoldo',
+  'Inmotec Proyectos', 'Jofebar', 'Julmosa', 'Jose Miguel Groux Cespedes', 'K-Line', 'Koryak',
+  'Lacados San José', 'LaFermu', 'Leroy Merlin', 'Linealtec', 'Markus de Beker', 'Materiales Rueda',
+  'Metracom', 'Miguel Angel Peris(Gradual)', 'Mont. Alumitech', 'Mont. Alvarado (Lucho)',
+  'Mont. Evaristo', 'Mont. Fernando Recalde FRS', 'Mont. Jesus Galan', 'Mont. Jorge Luis Rodriguez Reyes',
+  'Jose A. Bueno', 'Mont. Marcin', 'Mont. Miguel A. Martinez', 'Mont. Montero&Antequera',
+  'Mont. Oscar Gomez-Lobo Atienza', 'Mont. Pinar Glass', 'Mont. Vivero Cantillo',
+  'Mont. Frank Lery Serrano Urquizo', 'Nazan', 'Obramat', 'Pension Oasis', 'Pers. El Parque',
+  'Persycom', 'Persyvex', 'Pinturas Aerocrom', 'Pilar Bolaños', 'Prometall', 'Prowalum',
+  'Ramig Reformas y Constr.', 'Ramos Escudero', 'Recar', 'Represanvi', 'Resopal', 'Robinco',
+  'Santi Electricista', 'Schüco', 'Sellados RpVertical,S.L.U', 'Serenur', 'Sermanpro', 'Strugal',
+  'Sum. Illescas', 'Transp Javier Rodriguez Morales', 'Transp M Angel', 'Tecrosa', 'Upama',
+  'V.Arandina', 'V.Glassolutions', 'V.Orgaz', 'V.Orozco', 'V.Ramos', 'V.Rodas', 'Winlux', 'Würth',
+  'Algave', 'V.Manufacturas Recamar', 'Stacbond', 'Galvi', 'Comercial de Industria y Representacion,S.L',
+  'Zorelor', 'SunClear', 'Roberto Jiménez', 'Ferreteria de Frutos S.A', 'Ferreteria Santos', 'Arialac',
+]
 
 const CLASE_ESTATUS = {
   'En Estudio': 'select-estatus-en-estudio',
@@ -105,25 +142,117 @@ function construirPasos(p) {
   ]
 }
 
-function ListaOfertas({ ofertas }) {
-  if (ofertas.length === 0) {
-    return <p className="seguimiento-ofertas-vacio">No se detectaron ofertas de proveedor en la carpeta "Valoración" de esta obra.</p>
+// Alta de una solicitud de valoración: Geraldinne registra a mano a quién le
+// pidió precio y cuándo. Cuando la sincronización con Drive encuentre el PDF
+// correspondiente en la carpeta "Valoración", esta fila pasa sola a
+// "Recibido" con el valor y la fecha de llegada — no hace falta que ella
+// vuelva a tocarla.
+function FormularioSolicitudOferta({ onAgregar }) {
+  const [proveedor, setProveedor] = useState('')
+  const [fecha, setFecha] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  async function enviar(e) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!proveedor.trim() || guardando) return
+    setGuardando(true)
+    try {
+      await onAgregar(proveedor.trim(), fecha)
+      setProveedor('')
+      setFecha('')
+    } finally {
+      setGuardando(false)
+    }
   }
+
   return (
-    <ul className="seguimiento-ofertas-lista">
-      {ofertas.map((o) => (
-        <li key={o.id} className="seguimiento-oferta-item">
-          <span className="seguimiento-oferta-proveedor">{o.proveedor || 'Proveedor sin detectar'}</span>
-          <span className="seguimiento-oferta-valor">{o.valor != null ? formatoMoneda(o.valor) : 'Valor sin detectar'}</span>
-          <span className="seguimiento-oferta-fecha">{formatoFecha(o.fecha) || 'Sin fecha'}</span>
-          <span className="seguimiento-oferta-archivo" title={o.archivo}>{o.archivo}</span>
-        </li>
-      ))}
-    </ul>
+    <form className="seguimiento-oferta-form" onClick={(e) => e.stopPropagation()} onSubmit={enviar}>
+      <input
+        type="text"
+        className="input-filtro"
+        list="seguimiento-proveedores-sugeridos"
+        placeholder="Proveedor al que se le pidió valoración…"
+        value={proveedor}
+        onChange={(e) => setProveedor(e.target.value)}
+      />
+      <datalist id="seguimiento-proveedores-sugeridos">
+        {PROVEEDORES_SUGERIDOS.map((p) => <option key={p} value={p} />)}
+      </datalist>
+      <input
+        type="date"
+        className="input-filtro input-fecha-limite"
+        title="Fecha de la solicitud"
+        value={fecha}
+        onChange={(e) => setFecha(e.target.value)}
+      />
+      <button type="submit" className="btn-secundario" disabled={guardando || !proveedor.trim()}>
+        {guardando ? 'Agregando…' : 'Agregar solicitud'}
+      </button>
+    </form>
   )
 }
 
-function LineaTiempo({ presupuesto, ofertas, ofertasAbiertas, onToggleOfertas }) {
+function ItemOferta({ oferta, onEliminar }) {
+  const pendiente = oferta.estatus === 'Pendiente'
+  return (
+    <li className={`seguimiento-oferta-item ${pendiente ? 'seguimiento-oferta-item-pendiente' : ''}`}>
+      <span className={`badge-estatus-oferta ${pendiente ? 'badge-estatus-oferta-pendiente' : 'badge-estatus-oferta-recibido'}`}>
+        {oferta.estatus}
+      </span>
+      <span className="seguimiento-oferta-proveedor">{oferta.proveedor || 'Proveedor sin detectar'}</span>
+      {pendiente ? (
+        <span className="seguimiento-oferta-fecha">Solicitada el {formatoFecha(oferta.fecha_solicitud) || '—'}</span>
+      ) : (
+        <>
+          <span className="seguimiento-oferta-valor">{oferta.valor != null ? formatoMoneda(oferta.valor) : 'Valor sin detectar'}</span>
+          <span className="seguimiento-oferta-fecha">Llegó el {formatoFecha(oferta.fecha_llegada) || '—'}</span>
+          <span className="seguimiento-oferta-archivo" title={oferta.archivo}>{oferta.archivo}</span>
+        </>
+      )}
+      <button
+        type="button"
+        className="seguimiento-oferta-borrar"
+        title="Eliminar esta oferta"
+        onClick={(e) => {
+          e.stopPropagation()
+          onEliminar(oferta.id)
+        }}
+      >
+        🗑
+      </button>
+    </li>
+  )
+}
+
+function ListaOfertas({ ofertas, onAgregar, onEliminar }) {
+  const pendientes = ofertas.filter((o) => o.estatus === 'Pendiente')
+  const recibidas = ofertas.filter((o) => o.estatus !== 'Pendiente')
+
+  return (
+    <div className="seguimiento-ofertas-contenido">
+      <FormularioSolicitudOferta onAgregar={onAgregar} />
+
+      {ofertas.length === 0 && (
+        <p className="seguimiento-ofertas-vacio">Todavía no hay ninguna solicitud de valoración registrada para esta obra.</p>
+      )}
+
+      {pendientes.length > 0 && (
+        <ul className="seguimiento-ofertas-lista">
+          {pendientes.map((o) => <ItemOferta key={o.id} oferta={o} onEliminar={onEliminar} />)}
+        </ul>
+      )}
+
+      {recibidas.length > 0 && (
+        <ul className="seguimiento-ofertas-lista">
+          {recibidas.map((o) => <ItemOferta key={o.id} oferta={o} onEliminar={onEliminar} />)}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function LineaTiempo({ presupuesto, ofertas, ofertasAbiertas, onToggleOfertas, onAgregarOferta, onEliminarOferta }) {
   const pasos = construirPasos(presupuesto)
 
   return (
@@ -150,7 +279,7 @@ function LineaTiempo({ presupuesto, ofertas, ofertasAbiertas, onToggleOfertas })
       </ol>
       {ofertasAbiertas && (
         <div className="seguimiento-ofertas-panel">
-          <ListaOfertas ofertas={ofertas} />
+          <ListaOfertas ofertas={ofertas} onAgregar={onAgregarOferta} onEliminar={onEliminarOferta} />
         </div>
       )}
     </>
@@ -241,7 +370,7 @@ function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio }) {
   )
 }
 
-function DetalleSeguimiento({ presupuesto, ofertas, onCerrar, onCambio }) {
+function DetalleSeguimiento({ presupuesto, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta }) {
   const [ofertasAbiertas, setOfertasAbiertas] = useState(false)
 
   useEffect(() => {
@@ -289,6 +418,8 @@ function DetalleSeguimiento({ presupuesto, ofertas, onCerrar, onCambio }) {
           ofertas={ofertas}
           ofertasAbiertas={ofertasAbiertas}
           onToggleOfertas={() => setOfertasAbiertas((v) => !v)}
+          onAgregarOferta={(proveedor, fechaSolicitud) => onAgregarOferta(presupuesto.obra, proveedor, fechaSolicitud)}
+          onEliminarOferta={onEliminarOferta}
         />
 
         {!ofertasAbiertas && (
@@ -405,6 +536,29 @@ export default function SeguimientoPage() {
     }
   }
 
+  async function handleAgregarOferta(obra, proveedor, fechaSolicitud) {
+    try {
+      const { id } = await agregarSolicitudOferta(accessToken, obra, proveedor, fechaSolicitud)
+      setOfertas((o) => [
+        ...o,
+        { id, obra, proveedor, estatus: 'Pendiente', fecha_solicitud: fechaSolicitud || null, valor: null, fecha: null, fecha_llegada: null, archivo: null },
+      ])
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  async function handleEliminarOferta(ofertaId) {
+    const anteriores = ofertas
+    setOfertas((o) => o.filter((x) => x.id !== ofertaId))
+    try {
+      await eliminarOferta(accessToken, ofertaId)
+    } catch (err) {
+      setOfertas(anteriores)
+      setError(err.message)
+    }
+  }
+
   if (usuario?.email !== EMAIL_AUTORIZADO) {
     return (
       <div className="dashboard">
@@ -512,6 +666,8 @@ export default function SeguimientoPage() {
           ofertas={ofertasDeSeleccionada}
           onCerrar={() => setObraSeleccionadaId(null)}
           onCambio={handleCambio}
+          onAgregarOferta={handleAgregarOferta}
+          onEliminarOferta={handleEliminarOferta}
         />
       )}
     </div>

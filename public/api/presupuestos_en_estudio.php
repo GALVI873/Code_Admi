@@ -9,14 +9,20 @@ declare(strict_types=1);
 // filas (lectura administrativa, sin sesión). Con {accion:"marcar_estatus",
 // obras:[...], estatus:"..."} hace limpieza en bloque (pisa el estatus sin
 // importar cuál tenía, a diferencia del upsert). Con
-// {accion:"reemplazar_ofertas", obra:"...", ofertas:[...]}  reemplaza todas
-// las ofertas de proveedor de esa obra (leídas de su carpeta "Valoración").
-// PATCH: cambia prioridad, interesante, estatus y/o el comentario/fecha límite de Geraldinne:
+// {accion:"sincronizar_ofertas_detectadas", obra:"...", ofertas:[...]} empareja
+// lo leído de la carpeta "Valoración" contra las solicitudes "Pendiente" que
+// Geraldinne ya había cargado (ver PATCH abajo) en vez de reemplazar todo —
+// así no se pisa lo que ella cargó a mano.
+// PATCH: cambia prioridad, interesante, estatus, el comentario/fecha límite de
+// Geraldinne, y/o gestiona sus solicitudes de valoración a proveedor:
 //   - "prioridad" requiere el permiso presupuestos.gestionar_prioridad (solo admin).
 //   - "interesante" requiere presupuestos.marcar_interesante (solo admin — Álvaro/Valentina).
 //   - "estatus" requiere ver_todos o ver_seguimiento (cualquiera que pueda ver la tabla).
 //   - "comentario_geraldinne"/"fecha_limite_entrega" requieren presupuestos.ver_seguimiento
 //     (solo Geraldinne — Álvaro las ve en su vista pero no las edita).
+//   - {accion:"agregar_solicitud_oferta", obra, proveedor, fecha_solicitud} y
+//     {accion:"eliminar_oferta", oferta_id} requieren presupuestos.ver_seguimiento
+//     (solo Geraldinne).
 // DELETE: protegido por SYNC_TOKEN igual que POST. Con {obras:[...]} borra esas
 // filas puntuales sin importar su estatus; con {obras_activas:[...]} reconcilia
 // tras un sync (borra lo que no está en la lista, solo en estatus por defecto).
@@ -31,6 +37,18 @@ $config = require __DIR__ . '/../../backend/bootstrap.php';
 // arriba). Descartado/Aceptado son decisiones finales manuales.
 const ESTATUS_VALIDOS = ['En Estudio', 'En Valoración', 'En Revisión', 'Pdt Aprobación', 'Aceptado', 'Descartado'];
 const ESTATUS_PRE_ENVIO = ['En Estudio', 'En Valoración', 'En Revisión'];
+
+// Sin tildes/mayúsculas ni signos, para poder comparar "Villar" con
+// "Aluminios Villar, SL." o "ALUMINIOS VILLAR" sin depender de que el
+// nombre que escribió Geraldinne y el que se detectó en el PDF coincidan
+// letra por letra. Mapa explícito (no iconv//TRANSLIT) para no depender del
+// soporte de locales del hosting.
+function normalizarProveedor(string $s): string
+{
+    $s = mb_strtolower($s, 'UTF-8');
+    $s = strtr($s, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n', 'ü' => 'u']);
+    return preg_replace('/[^a-z0-9]/', '', $s);
+}
 
 try {
     $db = Database::connection($config);
@@ -64,10 +82,14 @@ try {
         )
     ");
 
-    // Ofertas de proveedor leídas de la carpeta "Valoración" de cada obra —
-    // relación 1 a N (una obra puede tener varias, una por proveedor
-    // consultado). Se reemplazan completas por obra en cada sync, no se
-    // actualizan fila por fila.
+    // Ofertas de proveedor de cada obra — relación 1 a N. Dos orígenes:
+    // Geraldinne registra a mano a quién le pidió valoración (estatus
+    // "Pendiente", solo fecha_solicitud) y, cuando la sincronización
+    // encuentra el PDF correspondiente en la carpeta "Valoración", esa fila
+    // pasa a "Recibido" con valor/fecha/archivo/fecha_llegada. Si no hay
+    // ninguna "Pendiente" que le calce, se crea igual como "Recibido" (no se
+    // pierde una oferta real detectada solo porque no se había registrado el
+    // pedido) — ver accion:"sincronizar_ofertas_detectadas" más abajo.
     $db->exec("
         CREATE TABLE IF NOT EXISTS ofertas_proveedor (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,6 +98,9 @@ try {
           valor REAL,
           fecha TEXT,
           archivo TEXT,
+          estatus TEXT NOT NULL DEFAULT 'Recibido',
+          fecha_solicitud TEXT,
+          fecha_llegada TEXT,
           actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
     ");
@@ -115,6 +140,17 @@ try {
     }
     if (!in_array('fecha_limite_entrega', $columnas, true)) {
         $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN fecha_limite_entrega TEXT');
+    }
+
+    $columnasOfertas = array_column($db->query('PRAGMA table_info(ofertas_proveedor)')->fetchAll(), 'name');
+    if (!in_array('estatus', $columnasOfertas, true)) {
+        $db->exec("ALTER TABLE ofertas_proveedor ADD COLUMN estatus TEXT NOT NULL DEFAULT 'Recibido'");
+    }
+    if (!in_array('fecha_solicitud', $columnasOfertas, true)) {
+        $db->exec('ALTER TABLE ofertas_proveedor ADD COLUMN fecha_solicitud TEXT');
+    }
+    if (!in_array('fecha_llegada', $columnasOfertas, true)) {
+        $db->exec('ALTER TABLE ofertas_proveedor ADD COLUMN fecha_llegada TEXT');
     }
 
     // Renombre de estatus: "Seguimiento" pasó a llamarse "Pdt Aprobación"
@@ -175,6 +211,38 @@ try {
         $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
+
+        // Solicitudes de valoración a proveedor (obra de Geraldinne, no de
+        // presupuestos_en_estudio) — van por "accion" en vez de "id" porque
+        // no editan una fila de esa tabla.
+        if (($body['accion'] ?? '') === 'agregar_solicitud_oferta') {
+            AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_seguimiento');
+            $obra = trim((string) ($body['obra'] ?? ''));
+            $proveedor = trim((string) ($body['proveedor'] ?? ''));
+            $fechaSolicitud = trim((string) ($body['fecha_solicitud'] ?? ''));
+            if ($obra === '' || $proveedor === '') {
+                Response::error('Faltan "obra" y/o "proveedor"', 422);
+            }
+            if ($fechaSolicitud !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fechaSolicitud)) {
+                Response::error('"fecha_solicitud" debe tener formato AAAA-MM-DD', 422);
+            }
+            $db->prepare("
+                INSERT INTO ofertas_proveedor (obra, proveedor, estatus, fecha_solicitud, actualizado_en)
+                VALUES (?, ?, 'Pendiente', ?, datetime('now'))
+            ")->execute([$obra, $proveedor, $fechaSolicitud === '' ? null : $fechaSolicitud]);
+            Response::json(['ok' => true, 'id' => (int) $db->lastInsertId()]);
+        }
+
+        if (($body['accion'] ?? '') === 'eliminar_oferta') {
+            AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_seguimiento');
+            $ofertaId = (int) ($body['oferta_id'] ?? 0);
+            if ($ofertaId <= 0) {
+                Response::error('Falta "oferta_id"', 422);
+            }
+            $db->prepare('DELETE FROM ofertas_proveedor WHERE id = ?')->execute([$ofertaId]);
+            Response::json(['ok' => true]);
+        }
+
         $id = (int) ($body['id'] ?? 0);
         if ($id <= 0) {
             Response::error('Falta "id"', 422);
@@ -243,31 +311,90 @@ try {
             Response::json(['presupuestos' => $stmt->fetchAll()]);
         }
 
-        // Reemplaza completas las ofertas de proveedor de una obra (todo lo
-        // leído de su carpeta "Valoración" en este sync) — no un upsert fila
-        // por fila, porque no hay una clave estable entre corridas (un
-        // proveedor puede volver a cotizar con otro archivo).
-        if (($body['accion'] ?? '') === 'reemplazar_ofertas') {
+        // Empareja lo detectado en la carpeta "Valoración" de la obra contra
+        // lo que ya hay en la tabla, en vez de borrar todo y volver a
+        // insertar (eso pisaba las solicitudes "Pendiente" que Geraldinne
+        // había cargado a mano). Por cada oferta detectada:
+        //   1) si ya existe una fila con el mismo archivo (de una corrida
+        //      anterior), se actualiza en vez de duplicar;
+        //   2) si no, se busca una "Pendiente" de esa obra cuyo proveedor
+        //      calce (comparación sin tildes/mayúsculas, en cualquier
+        //      dirección) y se completa esa fila;
+        //   3) si no hay ninguna de las dos, se crea igual como "Recibido"
+        //      (mejor mostrar una oferta real sin solicitud registrada que
+        //      perderla) — Geraldinne puede borrarla a mano si no corresponde.
+        if (($body['accion'] ?? '') === 'sincronizar_ofertas_detectadas') {
             $obra = trim((string) ($body['obra'] ?? ''));
-            $ofertas = $body['ofertas'] ?? null;
-            if ($obra === '' || !is_array($ofertas)) {
+            $detectadas = $body['ofertas'] ?? null;
+            if ($obra === '' || !is_array($detectadas)) {
                 Response::error('Faltan "obra" y/o "ofertas" (array)', 422);
             }
-            $db->prepare('DELETE FROM ofertas_proveedor WHERE obra = ?')->execute([$obra]);
-            $stmt = $db->prepare("
-                INSERT INTO ofertas_proveedor (obra, proveedor, valor, fecha, archivo, actualizado_en)
-                VALUES (?, ?, ?, ?, ?, datetime('now'))
-            ");
-            foreach ($ofertas as $oferta) {
-                $stmt->execute([
-                    $obra,
-                    $oferta['proveedor'] ?? null,
-                    $oferta['valor'] ?? null,
-                    $oferta['fecha'] ?? null,
-                    $oferta['archivo'] ?? null,
-                ]);
+
+            $stmtPendientes = $db->prepare("SELECT * FROM ofertas_proveedor WHERE obra = ? AND estatus = 'Pendiente'");
+            $stmtPendientes->execute([$obra]);
+            $pendientes = $stmtPendientes->fetchAll();
+            $usadas = [];
+            $nuevas = 0;
+            $actualizadas = 0;
+
+            foreach ($detectadas as $d) {
+                $proveedor = $d['proveedor'] ?? null;
+                $valor = $d['valor'] ?? null;
+                $fecha = $d['fecha'] ?? null;
+                $archivo = $d['archivo'] ?? null;
+                $fechaLlegada = $d['fecha_llegada'] ?? null;
+
+                $existente = null;
+                if ($archivo !== null) {
+                    $stmt = $db->prepare('SELECT * FROM ofertas_proveedor WHERE obra = ? AND archivo = ?');
+                    $stmt->execute([$obra, $archivo]);
+                    $existente = $stmt->fetch() ?: null;
+                }
+
+                if ($existente) {
+                    $db->prepare("
+                        UPDATE ofertas_proveedor
+                        SET proveedor = COALESCE(?, proveedor), valor = ?, fecha = ?, fecha_llegada = ?, estatus = 'Recibido', actualizado_en = datetime('now')
+                        WHERE id = ?
+                    ")->execute([$proveedor, $valor, $fecha, $fechaLlegada, $existente['id']]);
+                    $actualizadas++;
+                    continue;
+                }
+
+                $match = null;
+                if ($proveedor !== null) {
+                    $detectadoNorm = normalizarProveedor($proveedor);
+                    foreach ($pendientes as $p) {
+                        if (in_array($p['id'], $usadas, true)) {
+                            continue;
+                        }
+                        $pendienteNorm = normalizarProveedor((string) $p['proveedor']);
+                        if ($pendienteNorm !== '' && (str_contains($detectadoNorm, $pendienteNorm) || str_contains($pendienteNorm, $detectadoNorm))) {
+                            $match = $p;
+                            break;
+                        }
+                    }
+                }
+
+                if ($match) {
+                    $usadas[] = $match['id'];
+                    $db->prepare("
+                        UPDATE ofertas_proveedor
+                        SET valor = ?, fecha = ?, fecha_llegada = ?, archivo = ?, estatus = 'Recibido', actualizado_en = datetime('now')
+                        WHERE id = ?
+                    ")->execute([$valor, $fecha, $fechaLlegada, $archivo, $match['id']]);
+                    $actualizadas++;
+                    continue;
+                }
+
+                $db->prepare("
+                    INSERT INTO ofertas_proveedor (obra, proveedor, valor, fecha, archivo, fecha_llegada, estatus, actualizado_en)
+                    VALUES (?, ?, ?, ?, ?, ?, 'Recibido', datetime('now'))
+                ")->execute([$obra, $proveedor, $valor, $fecha, $archivo, $fechaLlegada]);
+                $nuevas++;
             }
-            Response::json(['ok' => true, 'guardadas' => count($ofertas)]);
+
+            Response::json(['ok' => true, 'nuevas' => $nuevas, 'actualizadas' => $actualizadas]);
         }
 
         // Modo administrativo (limpieza en bloque, ej. descartar obras

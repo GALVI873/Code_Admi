@@ -1,7 +1,10 @@
 // Recorre las obras (mismo criterio de carpeta que llenar_ficha_obras.js) y
 // sube al panel las ofertas de proveedor detectadas en la carpeta
 // "Valoración" de cada una — ver extract_ofertas_proveedor.js para el
-// detalle de qué se considera una oferta y sus límites conocidos.
+// detalle de qué se considera una oferta y sus límites conocidos. El panel
+// empareja esto contra las solicitudes "Pendiente" que Geraldinne haya
+// cargado a mano (accion:"sincronizar_ofertas_detectadas"), no reemplaza
+// nada por las bravas.
 //
 // Uso:
 //   node extraer_ofertas_proveedor.js "Prado Jerez" "Cascanueces,18"
@@ -75,7 +78,7 @@ async function subirOfertas(nombreObra, ofertas) {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ accion: 'reemplazar_ofertas', obra: nombreObra, ofertas }),
+    body: JSON.stringify({ accion: 'sincronizar_ofertas_detectadas', obra: nombreObra, ofertas }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(JSON.stringify(data));

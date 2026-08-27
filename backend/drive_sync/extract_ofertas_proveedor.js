@@ -217,11 +217,24 @@ async function extraerOfertasDeObra(rutaObra) {
     }
     if (!text || !esDocumentoDeOferta(text)) continue;
 
+    // "fecha_llegada" es la fecha en que el archivo apareció en la carpeta
+    // "Valoración" (mtime del propio PDF) — no depende de que el documento
+    // traiga fecha en su texto, a diferencia de "fecha" (que sí y muchas
+    // veces no se detecta). Es lo que el panel usa como fecha de recepción
+    // de la oferta.
+    let fechaLlegada = null;
+    try {
+      fechaLlegada = fs.statSync(rutaArchivo).mtime.toISOString().slice(0, 10);
+    } catch {
+      // sin acceso al mtime, se deja sin fecha de llegada
+    }
+
     ofertas.push({
       proveedor: extraerProveedor(text),
       valor: extraerValorTotal(text),
       fecha: extraerFecha(text),
       archivo: nombreArchivo,
+      fecha_llegada: fechaLlegada,
     });
   }
   return ofertas;

@@ -47,3 +47,19 @@ export function actualizarPresupuestoEnEstudio(accessToken, id, cambios) {
     body: JSON.stringify({ id, ...cambios }),
   })
 }
+
+export function agregarSolicitudOferta(accessToken, obra, proveedor, fechaSolicitud) {
+  return request('/presupuestos_en_estudio.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'agregar_solicitud_oferta', obra, proveedor, fecha_solicitud: fechaSolicitud }),
+  })
+}
+
+export function eliminarOferta(accessToken, ofertaId) {
+  return request('/presupuestos_en_estudio.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'eliminar_oferta', oferta_id: ofertaId }),
+  })
+}

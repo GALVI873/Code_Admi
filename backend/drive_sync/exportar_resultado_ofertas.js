@@ -76,6 +76,7 @@ async function main() {
           Proveedor: o.proveedor || '(sin detectar)',
           Valor: o.valor,
           Fecha: o.fecha || '(sin detectar)',
+          'Fecha llegada': o.fecha_llegada || '(sin detectar)',
           Archivo: o.archivo,
         });
       }
@@ -92,7 +93,7 @@ async function main() {
   XLSX.utils.book_append_sheet(wb, wsResumen, `Resumen (${filasResumen.length} obras)`);
 
   const wsOfertas = XLSX.utils.json_to_sheet(filasOfertas);
-  wsOfertas['!cols'] = [{ wch: 32 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 55 }];
+  wsOfertas['!cols'] = [{ wch: 32 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 55 }];
   XLSX.utils.book_append_sheet(wb, wsOfertas, 'Ofertas encontradas');
 
   const wsSinOfertas = XLSX.utils.json_to_sheet(filasSinOfertas);
