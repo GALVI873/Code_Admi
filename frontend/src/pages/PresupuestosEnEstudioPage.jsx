@@ -200,7 +200,7 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, p
         </div>
 
         {presupuesto.comentario_geraldinne && (
-          <div className="modal-campo modal-campo-ancho">
+          <div className="modal-comentario-caja">
             <span>Comentario de Geraldinne</span>
             <p className="modal-comentario-lectura">{presupuesto.comentario_geraldinne}</p>
           </div>
