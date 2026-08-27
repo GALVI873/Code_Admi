@@ -187,8 +187,13 @@ function FormularioSolicitudOferta({ onAgregar }) {
         value={fecha}
         onChange={(e) => setFecha(e.target.value)}
       />
-      <button type="submit" className="btn-secundario" disabled={guardando || !proveedor.trim()}>
-        {guardando ? 'Agregando…' : 'Agregar solicitud'}
+      <button
+        type="submit"
+        className="boton-icono boton-icono-agregar"
+        title="Agregar solicitud"
+        disabled={guardando || !proveedor.trim()}
+      >
+        +
       </button>
     </form>
   )
@@ -215,58 +220,70 @@ function SelectEstatusOferta({ oferta, onCambiar }) {
   )
 }
 
-function ItemOferta({ oferta, onEliminar, onCambiarEstatus }) {
+function FilaOferta({ oferta, onEliminar, onCambiarEstatus }) {
   const recibido = oferta.estatus === 'Recibido'
   return (
-    <li className={`seguimiento-oferta-item ${!recibido ? 'seguimiento-oferta-item-pendiente' : ''}`}>
-      <SelectEstatusOferta oferta={oferta} onCambiar={onCambiarEstatus} />
-      <span className="seguimiento-oferta-proveedor">{oferta.proveedor || 'Proveedor sin detectar'}</span>
-      {recibido ? (
-        <>
-          <span className="seguimiento-oferta-valor">{oferta.valor != null ? formatoMoneda(oferta.valor) : 'Valor sin detectar'}</span>
-          <span className="seguimiento-oferta-fecha">Llegó el {formatoFecha(oferta.fecha_llegada) || '—'}</span>
-          <span className="seguimiento-oferta-archivo" title={oferta.archivo}>{oferta.archivo}</span>
-        </>
-      ) : (
-        <span className="seguimiento-oferta-fecha">Solicitada el {formatoFecha(oferta.fecha_solicitud) || '—'}</span>
-      )}
-      <button
-        type="button"
-        className="seguimiento-oferta-borrar"
-        title="Eliminar esta oferta"
-        onClick={(e) => {
-          e.stopPropagation()
-          onEliminar(oferta.id)
-        }}
-      >
-        🗑
-      </button>
-    </li>
+    <tr>
+      <td><SelectEstatusOferta oferta={oferta} onCambiar={onCambiarEstatus} /></td>
+      <td className="seguimiento-oferta-proveedor">{oferta.proveedor || 'Sin detectar'}</td>
+      <td>{formatoFecha(oferta.fecha_solicitud) || '—'}</td>
+      <td className="seguimiento-oferta-valor">{recibido ? (oferta.valor != null ? formatoMoneda(oferta.valor) : 'Sin detectar') : '—'}</td>
+      <td>{recibido ? (formatoFecha(oferta.fecha_llegada) || '—') : '—'}</td>
+      <td className="seguimiento-oferta-archivo" title={oferta.archivo || ''}>{recibido ? (oferta.archivo || '—') : '—'}</td>
+      <td>
+        <button
+          type="button"
+          className="boton-icono boton-icono-eliminar"
+          title="Eliminar esta solicitud"
+          onClick={(e) => {
+            e.stopPropagation()
+            onEliminar(oferta.id)
+          }}
+        >
+          −
+        </button>
+      </td>
+    </tr>
   )
 }
 
+// Una sola tabla para Pendiente/No recibido/Recibido (en vez de listas
+// separadas) con las abiertas primero — así se ve de un vistazo a quién se
+// le está esperando respuesta y a quién ya llegó, sin repetir encabezados.
 function ListaOfertas({ ofertas, onAgregar, onEliminar, onCambiarEstatus }) {
-  const abiertas = ofertas.filter((o) => o.estatus !== 'Recibido')
-  const recibidas = ofertas.filter((o) => o.estatus === 'Recibido')
+  const ordenadas = [...ofertas].sort((a, b) => {
+    if (a.estatus === 'Recibido' && b.estatus !== 'Recibido') return 1
+    if (a.estatus !== 'Recibido' && b.estatus === 'Recibido') return -1
+    return (a.proveedor || '').localeCompare(b.proveedor || '', 'es')
+  })
 
   return (
     <div className="seguimiento-ofertas-contenido">
       <FormularioSolicitudOferta onAgregar={onAgregar} />
 
-      {ofertas.length === 0 && (
+      {ordenadas.length === 0 ? (
         <p className="seguimiento-ofertas-vacio">Todavía no hay ninguna solicitud de valoración registrada para esta obra.</p>
-      )}
-
-      {abiertas.length > 0 && (
-        <ul className="seguimiento-ofertas-lista">
-          {abiertas.map((o) => <ItemOferta key={o.id} oferta={o} onEliminar={onEliminar} onCambiarEstatus={onCambiarEstatus} />)}
-        </ul>
-      )}
-
-      {recibidas.length > 0 && (
-        <ul className="seguimiento-ofertas-lista">
-          {recibidas.map((o) => <ItemOferta key={o.id} oferta={o} onEliminar={onEliminar} onCambiarEstatus={onCambiarEstatus} />)}
-        </ul>
+      ) : (
+        <div className="tabla-scroll">
+          <table className="tabla-ofertas">
+            <thead>
+              <tr>
+                <th>Estatus</th>
+                <th>Proveedor</th>
+                <th>Solicitud</th>
+                <th>Valor</th>
+                <th>Llegada</th>
+                <th>Archivo</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {ordenadas.map((o) => (
+                <FilaOferta key={o.id} oferta={o} onEliminar={onEliminar} onCambiarEstatus={onCambiarEstatus} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )
