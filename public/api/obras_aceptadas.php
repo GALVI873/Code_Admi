@@ -13,13 +13,29 @@ declare(strict_types=1);
 // su propia fuente de verdad, leída directo del Excel de cálculo que vive
 // en la carpeta de la obra ya aceptada.
 //
+// El Excel de cálculo trae dos columnas en la hoja "Ficha": "PRESUPUESTO"
+// (el dato original) y "CONFIRMACIÓN" (vacía siempre — nadie la usa desde
+// Excel). Ahora Alfredo confirma/corrige esos 5 campos operativos desde acá
+// (PATCH), y backend/drive_sync/escribir_confirmaciones_aceptadas.js
+// escribe lo confirmado de vuelta en esa columna del Excel real, usando la
+// misma automatización COM que ya usa llenar_ficha_obras.js.
+//
 // GET: lista todas (requiere sesión + obras.ver_aceptadas).
-// POST: upsert de una obra puntual, usado por la sincronización con Drive
-// (protegido por SYNC_TOKEN). Reconciliación: {accion:"reconciliar",
-// obras:[...]} borra las que ya no están en el recorrido (la obra pudo
-// pasar a facturación/cierre y salir de la carpeta).
+// PATCH: Alfredo confirma/corrige carpinteria/proveedor/ral/persiana/vidrio
+// de una obra puntual (requiere sesión + obras.ver_aceptadas). Marca
+// confirmado_en — desde ahí la sincronización con Drive ya no pisa esos 5
+// campos con lo que diga el Excel (ver el UPSERT más abajo), la fuente de
+// verdad pasa a ser lo que confirmó Alfredo.
+// POST: {accion:"listar"} lectura administrativa para el script de
+// escritura (protegido por SYNC_TOKEN, sin sesión). Upsert de una obra
+// puntual, usado por la sincronización con Drive (mismo token).
+// Reconciliación: {accion:"reconciliar", obras:[...]} borra las que ya no
+// están en el recorrido (la obra pudo pasar a facturación/cierre y salir
+// de la carpeta).
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
+
+const CAMPOS_CONFIRMABLES = ['carpinteria', 'proveedor', 'ral', 'persiana', 'vidrio'];
 
 try {
     $db = Database::connection($config);
@@ -38,9 +54,15 @@ try {
           ral TEXT,
           persiana TEXT,
           vidrio TEXT,
+          confirmado_en TEXT,
           actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
     ");
+
+    $columnas = array_column($db->query('PRAGMA table_info(obras_aceptadas)')->fetchAll(), 'name');
+    if (!in_array('confirmado_en', $columnas, true)) {
+        $db->exec('ALTER TABLE obras_aceptadas ADD COLUMN confirmado_en TEXT');
+    }
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
@@ -50,6 +72,39 @@ try {
         Response::json(['obras' => $stmt->fetchAll()]);
     }
 
+    if ($_SERVER['REQUEST_METHOD'] === 'PATCH') {
+        $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
+        AuthMiddleware::requierePermiso($usuario, 'obras.ver_aceptadas');
+
+        $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
+        $id = (int) ($body['id'] ?? 0);
+        if ($id <= 0) {
+            Response::error('Falta "id"', 422);
+        }
+
+        $sets = [];
+        $valores = [];
+        foreach (CAMPOS_CONFIRMABLES as $campo) {
+            if (array_key_exists($campo, $body)) {
+                $sets[] = "$campo = ?";
+                $valor = trim((string) $body[$campo]);
+                $valores[] = $valor === '' ? null : $valor;
+            }
+        }
+        if (count($sets) === 0) {
+            Response::error('No se envió ningún campo confirmable (' . implode(', ', CAMPOS_CONFIRMABLES) . ')', 422);
+        }
+
+        $sets[] = "confirmado_en = datetime('now')";
+        $sets[] = "actualizado_en = datetime('now')";
+        $valores[] = $id;
+
+        $db->prepare('UPDATE obras_aceptadas SET ' . implode(', ', $sets) . ' WHERE id = ?')
+            ->execute($valores);
+
+        Response::json(['ok' => true]);
+    }
+
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $token = $_GET['token'] ?? $_POST['token'] ?? '';
         if ($config['sync_token'] === '' || !hash_equals($config['sync_token'], (string) $token)) {
@@ -57,6 +112,11 @@ try {
         }
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? $_POST;
+
+        if (($body['accion'] ?? '') === 'listar') {
+            $stmt = $db->query('SELECT * FROM obras_aceptadas');
+            Response::json(['obras' => $stmt->fetchAll()]);
+        }
 
         if (($body['accion'] ?? '') === 'reconciliar') {
             $obras = $body['obras'] ?? null;
@@ -77,6 +137,11 @@ try {
             Response::error('Falta "obra"', 422);
         }
 
+        // Los 5 campos confirmables no se pisan acá una vez que Alfredo los
+        // confirmó desde el panel (confirmado_en IS NOT NULL) — a partir de
+        // ahí la fuente de verdad es lo que él corrigió, no lo que diga el
+        // Excel. El resto (categoria, contacto, cliente, no_ventanas,
+        // numero_ppto) sigue actualizándose siempre con lo que traiga Drive.
         $stmt = $db->prepare("
             INSERT INTO obras_aceptadas
                 (obra, categoria, contacto, cliente, no_ventanas, numero_ppto, carpinteria, proveedor, ral, persiana, vidrio, actualizado_en)
@@ -87,11 +152,11 @@ try {
                 cliente = excluded.cliente,
                 no_ventanas = excluded.no_ventanas,
                 numero_ppto = excluded.numero_ppto,
-                carpinteria = excluded.carpinteria,
-                proveedor = excluded.proveedor,
-                ral = excluded.ral,
-                persiana = excluded.persiana,
-                vidrio = excluded.vidrio,
+                carpinteria = CASE WHEN obras_aceptadas.confirmado_en IS NULL THEN excluded.carpinteria ELSE obras_aceptadas.carpinteria END,
+                proveedor = CASE WHEN obras_aceptadas.confirmado_en IS NULL THEN excluded.proveedor ELSE obras_aceptadas.proveedor END,
+                ral = CASE WHEN obras_aceptadas.confirmado_en IS NULL THEN excluded.ral ELSE obras_aceptadas.ral END,
+                persiana = CASE WHEN obras_aceptadas.confirmado_en IS NULL THEN excluded.persiana ELSE obras_aceptadas.persiana END,
+                vidrio = CASE WHEN obras_aceptadas.confirmado_en IS NULL THEN excluded.vidrio ELSE obras_aceptadas.vidrio END,
                 actualizado_en = datetime('now')
         ");
         $stmt->execute([

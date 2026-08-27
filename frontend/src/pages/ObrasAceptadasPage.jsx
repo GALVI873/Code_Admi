@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { obrasAceptadas, seguimientoMateriales } from '../api/client.js'
+import { obrasAceptadas, seguimientoMateriales, confirmarObraAceptada } from '../api/client.js'
 
 // Espacio de trabajo de Alfredo (Gestión de Obras). Primera versión: solo
 // lectura, la lista de obras que Geraldinne ya movió a "Aceptadas" — según
@@ -46,45 +46,139 @@ function TarjetaObraAceptada({ presupuesto, materiales, onAbrir }) {
   )
 }
 
-function TablaSeguimientoMateriales({ materiales }) {
+// Cada posición (ventana) agrupa sus propias líneas de material
+// (Carpintería, Vidrio, Precerco...) — según Alfredo, así es como él arma
+// la hoja de seguimiento en la práctica: todo lo de una misma ventana
+// junto, no una lista plana de líneas sueltas.
+function SeguimientoPorPosicion({ materiales }) {
   if (materiales.length === 0) {
     return <p className="seguimiento-ofertas-vacio">Todavía no hay seguimiento de material cargado para esta obra.</p>
   }
+
+  const grupos = []
+  const indicePorPosicion = new Map()
+  for (const m of materiales) {
+    const clave = m.posicion || '(sin posición)'
+    if (!indicePorPosicion.has(clave)) {
+      indicePorPosicion.set(clave, grupos.length)
+      grupos.push({ posicion: clave, items: [] })
+    }
+    grupos[indicePorPosicion.get(clave)].items.push(m)
+  }
+
   return (
-    <div className="tabla-scroll">
-      <table className="tabla-ofertas">
-        <thead>
-          <tr>
-            <th>Posición</th>
-            <th>Material</th>
-            <th>Estado</th>
-            <th>Proveedor</th>
-            <th>Fecha Pedido</th>
-            <th>Nº Orden</th>
-            <th>Fecha Estimada</th>
-            <th>Comentario</th>
-          </tr>
-        </thead>
-        <tbody>
-          {materiales.map((m) => (
-            <tr key={m.id}>
-              <td>{m.posicion || '—'}</td>
-              <td className="seguimiento-oferta-proveedor">{m.material || '—'}</td>
-              <td>{m.estado || '—'}</td>
-              <td>{m.proveedor || '—'}</td>
-              <td>{formatoFecha(m.fecha_pedido) || '—'}</td>
-              <td>{m.numero_orden || '—'}</td>
-              <td>{formatoFecha(m.fecha_estimada) || '—'}</td>
-              <td>{m.comentario || '—'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="posiciones-seguimiento">
+      {grupos.map((grupo) => (
+        <div key={grupo.posicion} className="posicion-caja">
+          <div className="posicion-titulo">Posición {grupo.posicion}</div>
+          <div className="tabla-scroll">
+            <table className="tabla-ofertas">
+              <thead>
+                <tr>
+                  <th>Material</th>
+                  <th>Estado</th>
+                  <th>Proveedor</th>
+                  <th>Fecha Pedido</th>
+                  <th>Nº Orden</th>
+                  <th>Fecha Estimada</th>
+                  <th>Comentario</th>
+                </tr>
+              </thead>
+              <tbody>
+                {grupo.items.map((m) => (
+                  <tr key={m.id}>
+                    <td className="seguimiento-oferta-proveedor">{m.material || '—'}</td>
+                    <td>{m.estado || '—'}</td>
+                    <td>{m.proveedor || '—'}</td>
+                    <td>{formatoFecha(m.fecha_pedido) || '—'}</td>
+                    <td>{m.numero_orden || '—'}</td>
+                    <td>{formatoFecha(m.fecha_estimada) || '—'}</td>
+                    <td>{m.comentario || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
 
-function DetalleObraAceptada({ presupuesto, materiales, onCerrar }) {
+// Campo de ficha editable: Alfredo confirma o corrige el dato que trajo el
+// Excel. Guarda al salir del campo (como el comentario de Geraldinne), y
+// desde ese momento la sincronización con Drive ya no lo pisa (ver
+// obras_aceptadas.php) — la fuente de verdad pasa a ser lo que él confirmó,
+// y backend/drive_sync/escribir_confirmaciones_aceptadas.js lo escribe de
+// vuelta en la columna "Confirmación" del Excel real.
+function CampoConfirmable({ etiqueta, valor, campo, presupuesto, onConfirmar }) {
+  const [texto, setTexto] = useState(valor || '')
+
+  useEffect(() => {
+    setTexto(valor || '')
+  }, [presupuesto.id, valor])
+
+  function guardar() {
+    if (texto !== (valor || '')) {
+      onConfirmar(presupuesto.id, { [campo]: texto })
+    }
+  }
+
+  return (
+    <div className="modal-campo">
+      <span>{etiqueta}</span>
+      <input
+        type="text"
+        className="input-filtro"
+        value={texto}
+        onChange={(e) => setTexto(e.target.value)}
+        onBlur={guardar}
+      />
+    </div>
+  )
+}
+
+function formatoFechaHora(iso) {
+  if (!iso) return null
+  // "2026-08-27 10:52:16" (SQLite datetime) -> "27/08/2026"
+  const fecha = iso.slice(0, 10)
+  return formatoFecha(fecha)
+}
+
+function FichaObraAceptada({ presupuesto, onConfirmar }) {
+  return (
+    <>
+      <p className={`aviso-confirmacion ${presupuesto.confirmado_en ? 'aviso-confirmacion-ok' : ''}`}>
+        {presupuesto.confirmado_en
+          ? `✓ Confirmado el ${formatoFechaHora(presupuesto.confirmado_en)}`
+          : 'Todavía sin confirmar — los datos de abajo vienen del presupuesto original.'}
+      </p>
+
+      <dl className="modal-detalle">
+        <div><dt>Nº Ppto</dt><dd>{presupuesto.numero_ppto || '—'}</dd></div>
+        <div><dt>Nº Ventanas</dt><dd>{presupuesto.no_ventanas ?? '—'}</dd></div>
+      </dl>
+
+      <div className="modal-meta modal-meta-envuelve">
+        <CampoConfirmable etiqueta="Carpintería" campo="carpinteria" valor={presupuesto.carpinteria} presupuesto={presupuesto} onConfirmar={onConfirmar} />
+        <CampoConfirmable etiqueta="Proveedor" campo="proveedor" valor={presupuesto.proveedor} presupuesto={presupuesto} onConfirmar={onConfirmar} />
+        <CampoConfirmable etiqueta="RAL / Color" campo="ral" valor={presupuesto.ral} presupuesto={presupuesto} onConfirmar={onConfirmar} />
+        <CampoConfirmable etiqueta="Persiana" campo="persiana" valor={presupuesto.persiana} presupuesto={presupuesto} onConfirmar={onConfirmar} />
+        <CampoConfirmable etiqueta="Vidrio" campo="vidrio" valor={presupuesto.vidrio} presupuesto={presupuesto} onConfirmar={onConfirmar} />
+      </div>
+    </>
+  )
+}
+
+const PESTANAS_DETALLE = ['Ficha', 'Seguimiento']
+
+function DetalleObraAceptada({ presupuesto, materiales, onCerrar, onConfirmar }) {
+  const [pestana, setPestana] = useState('Ficha')
+
+  useEffect(() => {
+    setPestana('Ficha')
+  }, [presupuesto.id])
+
   useEffect(() => {
     function alEscape(e) {
       if (e.key === 'Escape') onCerrar()
@@ -104,18 +198,24 @@ function DetalleObraAceptada({ presupuesto, materiales, onCerrar }) {
           <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
         </div>
 
-        <dl className="modal-detalle">
-          <div><dt>Nº Ppto</dt><dd>{presupuesto.numero_ppto || '—'}</dd></div>
-          <div><dt>Nº Ventanas</dt><dd>{presupuesto.no_ventanas ?? '—'}</dd></div>
-          <div><dt>Carpintería</dt><dd>{presupuesto.carpinteria || '—'}</dd></div>
-          <div><dt>Proveedor</dt><dd>{presupuesto.proveedor || '—'}</dd></div>
-          <div><dt>RAL / Color</dt><dd>{presupuesto.ral || '—'}</dd></div>
-          <div><dt>Persiana</dt><dd>{presupuesto.persiana || '—'}</dd></div>
-          <div><dt>Vidrio</dt><dd>{presupuesto.vidrio || '—'}</dd></div>
-        </dl>
+        <div className="seguimiento-pestanas">
+          {PESTANAS_DETALLE.map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={`seguimiento-pestana ${p === pestana ? 'seguimiento-pestana-activa' : ''}`}
+              onClick={() => setPestana(p)}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
 
-        <h3 className="modal-subtitulo">Seguimiento de material</h3>
-        <TablaSeguimientoMateriales materiales={materiales} />
+        {pestana === 'Ficha' ? (
+          <FichaObraAceptada presupuesto={presupuesto} onConfirmar={onConfirmar} />
+        ) : (
+          <SeguimientoPorPosicion materiales={materiales} />
+        )}
       </div>
     </div>
   )
@@ -182,6 +282,17 @@ export default function ObrasAceptadasPage() {
   }
 
   const obraSeleccionada = filas.find((p) => p.id === obraSeleccionadaId) || null
+
+  async function handleConfirmar(id, cambios) {
+    const anteriores = filas
+    setFilas((f) => f.map((p) => (p.id === id ? { ...p, ...cambios, confirmado_en: new Date().toISOString() } : p)))
+    try {
+      await confirmarObraAceptada(accessToken, id, cambios)
+    } catch (err) {
+      setFilas(anteriores)
+      setError(err.message)
+    }
+  }
 
   if (usuario?.email !== EMAIL_AUTORIZADO) {
     return (
@@ -275,6 +386,7 @@ export default function ObrasAceptadasPage() {
           presupuesto={obraSeleccionada}
           materiales={materialesPorObra.get(obraSeleccionada.obra) || []}
           onCerrar={() => setObraSeleccionadaId(null)}
+          onConfirmar={handleConfirmar}
         />
       )}
     </div>
