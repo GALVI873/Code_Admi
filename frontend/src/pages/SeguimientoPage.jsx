@@ -554,6 +554,7 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
             <div><dt>Vidrio</dt><dd>{activo.vidrio || '—'}</dd></div>
             <div><dt>Precio/m²</dt><dd>{formatoMoneda(activo.precio_m2)}</dd></div>
             <div><dt>Precio total oferta</dt><dd>{formatoMoneda(activo.precio_ultimo_presupuesto)}</dd></div>
+            <div><dt>Presupuesto persianas/motores</dt><dd>{formatoMoneda(activo.precio_complementario)}</dd></div>
             <div><dt>% Ganancia</dt><dd>{formatoPorcentaje(activo.porcentaje_ganancia)}</dd></div>
             <div><dt>Fecha solicitud</dt><dd>{formatoFecha(activo.fecha_creacion_carpeta) || '—'}</dd></div>
             <div><dt>Fecha última oferta</dt><dd>{formatoFecha(activo.fecha_ultimo_envio) || '—'}</dd></div>

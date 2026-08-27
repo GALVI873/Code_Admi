@@ -80,6 +80,7 @@ try {
           fecha_ultimo_envio TEXT,
           comentario_geraldinne TEXT,
           fecha_limite_entrega TEXT,
+          precio_complementario REAL,
           actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
     ");
@@ -145,6 +146,9 @@ try {
     }
     if (!in_array('fecha_limite_entrega', $columnas, true)) {
         $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN fecha_limite_entrega TEXT');
+    }
+    if (!in_array('precio_complementario', $columnas, true)) {
+        $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN precio_complementario REAL');
     }
 
     $columnasOfertas = array_column($db->query('PRAGMA table_info(ofertas_proveedor)')->fetchAll(), 'name');
@@ -463,8 +467,8 @@ try {
         $estatusPreEnvio = "'" . implode("','", ESTATUS_PRE_ENVIO) . "'";
         $stmt = $db->prepare("
             INSERT INTO presupuestos_en_estudio
-                (obra, cliente, estatus, no_ventanas, precio_m2, ral, persiana, vidrio, numero_ppto, carpinteria, proveedor, precio_ultimo_presupuesto, porcentaje_ganancia, fecha_ultimo_envio, fecha_creacion_carpeta, categoria, contacto, actualizado_en)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                (obra, cliente, estatus, no_ventanas, precio_m2, ral, persiana, vidrio, numero_ppto, carpinteria, proveedor, precio_ultimo_presupuesto, precio_complementario, porcentaje_ganancia, fecha_ultimo_envio, fecha_creacion_carpeta, categoria, contacto, actualizado_en)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(obra) DO UPDATE SET
                 cliente = excluded.cliente,
                 estatus = CASE
@@ -481,6 +485,7 @@ try {
                 carpinteria = excluded.carpinteria,
                 proveedor = excluded.proveedor,
                 precio_ultimo_presupuesto = excluded.precio_ultimo_presupuesto,
+                precio_complementario = excluded.precio_complementario,
                 porcentaje_ganancia = excluded.porcentaje_ganancia,
                 fecha_ultimo_envio = excluded.fecha_ultimo_envio,
                 fecha_creacion_carpeta = excluded.fecha_creacion_carpeta,
@@ -501,6 +506,7 @@ try {
             $body['carpinteria'] ?? null,
             $body['proveedor'] ?? null,
             $body['precio_ultimo_presupuesto'] ?? null,
+            $body['precio_complementario'] ?? null,
             $body['porcentaje_ganancia'] ?? null,
             $body['fecha_ultimo_envio'] ?? null,
             $body['fecha_creacion_carpeta'] ?? null,

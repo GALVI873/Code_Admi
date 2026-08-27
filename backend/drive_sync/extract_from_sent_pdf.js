@@ -124,34 +124,70 @@ function extraerEtiquetaOpcion(nombreArchivo) {
   return mAbrev ? mAbrev[1] : null;
 }
 
-// Devuelve una "variante" por resultado: { etiqueta, archivo }. etiqueta es
-// null cuando no hay opciones (un solo resultado, el PDF más reciente entre
-// todos). Si hay al menos un PDF etiquetado, se ignoran los que no lo están
-// (se asume que son borradores previos a separar en opciones) y se devuelve
-// un resultado por etiqueta distinta, con el más reciente de cada una.
-async function buscarVariantesEnCarpetaObra(drive, obraFolderId) {
-  const pdfs = await pdfsEnCarpetaObra(drive, obraFolderId);
-  if (pdfs.length === 0) return [];
+// Descarga y parsea cada PDF una sola vez acá — se reutiliza tanto para
+// distinguir carpintería/complementario como para extraer campos más abajo,
+// en vez de bajar el mismo archivo dos veces.
+async function pdfsConTexto(drive, archivos) {
+  const resultado = [];
+  for (const archivo of archivos) {
+    const buffer = await descargarComoBuffer(drive, archivo.id);
+    const { text } = await pdfParse(buffer);
+    resultado.push({ archivo, text });
+  }
+  return resultado;
+}
 
-  const etiquetados = pdfs
-    .map((archivo) => ({ archivo, etiqueta: extraerEtiquetaOpcion(archivo.name) }))
+// Devuelve una "variante" por resultado: { etiqueta, archivo, text }, más el
+// total combinado de los PDF complementarios de la carpeta (motorización de
+// persianas, barandillas, etc. — cualquiera que no sea de carpintería), que
+// se muestra aparte en el panel y nunca se mezcla con el precio de
+// carpintería. etiqueta es null cuando no hay opciones (un solo resultado,
+// el PDF de carpintería más reciente). Si hay al menos un PDF etiquetado
+// ("Opción A"/"Opción B"), se ignoran los que no lo están entre los de
+// carpintería (se asume que son borradores previos a separar en opciones) y
+// se devuelve un resultado por etiqueta distinta, con el más reciente de
+// cada una.
+async function buscarVariantesEnCarpetaObra(drive, obraFolderId) {
+  const archivos = await pdfsEnCarpetaObra(drive, obraFolderId);
+  if (archivos.length === 0) return { variantes: [], precioComplementario: null };
+
+  const pdfs = await pdfsConTexto(drive, archivos);
+
+  // Si NINGÚN pdf de la carpeta es de carpintería (obra rara, solo
+  // complementos) se tratan todos como candidatos igual, para no perder el
+  // envío completo.
+  const deCarpinteria = pdfs.filter((p) => esPdfDeCarpinteria(p.text));
+  const complementarios = pdfs.filter((p) => !esPdfDeCarpinteria(p.text));
+  const candidatos = deCarpinteria.length > 0 ? deCarpinteria : pdfs;
+
+  const precioComplementario = complementarios.length > 0
+    ? complementarios.reduce((suma, p) => suma + (extraerTotalPresupuesto(p.text) || 0), 0)
+    : null;
+
+  const etiquetados = candidatos
+    .map((p) => ({ ...p, etiqueta: extraerEtiquetaOpcion(p.archivo.name) }))
     .filter((p) => p.etiqueta !== null);
 
   if (etiquetados.length === 0) {
-    const masReciente = [...pdfs].sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime))[0];
-    return [{ etiqueta: null, archivo: masReciente }];
+    const masReciente = [...candidatos].sort((a, b) => new Date(b.archivo.modifiedTime) - new Date(a.archivo.modifiedTime))[0];
+    return {
+      variantes: [{ etiqueta: null, archivo: masReciente.archivo, text: masReciente.text }],
+      precioComplementario,
+    };
   }
 
   const porEtiqueta = new Map();
-  for (const { archivo, etiqueta } of etiquetados) {
-    const actual = porEtiqueta.get(etiqueta);
-    if (!actual || new Date(archivo.modifiedTime) > new Date(actual.modifiedTime)) {
-      porEtiqueta.set(etiqueta, archivo);
+  for (const p of etiquetados) {
+    const actual = porEtiqueta.get(p.etiqueta);
+    if (!actual || new Date(p.archivo.modifiedTime) > new Date(actual.archivo.modifiedTime)) {
+      porEtiqueta.set(p.etiqueta, p);
     }
   }
-  return Array.from(porEtiqueta.entries())
+  const variantes = Array.from(porEtiqueta.entries())
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([etiqueta, archivo]) => ({ etiqueta, archivo }));
+    .map(([etiqueta, p]) => ({ etiqueta, archivo: p.archivo, text: p.text }));
+
+  return { variantes, precioComplementario };
 }
 
 // Arma un resumen de una línea (tipo de lama + motor) a partir de los
@@ -241,6 +277,19 @@ function extraerNumeroPpto(text) {
 // cuándo una obra necesita llenado manual (ningún PDF de carpintería).
 function esPdfDeCarpinteria(text) {
   return /Fabricante:/i.test(text) && /Serie:/i.test(text);
+}
+
+// Plantilla propia de Galvi (a diferencia de las ofertas de proveedor, que
+// no tienen una plantilla común): siempre cierra con "Suma total" (sin IVA),
+// "Total presupuesto" (con IVA, el precio real) y el desglose del IVA. Se
+// ancla al número que aparece INMEDIATAMENTE antes de la etiqueta "Total
+// presupuesto" — en el texto extraído por pdf-parse el valor queda antes que
+// su etiqueta por el orden de columnas del PDF, no al revés.
+function extraerTotalPresupuesto(text) {
+  const m = text.match(/([\d.]+,\d{2})\s*€\s*Total presupuesto/i);
+  if (!m) return null;
+  const num = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
+  return Number.isNaN(num) ? null : num;
 }
 
 function extraerCamposFicha(text) {
@@ -372,10 +421,7 @@ function extraerCamposFicha(text) {
   };
 }
 
-async function extraerRellenoDePdf(archivo, camposFaltantes) {
-  const drive = getDrive();
-  const buffer = await descargarComoBuffer(drive, archivo.id);
-  const { text } = await pdfParse(buffer);
+function construirRelleno(archivo, text, camposFaltantes) {
   const extraidos = parseTextoPresupuestoEnviado(text);
 
   const relleno = {};
@@ -392,12 +438,19 @@ async function extraerRellenoDePdf(archivo, camposFaltantes) {
   return relleno;
 }
 
+async function extraerRellenoDePdf(archivo, camposFaltantes) {
+  const drive = getDrive();
+  const buffer = await descargarComoBuffer(drive, archivo.id);
+  const { text } = await pdfParse(buffer);
+  return construirRelleno(archivo, text, camposFaltantes);
+}
+
 async function completarDesdeEnviado(obra, camposFaltantes, obraFolderId) {
   const drive = getDrive();
 
   let archivo = null;
   if (obraFolderId) {
-    const variantes = await buscarVariantesEnCarpetaObra(drive, obraFolderId);
+    const { variantes } = await buscarVariantesEnCarpetaObra(drive, obraFolderId);
     archivo = variantes[0] ? variantes[0].archivo : null;
   }
   if (!archivo) {
@@ -420,21 +473,40 @@ async function resolverEnviosDeObra(obra, camposFaltantes, obraFolderId) {
   const drive = getDrive();
 
   let variantes = [];
+  let precioComplementario = null;
   if (obraFolderId) {
-    variantes = await buscarVariantesEnCarpetaObra(drive, obraFolderId);
+    ({ variantes, precioComplementario } = await buscarVariantesEnCarpetaObra(drive, obraFolderId));
   }
   if (variantes.length === 0) {
     const enviadosFolderId = process.env.GOOGLE_DRIVE_ENVIADOS_FOLDER_ID;
     if (enviadosFolderId) {
       const archivo = await buscarPdfEnviado(drive, enviadosFolderId, obra);
-      if (archivo) variantes = [{ etiqueta: null, archivo }];
+      if (archivo) {
+        const buffer = await descargarComoBuffer(drive, archivo.id);
+        const { text } = await pdfParse(buffer);
+        variantes = [{ etiqueta: null, archivo, text }];
+      }
     }
   }
   if (variantes.length === 0) return [{ sufijo: '', campos: {} }];
 
+  // Hay más de una opción de verdad (no un simple envío único): el precio
+  // del Excel compartido (camposBase en sync_all.js) es el mismo para todas
+  // porque hay un solo Excel de cálculo por carpeta de obra — acá se
+  // reemplaza por el total propio de CADA presupuesto enviado, que sí es
+  // distinto entre opciones (ej. Alfonso XIII, Bajo 2: Opción A en blanco
+  // vs Opción B en inox, precios distintos). En el caso normal de una sola
+  // opción no se toca: el valor del Excel sigue siendo la fuente.
+  const esMultiOpcion = variantes.some((v) => v.etiqueta !== null);
+
   const resultados = [];
-  for (const { etiqueta, archivo } of variantes) {
-    const campos = await extraerRellenoDePdf(archivo, camposFaltantes);
+  for (const { etiqueta, archivo, text } of variantes) {
+    const campos = construirRelleno(archivo, text, camposFaltantes);
+    if (esMultiOpcion) {
+      const precioPropio = extraerTotalPresupuesto(text);
+      if (precioPropio !== null) campos.precio_ultimo_presupuesto = precioPropio;
+    }
+    if (precioComplementario !== null) campos.precio_complementario = precioComplementario;
     resultados.push({ sufijo: etiqueta ? ` — Opción ${etiqueta}` : '', campos });
   }
   return resultados;
@@ -449,4 +521,5 @@ module.exports = {
   extraerCamposFicha,
   extraerNumeroPpto,
   esPdfDeCarpinteria,
+  extraerTotalPresupuesto,
 };

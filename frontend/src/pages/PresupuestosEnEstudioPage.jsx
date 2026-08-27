@@ -213,6 +213,7 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, p
           <div><dt>Persiana</dt><dd>{presupuesto.persiana || '—'}</dd></div>
           <div><dt>Vidrio</dt><dd>{presupuesto.vidrio || '—'}</dd></div>
           <div><dt>Precio último ppto.</dt><dd>{formatoMoneda(presupuesto.precio_ultimo_presupuesto)}</dd></div>
+          <div><dt>Presupuesto persianas/motores</dt><dd>{formatoMoneda(presupuesto.precio_complementario)}</dd></div>
           <div><dt>% Ganancia</dt><dd>{formatoPorcentaje(presupuesto.porcentaje_ganancia)}</dd></div>
           <div><dt>Fecha último envío</dt><dd>{formatoFecha(presupuesto.fecha_ultimo_envio)}</dd></div>
         </dl>
