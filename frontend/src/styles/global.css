@@ -708,7 +708,7 @@ body {
 
 .modal-comentario-lectura {
   font-size: 14px;
-  color: var(--texto);
+  color: #666;
   white-space: pre-wrap;
   margin: 0;
 }
