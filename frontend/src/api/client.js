@@ -105,3 +105,11 @@ export function diarioGeneral(accessToken) {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
 }
+
+export function actualizarUbicacionDiarioGeneral(accessToken, id, ubicacion) {
+  return request('/diario_general.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ id, ubicacion }),
+  })
+}

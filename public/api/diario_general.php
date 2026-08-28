@@ -17,6 +17,9 @@ declare(strict_types=1);
 //
 // GET: lista todo (requiere sesión + obras.ver_diario_general — Alfredo y
 // admin, ambos lo necesitan según la entrevista de Fase 1).
+// PATCH: {id, ubicacion} — cambia dónde está el material de un ítem
+// puntual (requiere sesión + obras.ver_diario_general). Ver aviso en el
+// bloque de abajo sobre su límite conocido frente a la sincronización.
 // POST: {accion:"reemplazar_todo", items:[...]} reemplaza la tabla completa,
 // usado por la sincronización con Drive (protegido por SYNC_TOKEN). No hay
 // upsert fila por fila porque no hay una clave estable entre corridas: el
@@ -77,6 +80,34 @@ try {
 
         $items = $db->query('SELECT * FROM diario_general ORDER BY obra, categoria')->fetchAll();
         Response::json(['items' => $items]);
+    }
+
+    // Ubicación es el único campo editable desde el panel por ahora — dónde
+    // está físicamente el material (Borox, Obra, Servido...) es justo lo
+    // que Alfredo/Álvaro necesitan poder mover sin volver al Excel. OJO: la
+    // próxima sincronización completa (accion:"reemplazar_todo") borra y
+    // vuelve a insertar toda la tabla porque no hay clave estable entre
+    // corridas — un cambio hecho acá se pierde si el Excel no refleja lo
+    // mismo para cuando se vuelva a sincronizar. Aceptado como límite
+    // conocido por ahora, no resuelto todavía.
+    if ($_SERVER['REQUEST_METHOD'] === 'PATCH') {
+        $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
+        AuthMiddleware::requierePermiso($usuario, 'obras.ver_diario_general');
+
+        $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
+        $id = (int) ($body['id'] ?? 0);
+        if ($id <= 0) {
+            Response::error('Falta "id"', 422);
+        }
+        if (!array_key_exists('ubicacion', $body)) {
+            Response::error('Falta "ubicacion"', 422);
+        }
+        $ubicacion = trim((string) $body['ubicacion']);
+
+        $db->prepare("UPDATE diario_general SET ubicacion = ?, actualizado_en = datetime('now') WHERE id = ?")
+            ->execute([$ubicacion === '' ? null : $ubicacion, $id]);
+
+        Response::json(['ok' => true]);
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
