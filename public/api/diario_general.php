@@ -18,14 +18,41 @@ declare(strict_types=1);
 // GET: lista todo (requiere sesión + obras.ver_diario_general — Alfredo y
 // admin, ambos lo necesitan según la entrevista de Fase 1).
 // PATCH: {id, ubicacion} — cambia dónde está el material de un ítem
-// puntual (requiere sesión + obras.ver_diario_general). Ver aviso en el
-// bloque de abajo sobre su límite conocido frente a la sincronización.
+// puntual (requiere sesión + obras.ver_diario_general).
 // POST: {accion:"reemplazar_todo", items:[...]} reemplaza la tabla completa,
 // usado por la sincronización con Drive (protegido por SYNC_TOKEN). No hay
 // upsert fila por fila porque no hay una clave estable entre corridas: el
 // Excel se reordena y las filas se agregan/quitan libremente a mano.
+//
+// Por eso Ubicación no se guarda solo en la fila de diario_general (esa se
+// borra y reinserta entera en cada sync): se guarda además en
+// diario_general_ubicacion (tabla aparte, igual que
+// obra_aceptada_confirmaciones para Obras Aceptadas) usando una "clave
+// estable" calculada con los campos que identifican al ítem en sí — obra,
+// categoria, descripcion, proveedor, material, color — y que no cambian de
+// una corrida a otra. Los campos de estado (fecha_pedido, estatus_2,
+// comentario...) quedan fuera de la clave a propósito, porque esos sí
+// cambian con normalidad cuando alguien actualiza el Excel. El GET aplica
+// esta capa por encima del valor recién sincronizado, así que un cambio
+// hecho en el panel sobrevive a la siguiente sincronización siempre que el
+// ítem siga siendo "el mismo" según esos campos; si esos campos cambian en
+// el Excel, el override queda huérfano y simplemente deja de aplicarse (no
+// rompe nada, solo se pierde el ajuste manual).
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
+
+function claveEstableDiario(array $fila): string
+{
+    $partes = [
+        strtolower(trim((string) ($fila['obra'] ?? ''))),
+        strtolower(trim((string) ($fila['categoria'] ?? ''))),
+        strtolower(trim((string) ($fila['descripcion'] ?? ''))),
+        strtolower(trim((string) ($fila['proveedor'] ?? ''))),
+        strtolower(trim((string) ($fila['material'] ?? ''))),
+        strtolower(trim((string) ($fila['color'] ?? ''))),
+    ];
+    return implode('|', $partes);
+}
 
 try {
     $db = Database::connection($config);
@@ -59,6 +86,14 @@ try {
         )
     ");
 
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS diario_general_ubicacion (
+          clave_estable TEXT PRIMARY KEY,
+          ubicacion TEXT,
+          actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    ");
+
     // Permiso propio (no reutiliza obras.ver_aceptadas): esta tabla no es
     // solo de Alfredo, la entrevista de Fase 1 confirma que Álvaro también
     // la necesita para transporte/montaje — se otorga a los dos roles.
@@ -79,17 +114,26 @@ try {
         AuthMiddleware::requierePermiso($usuario, 'obras.ver_diario_general');
 
         $items = $db->query('SELECT * FROM diario_general ORDER BY obra, categoria')->fetchAll();
+
+        $overrides = $db->query('SELECT clave_estable, ubicacion FROM diario_general_ubicacion')->fetchAll();
+        $overridesPorClave = [];
+        foreach ($overrides as $ov) {
+            $overridesPorClave[$ov['clave_estable']] = $ov['ubicacion'];
+        }
+        foreach ($items as &$it) {
+            $clave = claveEstableDiario($it);
+            if (array_key_exists($clave, $overridesPorClave)) {
+                $it['ubicacion'] = $overridesPorClave[$clave];
+            }
+        }
+        unset($it);
+
         Response::json(['items' => $items]);
     }
 
     // Ubicación es el único campo editable desde el panel por ahora — dónde
     // está físicamente el material (Borox, Obra, Servido...) es justo lo
-    // que Alfredo/Álvaro necesitan poder mover sin volver al Excel. OJO: la
-    // próxima sincronización completa (accion:"reemplazar_todo") borra y
-    // vuelve a insertar toda la tabla porque no hay clave estable entre
-    // corridas — un cambio hecho acá se pierde si el Excel no refleja lo
-    // mismo para cuando se vuelva a sincronizar. Aceptado como límite
-    // conocido por ahora, no resuelto todavía.
+    // que Alfredo/Álvaro necesitan poder mover sin volver al Excel.
     if ($_SERVER['REQUEST_METHOD'] === 'PATCH') {
         $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
         AuthMiddleware::requierePermiso($usuario, 'obras.ver_diario_general');
@@ -103,9 +147,24 @@ try {
             Response::error('Falta "ubicacion"', 422);
         }
         $ubicacion = trim((string) $body['ubicacion']);
+        $ubicacionGuardada = $ubicacion === '' ? null : $ubicacion;
+
+        $fila = $db->prepare('SELECT * FROM diario_general WHERE id = ?');
+        $fila->execute([$id]);
+        $fila = $fila->fetch();
+        if (!$fila) {
+            Response::error('Ítem no encontrado', 404);
+        }
 
         $db->prepare("UPDATE diario_general SET ubicacion = ?, actualizado_en = datetime('now') WHERE id = ?")
-            ->execute([$ubicacion === '' ? null : $ubicacion, $id]);
+            ->execute([$ubicacionGuardada, $id]);
+
+        $clave = claveEstableDiario($fila);
+        $db->prepare("
+            INSERT INTO diario_general_ubicacion (clave_estable, ubicacion, actualizado_en)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(clave_estable) DO UPDATE SET ubicacion = excluded.ubicacion, actualizado_en = excluded.actualizado_en
+        ")->execute([$clave, $ubicacionGuardada]);
 
         Response::json(['ok' => true]);
     }
@@ -130,6 +189,7 @@ try {
                     (tipo, cliente, contacto, cod, obra, fecha_aceptacion, categoria, descripcion, color, material, proveedor, fecha_objetivo_inicio, fecha_objetivo_fin, fecha_pedido, tarea_1, responsable, estatus_2, fecha_entrega_proveedor, ubicacion, tarea_3, comentario, prioridad, actualizado_en)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ");
+            $clavesVigentes = [];
             foreach ($items as $it) {
                 $stmt->execute([
                     $it['tipo'] ?? null,
@@ -155,7 +215,20 @@ try {
                     $it['comentario'] ?? null,
                     $it['prioridad'] ?? null,
                 ]);
+                $clavesVigentes[claveEstableDiario($it)] = true;
             }
+
+            // Limpia overrides de ítems que ya no existen en el Excel (obra
+            // cerrada, fila borrada a mano...) para que la tabla no crezca
+            // indefinidamente con ajustes de ubicación que nunca más se van
+            // a aplicar.
+            $clavesGuardadas = $db->query('SELECT clave_estable FROM diario_general_ubicacion')->fetchAll(PDO::FETCH_COLUMN);
+            foreach ($clavesGuardadas as $clave) {
+                if (!isset($clavesVigentes[$clave])) {
+                    $db->prepare('DELETE FROM diario_general_ubicacion WHERE clave_estable = ?')->execute([$clave]);
+                }
+            }
+
             $db->commit();
             Response::json(['ok' => true, 'guardados' => count($items)]);
         }
