@@ -14,6 +14,14 @@
 // depender de que nadie haya marcado "Aceptado" a mano en el panel de
 // Álvaro.
 //
+// Lee por la API de Drive (no por el mount Z:\ de Drive Desktop, como antes)
+// para poder correr como tarea programada de GitHub Actions, igual que
+// sync_all.js: baja cada Excel a un archivo temporal (las funciones de
+// extracción usan XLSX.readFile con una ruta local) y lo borra al terminar.
+// GOOGLE_DRIVE_OBRAS_ACEPTADAS_FOLDER_ID es el id de
+// ".../SEGUIMIENTO DE OBRAS (Aceptadas)/2026", resuelto una sola vez con
+// resolver_ids_migracion.js.
+//
 // Uso:
 //   node sync_obras_aceptadas.js
 const fs = require('fs');
@@ -21,9 +29,8 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { extraerCampos } = require('./extract_fields.js');
 const { leerFichaConfirmable } = require('./extract_ficha_aceptada.js');
-const { listarDirs, archivoMedyseg, extraerMateriales } = require('./extract_seguimiento_materiales.js');
-
-const BASE = 'Z:/DRIVE GALVI/1. GALVI/1.OBRAS/1. ESTUDIOS Y SEGUIMIENTO/SEGUIMIENTO DE OBRAS (Aceptadas)/2026';
+const { extraerMateriales } = require('./extract_seguimiento_materiales.js');
+const { getDrive, descargarComoBuffer } = require('./drive_client.js');
 
 // Mismo criterio de singularización que sync_all.js, para que "categoria"
 // se vea igual en las dos vistas del panel.
@@ -35,24 +42,32 @@ const CATEGORIA_SINGULAR = {
   Reformistas: 'Reformista',
 };
 
-function listarTodasLasObras() {
+async function listarHijos(drive, folderId, soloCarpetas) {
+  const filtroTipo = soloCarpetas
+    ? " and mimeType = 'application/vnd.google-apps.folder'"
+    : " and mimeType != 'application/vnd.google-apps.folder'";
+  const res = await drive.files.list({
+    q: `'${folderId}' in parents and trashed = false${filtroTipo}`,
+    fields: 'files(id, name, modifiedTime)',
+    pageSize: 1000,
+  });
+  return res.data.files;
+}
+
+async function listarTodasLasObras(drive) {
   const obras = [];
-  for (const cat of listarDirs(BASE)) {
+  const categorias = await listarHijos(drive, process.env.GOOGLE_DRIVE_OBRAS_ACEPTADAS_FOLDER_ID, true);
+  for (const cat of categorias) {
     const categoria = CATEGORIA_SINGULAR[cat.name] || cat.name;
     if (cat.name === 'Particulares') {
-      for (const obra of listarDirs(path.join(BASE, cat.name))) {
-        obras.push({ nombre: obra.name, rutaObra: path.join(BASE, cat.name, obra.name), categoria, contacto: null });
+      for (const obraFolder of await listarHijos(drive, cat.id, true)) {
+        obras.push({ nombre: obraFolder.name, folderId: obraFolder.id, categoria, contacto: null });
       }
       continue;
     }
-    for (const contacto of listarDirs(path.join(BASE, cat.name))) {
-      for (const obra of listarDirs(path.join(BASE, cat.name, contacto.name))) {
-        obras.push({
-          nombre: obra.name,
-          rutaObra: path.join(BASE, cat.name, contacto.name, obra.name),
-          categoria,
-          contacto: contacto.name,
-        });
+    for (const contacto of await listarHijos(drive, cat.id, true)) {
+      for (const obraFolder of await listarHijos(drive, contacto.id, true)) {
+        obras.push({ nombre: obraFolder.name, folderId: obraFolder.id, categoria, contacto: contacto.name });
       }
     }
   }
@@ -62,30 +77,43 @@ function listarTodasLasObras() {
 // El Excel de cálculo puede tener versiones numeradas ("2.Obra.CALCULO...",
 // "4.Obra.CALCULO..."); se prefiere el prefijo más alto y, si empatan o no
 // hay prefijo, el modificado más reciente — mismo criterio que
-// llenar_ficha_obras.js. A diferencia de "en estudio", en esta carpeta el
-// archivo vive directo en la carpeta de la obra, no hace falta bajar a
-// subcarpetas.
+// llenar_ficha_obras.js. El archivo vive directo en la carpeta de la obra,
+// no hace falta bajar a subcarpetas.
 function extraerPrefijoNumerico(nombreArchivo) {
   const m = nombreArchivo.match(/^(\d+)\./);
   return m ? parseInt(m[1], 10) : null;
 }
 
-function archivoCalculo(rutaObra) {
-  let archivos;
-  try {
-    archivos = fs.readdirSync(rutaObra);
-  } catch {
-    return null;
-  }
-  const candidatos = archivos.filter((n) => /CALCULO.*\.xlsx$/i.test(n) && !n.startsWith('~$'));
+async function archivoCalculo(drive, folderId) {
+  const archivos = await listarHijos(drive, folderId, false);
+  const candidatos = archivos.filter((f) => /CALCULO.*\.xlsx$/i.test(f.name) && !f.name.startsWith('~$'));
   if (candidatos.length === 0) return null;
   candidatos.sort((a, b) => {
-    const prefA = extraerPrefijoNumerico(a) ?? -1;
-    const prefB = extraerPrefijoNumerico(b) ?? -1;
+    const prefA = extraerPrefijoNumerico(a.name) ?? -1;
+    const prefB = extraerPrefijoNumerico(b.name) ?? -1;
     if (prefA !== prefB) return prefB - prefA;
-    return fs.statSync(path.join(rutaObra, b)).mtimeMs - fs.statSync(path.join(rutaObra, a)).mtimeMs;
+    return b.modifiedTime.localeCompare(a.modifiedTime); // ISO 8601, ordena bien como texto
   });
-  return path.join(rutaObra, candidatos[0]);
+  return candidatos[0];
+}
+
+// El nombre trae un prefijo numérico variable ("2.", "3."...) y puntuación
+// inconsistente ("Obra MEDYSEG.xlsx" vs "Obra.MEDYSEG.xlsx") — se busca por
+// contener "medyseg" en vez de un patrón exacto.
+async function archivoMedyseg(drive, folderId) {
+  const archivos = await listarHijos(drive, folderId, false);
+  return archivos.find((f) => /medyseg/i.test(f.name) && /\.xlsx$/i.test(f.name) && !f.name.startsWith('~$')) || null;
+}
+
+async function descargarATemporal(drive, archivo) {
+  const tmpPath = path.join(__dirname, `tmp_${archivo.id}.xlsx`);
+  const buffer = await descargarComoBuffer(drive, archivo.id);
+  fs.writeFileSync(tmpPath, buffer);
+  return tmpPath;
+}
+
+function borrarSiExiste(rutaTmp) {
+  if (rutaTmp && fs.existsSync(rutaTmp)) fs.unlinkSync(rutaTmp);
 }
 
 async function subirObra(info, campos, confirmables) {
@@ -143,40 +171,56 @@ async function reconciliar(nombresActivos) {
   return data;
 }
 
+function esperar(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function main() {
-  const obras = listarTodasLasObras();
+  const drive = getDrive();
+  const obras = await listarTodasLasObras(drive);
   const resumen = { obras: 0, materiales: 0, sinCalculo: 0, sinMedyseg: 0, errores: 0 };
   const nombresActivos = [];
 
   for (const info of obras) {
-    const rutaCalculo = archivoCalculo(info.rutaObra);
-    if (!rutaCalculo) {
+    const archivoCalc = await archivoCalculo(drive, info.folderId);
+    if (!archivoCalc) {
       resumen.sinCalculo++;
       console.log(`SIN EXCEL DE CÁLCULO: ${info.nombre}`);
       continue;
     }
 
+    let tmpCalculo;
     try {
-      const campos = extraerCampos(rutaCalculo);
-      const confirmables = leerFichaConfirmable(rutaCalculo);
+      tmpCalculo = await descargarATemporal(drive, archivoCalc);
+      const campos = extraerCampos(tmpCalculo);
+      const confirmables = leerFichaConfirmable(tmpCalculo);
       await subirObra(info, campos, confirmables);
       nombresActivos.push(info.nombre);
       resumen.obras++;
 
-      const rutaMedyseg = archivoMedyseg(info.rutaObra);
-      if (!rutaMedyseg) {
+      const archivoMed = await archivoMedyseg(drive, info.folderId);
+      if (!archivoMed) {
         resumen.sinMedyseg++;
         console.log(`OK sin MEDYSEG: ${info.nombre}`);
         continue;
       }
-      const materiales = extraerMateriales(rutaMedyseg);
-      await subirMateriales(info.nombre, materiales);
-      resumen.materiales += materiales.length;
-      console.log(`OK (${materiales.length} líneas de material): ${info.nombre}`);
+      let tmpMedyseg;
+      try {
+        tmpMedyseg = await descargarATemporal(drive, archivoMed);
+        const materiales = extraerMateriales(tmpMedyseg);
+        await subirMateriales(info.nombre, materiales);
+        resumen.materiales += materiales.length;
+        console.log(`OK (${materiales.length} líneas de material): ${info.nombre}`);
+      } finally {
+        borrarSiExiste(tmpMedyseg);
+      }
     } catch (err) {
       resumen.errores++;
       console.error(`ERROR en "${info.nombre}": ${err.message}`);
+    } finally {
+      borrarSiExiste(tmpCalculo);
     }
+    await esperar(250);
   }
 
   if (nombresActivos.length > 0) {

@@ -1,0 +1,58 @@
+name: Sincronizar Drive (programado)
+
+# Actualiza automáticamente las tres bases del panel (Presupuestos en
+# Estudio, Obras Aceptadas, Diario General) todos los días antes de que
+# empiece la jornada, sin depender de que alguien lo corra a mano desde su
+# computadora. Los tres scripts leen Drive por su API (OAuth), no por el
+# mount Z:\ de Drive Desktop, así que pueden correr en un runner de GitHub
+# sin ningún acceso especial a ninguna máquina.
+#
+# 05:00 UTC = 6:00 (CET, invierno) u 7:00 (CEST, verano) hora de Madrid —
+# ajustar el cron si se necesita otro horario.
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  sincronizar:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/drive_sync
+    env:
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+      GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+      GOOGLE_DRIVE_ENVIADOS_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_ENVIADOS_FOLDER_ID }}
+      GOOGLE_DRIVE_OBRAS_ACEPTADAS_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_OBRAS_ACEPTADAS_FOLDER_ID }}
+      GOOGLE_DRIVE_DIARIO_GENERAL_FILE_ID: ${{ secrets.GOOGLE_DRIVE_DIARIO_GENERAL_FILE_ID }}
+      PANEL_API_URL: ${{ secrets.PANEL_API_URL }}
+      SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # continue-on-error en cada paso: que falle una sincronización (ej. un
+      # Excel raro, la API de Drive lenta un rato) no debe impedir que las
+      # otras dos igual actualicen el panel.
+      - name: Sincronizar Presupuestos en Estudio
+        run: node sync_all.js
+        continue-on-error: true
+
+      - name: Sincronizar Obras Aceptadas
+        run: node sync_obras_aceptadas.js
+        continue-on-error: true
+
+      - name: Sincronizar Diario General
+        run: node sync_diario_general.js
+        continue-on-error: true

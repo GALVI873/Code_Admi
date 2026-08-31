@@ -6,31 +6,7 @@
 // Persiana, Precerco...), no por ventana individual — el detalle técnico
 // por ventana vive en la hoja "BD" del mismo archivo, pero esa queda fuera
 // a propósito (demasiado detalle para una vista general, ver conversación).
-const fs = require('fs');
-const path = require('path');
 const XLSX = require('xlsx');
-
-function listarDirs(dir) {
-  try {
-    return fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory());
-  } catch {
-    return [];
-  }
-}
-
-// El nombre del archivo trae un prefijo numérico variable ("2.", "3."...) y
-// puntuación inconsistente ("Obra MEDYSEG.xlsx" vs "Obra.MEDYSEG.xlsx") —
-// se busca por contener "medyseg" en vez de un patrón exacto.
-function archivoMedyseg(rutaObra) {
-  let archivos;
-  try {
-    archivos = fs.readdirSync(rutaObra);
-  } catch {
-    return null;
-  }
-  const candidato = archivos.find((n) => /medyseg/i.test(n) && /\.xlsx$/i.test(n) && !n.startsWith('~$'));
-  return candidato ? path.join(rutaObra, candidato) : null;
-}
 
 // "." es el placeholder que usa la propia plantilla para "todavía sin
 // dato" (Proveedor/Fecha/Nº Orden antes de pedir) — se normaliza a null
@@ -114,7 +90,5 @@ function extraerMateriales(rutaArchivo) {
 }
 
 module.exports = {
-  listarDirs,
-  archivoMedyseg,
   extraerMateriales,
 };

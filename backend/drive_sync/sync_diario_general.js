@@ -3,16 +3,35 @@
 // "Gestión"/"Estatus Categoria" (copias no siempre al día de esta misma
 // tabla) y las categorías administrativas/de facturación.
 //
+// Lee por la API de Drive (no por el mount Z:\ de Drive Desktop) para poder
+// correr como tarea programada de GitHub Actions, sin depender de esta
+// máquina. GOOGLE_DRIVE_DIARIO_GENERAL_FILE_ID es el id de archivo fijo de
+// "1. Diario General Galvi.xlsx" (no una carpeta, es un único Excel) — se
+// resolvió una sola vez con resolver_ids_migracion.js y no debería cambiar
+// salvo que alguien mueva/recree el archivo en Drive.
+//
 // Uso:
 //   node sync_diario_general.js
+const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { extraerDiarioGeneral } = require('./extract_diario_general.js');
-
-const RUTA_EXCEL = 'Z:/DRIVE GALVI/3. PUESTO TÉCNICO/1. Diario General Galvi.xlsx';
+const { getDrive, descargarComoBuffer } = require('./drive_client.js');
 
 async function main() {
-  const items = extraerDiarioGeneral(RUTA_EXCEL);
+  const drive = getDrive();
+  const fileId = process.env.GOOGLE_DRIVE_DIARIO_GENERAL_FILE_ID;
+  const tmpPath = path.join(__dirname, `tmp_${fileId}.xlsx`);
+
+  let items;
+  try {
+    const buffer = await descargarComoBuffer(drive, fileId);
+    fs.writeFileSync(tmpPath, buffer);
+    items = extraerDiarioGeneral(tmpPath);
+  } finally {
+    if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+  }
+
   if (items.length === 0) {
     console.error('ADVERTENCIA: 0 ítems extraídos — no se sube nada por seguridad (posible fallo de lectura, no se vacía la tabla).');
     return;
