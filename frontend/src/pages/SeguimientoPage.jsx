@@ -399,7 +399,28 @@ function ComentarioParaAlvaro({ presupuesto, onCambio }) {
   )
 }
 
-function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio }) {
+// Estrella para marcar una obra de alto interés — antes exclusiva de
+// Álvaro/Valentina (permiso presupuestos.marcar_interesante), ahora
+// también disponible para Geraldinne. Igual que en Presupuestos en
+// Estudio: ni se renderiza si no se tiene el permiso, no solo se deshabilita.
+function BotonInteresante({ presupuesto, onCambio, puedeMarcar }) {
+  if (!puedeMarcar) return null
+  return (
+    <button
+      type="button"
+      className={`obra-card-interesante ${presupuesto.interesante ? 'obra-card-interesante-activo' : ''}`}
+      title={presupuesto.interesante ? 'Quitar de alto interés' : 'Marcar como alto interés'}
+      onClick={(e) => {
+        e.stopPropagation()
+        onCambio(presupuesto.id, { interesante: !presupuesto.interesante })
+      }}
+    >
+      {presupuesto.interesante ? '★' : '☆'}
+    </button>
+  )
+}
+
+function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio, puedeMarcarInteresante }) {
   const alerta = faltaEnvio(presupuesto)
   return (
     <div
@@ -412,6 +433,7 @@ function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio }) {
       }}
     >
       {alerta && <InsigniaAlerta />}
+      <BotonInteresante presupuesto={presupuesto} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
       <div className="obra-card-titulo" title={presupuesto.obra}>{presupuesto.obra}</div>
       <div className="obra-card-cliente" title={presupuesto.cliente || ''}>{presupuesto.cliente || 'Sin cliente'}</div>
       <div className="obra-card-meta">
@@ -427,10 +449,17 @@ function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio }) {
 // común y sin cambios visuales) pero cuando hay más de una, en vez de un
 // único select de Estatus muestra una insignia por opción — cada una con su
 // propio color de estatus — porque acá no hay un solo estatus que mostrar.
-function TarjetaGrupoSeguimiento({ grupo, onAbrir, onCambio }) {
+function TarjetaGrupoSeguimiento({ grupo, onAbrir, onCambio, puedeMarcarInteresante }) {
   const { base, opciones } = grupo
   if (opciones.length === 1) {
-    return <TarjetaSeguimiento presupuesto={opciones[0]} onAbrir={onAbrir} onCambio={onCambio} />
+    return (
+      <TarjetaSeguimiento
+        presupuesto={opciones[0]}
+        onAbrir={onAbrir}
+        onCambio={onCambio}
+        puedeMarcarInteresante={puedeMarcarInteresante}
+      />
+    )
   }
 
   const alerta = opciones.some(faltaEnvio)
@@ -459,7 +488,7 @@ function TarjetaGrupoSeguimiento({ grupo, onAbrir, onCambio }) {
   )
 }
 
-function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta }) {
+function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta, puedeMarcarInteresante }) {
   const [ofertasAbiertas, setOfertasAbiertas] = useState(false)
   const [pestanaActivaId, setPestanaActivaId] = useState(opciones[0]?.id)
 
@@ -492,6 +521,7 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
             <p>{activo.cliente || 'Sin cliente'}</p>
           </div>
           <InsigniaPrioridad presupuesto={activo} />
+          <BotonInteresante presupuesto={activo} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
           <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
         </div>
 
@@ -566,7 +596,7 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
 }
 
 export default function SeguimientoPage() {
-  const { usuario, accessToken } = useAuth()
+  const { usuario, accessToken, tienePermiso } = useAuth()
   const [filas, setFilas] = useState([])
   const [ofertas, setOfertas] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -576,6 +606,7 @@ export default function SeguimientoPage() {
   const [filtroContacto, setFiltroContacto] = useState('Todos')
   const [filtroEstatus, setFiltroEstatus] = useState('Todos')
   const [obraSeleccionadaBase, setObraSeleccionadaBase] = useState(null)
+  const puedeMarcarInteresante = tienePermiso('presupuestos.marcar_interesante')
 
   useEffect(() => {
     presupuestosEnEstudio(accessToken)
@@ -832,7 +863,7 @@ export default function SeguimientoPage() {
           )}
           <div className="obras-grid">
             {grupo.items.map((g) => (
-              <TarjetaGrupoSeguimiento key={g.base} grupo={g} onAbrir={setObraSeleccionadaBase} onCambio={handleCambio} />
+              <TarjetaGrupoSeguimiento key={g.base} grupo={g} onAbrir={setObraSeleccionadaBase} onCambio={handleCambio} puedeMarcarInteresante={puedeMarcarInteresante} />
             ))}
           </div>
         </section>
@@ -848,6 +879,7 @@ export default function SeguimientoPage() {
           onAgregarOferta={handleAgregarOferta}
           onEliminarOferta={handleEliminarOferta}
           onCambiarEstatusOferta={handleCambiarEstatusOferta}
+          puedeMarcarInteresante={puedeMarcarInteresante}
         />
       )}
     </div>

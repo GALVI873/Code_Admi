@@ -16,7 +16,8 @@ declare(strict_types=1);
 // PATCH: cambia prioridad, interesante, estatus, el comentario/fecha límite de
 // Geraldinne, y/o gestiona sus solicitudes de valoración a proveedor:
 //   - "prioridad" requiere el permiso presupuestos.gestionar_prioridad (solo admin).
-//   - "interesante" requiere presupuestos.marcar_interesante (solo admin — Álvaro/Valentina).
+//   - "interesante" requiere presupuestos.marcar_interesante (admin — Álvaro/
+//     Valentina — y también Geraldinne, rol presupuestos).
 //   - "estatus" requiere ver_todos o ver_seguimiento (cualquiera que pueda ver la tabla).
 //   - "comentario_geraldinne"/"fecha_limite_entrega" requieren presupuestos.ver_seguimiento
 //     (solo Geraldinne — Álvaro las ve en su vista pero no las edita).
@@ -178,13 +179,19 @@ try {
         WHERE r.nombre = 'admin' AND p.clave = 'presupuestos.gestionar_prioridad'
     ");
 
-    // Marcar obras de alto interés (estrella de favorito) — exclusivo de
-    // Álvaro y Valentina, ambos con rol admin, igual que gestionar_prioridad.
+    // Marcar obras de alto interés (estrella de favorito) — antes exclusivo
+    // de Álvaro y Valentina (rol admin), ahora también Geraldinne (rol
+    // presupuestos) a pedido de ella.
     $db->exec("INSERT OR IGNORE INTO permisos (clave, descripcion) VALUES ('presupuestos.marcar_interesante', 'Marcar un presupuesto en estudio como de alto interés')");
     $db->exec("
         INSERT OR IGNORE INTO rol_permisos (rol_id, permiso_id)
         SELECT r.id, p.id FROM roles r, permisos p
         WHERE r.nombre = 'admin' AND p.clave = 'presupuestos.marcar_interesante'
+    ");
+    $db->exec("
+        INSERT OR IGNORE INTO rol_permisos (rol_id, permiso_id)
+        SELECT r.id, p.id FROM roles r, permisos p
+        WHERE r.nombre = 'presupuestos' AND p.clave = 'presupuestos.marcar_interesante'
     ");
 
     // Página "Presupuesto": espacio de trabajo de Geraldinne, única persona

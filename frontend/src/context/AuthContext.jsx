@@ -32,6 +32,7 @@ const MOCK_USUARIOS = {
     permisos: [
       'presupuestos.crear', 'presupuestos.ver_propios', 'presupuestos.ver_seguimiento',
       'presupuestos.editar', 'presupuestos.enviar', 'presupuestos.reemplazar_version',
+      'presupuestos.marcar_interesante',
     ],
   },
   gestion_obras: {
