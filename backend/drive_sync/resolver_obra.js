@@ -5,27 +5,28 @@
 // mientras que la carpeta es el nombre estable que también usan los PDFs
 // de presupuestos enviados.
 //
-// Excepción: subcarpetas de organización/versiones antiguas dentro de la
-// carpeta de la obra (ej. ".../Pasaje del Sur/1.Organización/Pptos ant/
-// archivo.xlsx") no son la obra — hay que subir por la cadena hasta la
-// primera carpeta que no matchee este patrón.
-function esCarpetaOrganizativa(nombre) {
-  return /^\d*\.?\s*(organizaci[oó]n|pptos?\.?\s*ant)/i.test(nombre.trim());
-}
+// La obra vive siempre a una profundidad fija bajo la categoría: sin
+// contacto para Particulares (Categoria/Obra), con contacto para el resto
+// (Categoria/Contacto/Obra) — mismo criterio que categoriaYContacto() en
+// sync_all.js. Cualquier carpeta más abajo (versiones viejas archivadas en
+// "1.Organización"/"Pptos ant", o cualquier otra subcarpeta como "Doc"/
+// "Valoracion" donde a veces queda un cálculo viejo o incompleto) no es la
+// obra, sin importar cómo se llame — antes se intentaba reconocer esas
+// subcarpetas por nombre con una lista de patrones, pero cualquier nombre
+// no contemplado (ej. "Doc") se colaba como si fuera la obra misma. Usar la
+// profundidad fija evita tener que enumerar cada patrón posible.
 
 // Índice (no el nombre) de la carpeta-obra dentro de la cadena, para que
 // quien la llame pueda resolver también el id de esa carpeta (necesario
 // para buscar una subcarpeta "Enviados" propia de la obra), no solo su
 // nombre.
 function indiceCarpetaObra(cadenaCarpetas) {
-  for (let i = cadenaCarpetas.length - 1; i >= 0; i--) {
-    if (!esCarpetaOrganizativa(cadenaCarpetas[i])) return i;
-  }
-  return cadenaCarpetas.length - 1;
+  const idx = cadenaCarpetas[0] === 'Particulares' ? 1 : 2;
+  return idx < cadenaCarpetas.length ? idx : cadenaCarpetas.length - 1;
 }
 
 function obraDesdeCadenaCarpetas(cadenaCarpetas) {
   return cadenaCarpetas[indiceCarpetaObra(cadenaCarpetas)].trim();
 }
 
-module.exports = { esCarpetaOrganizativa, obraDesdeCadenaCarpetas, indiceCarpetaObra };
+module.exports = { obraDesdeCadenaCarpetas, indiceCarpetaObra };

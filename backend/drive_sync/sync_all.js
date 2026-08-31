@@ -83,6 +83,15 @@ async function recorrer(drive, folderId, cadenaNombres, cadenaIds, cadenaCreated
         modifiedTime: file.modifiedTime,
         obra: cadenaNombres[idx].trim(),
         obraFolderId: cadenaIds[idx],
+        // Cuántos niveles de subcarpeta hay entre la carpeta de la obra y
+        // el archivo (0 = vive directo en la carpeta de la obra). Un caso
+        // real (Av. Fuentelarreina 24) tenía un cálculo viejo/incompleto
+        // archivado dentro de una subcarpeta "Doc" con fecha de
+        // modificación más reciente que el cálculo bueno que vive en la
+        // raíz de la obra — el desempate por fecha subía el equivocado.
+        // Ver deduplicarPorObra: se prioriza el archivo más cerca de la
+        // raíz antes que la fecha.
+        profundidadDesdeObra: cadenaNombres.length - 1 - idx,
         // Se toma como fecha de "solicitud" para la línea de tiempo de
         // seguimiento (ver PresupuestosEnEstudioPage/SeguimientoPage) — el
         // día que se creó la carpeta de la obra en Drive.
@@ -95,19 +104,30 @@ async function recorrer(drive, folderId, cadenaNombres, cadenaIds, cadenaCreated
 
 // La obra ahora se identifica por carpeta, no por archivo: puede haber
 // varios Excel para la misma obra (versiones numeradas, variantes como
-// "- Persianas"/"- Barandillas"). Se queda uno solo por obra: el de mayor
-// prefijo numérico y, si no hay o hay empate, el modificado más reciente.
+// "- Persianas"/"- Barandillas", o copias archivadas en subcarpetas tipo
+// "Doc"/"Pptos ant"). Se queda uno solo por obra, en este orden de
+// prioridad: el más cerca de la raíz de la obra (menos profundidad) desempata
+// primero — un archivo archivado en una subcarpeta no debería ganarle a uno
+// que vive directo en la obra solo por tener fecha de modificación más
+// reciente; luego el de mayor prefijo numérico; y por último el modificado
+// más reciente.
+function esMejorCandidato(nuevo, actual) {
+  if (nuevo.profundidadDesdeObra !== actual.profundidadDesdeObra) {
+    return nuevo.profundidadDesdeObra < actual.profundidadDesdeObra;
+  }
+  if (nuevo.prefijo !== actual.prefijo) {
+    return nuevo.prefijo > actual.prefijo;
+  }
+  return nuevo.modifiedTime > actual.modifiedTime;
+}
+
 function deduplicarPorObra(archivos) {
   const grupos = new Map();
   for (const a of archivos) {
-    const prefijo = extraerPrefijoNumerico(a.nombreArchivo) ?? -1;
+    const candidato = { ...a, prefijo: extraerPrefijoNumerico(a.nombreArchivo) ?? -1 };
     const actual = grupos.get(a.obra);
-    if (
-      !actual ||
-      prefijo > actual.prefijo ||
-      (prefijo === actual.prefijo && a.modifiedTime > actual.modifiedTime)
-    ) {
-      grupos.set(a.obra, { ...a, prefijo });
+    if (!actual || esMejorCandidato(candidato, actual)) {
+      grupos.set(a.obra, candidato);
     }
   }
   return Array.from(grupos.values());
