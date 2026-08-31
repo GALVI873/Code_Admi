@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { diarioGeneral, actualizarUbicacionDiarioGeneral } from '../api/client.js'
 
@@ -35,6 +35,72 @@ function SelectUbicacion({ item, onCambio }) {
         <option key={op || 'vacio'} value={op}>{op || '—'}</option>
       ))}
     </select>
+  )
+}
+
+// Filtro de obra con selección múltiple: antes era un texto libre que solo
+// dejaba ver una obra a la vez — Alfredo/Álvaro pidieron poder comparar
+// varias obras juntas. Escribir sigue filtrando la lista de opciones, pero
+// ahora cada obra se agrega como chip en vez de reemplazar la búsqueda.
+function SelectorObrasMultiple({ obras, seleccionadas, onCambiar }) {
+  const [abierto, setAbierto] = useState(false)
+  const [texto, setTexto] = useState('')
+  const ref = useRef(null)
+
+  useEffect(() => {
+    function alHacerClicFuera(e) {
+      if (ref.current && !ref.current.contains(e.target)) setAbierto(false)
+    }
+    document.addEventListener('mousedown', alHacerClicFuera)
+    return () => document.removeEventListener('mousedown', alHacerClicFuera)
+  }, [])
+
+  const obrasFiltradas = obras.filter((o) => o.toLowerCase().includes(texto.trim().toLowerCase()))
+
+  function alternar(obra) {
+    const nuevo = new Set(seleccionadas)
+    if (nuevo.has(obra)) nuevo.delete(obra)
+    else nuevo.add(obra)
+    onCambiar(nuevo)
+  }
+
+  function quitar(obra, e) {
+    e.stopPropagation()
+    const nuevo = new Set(seleccionadas)
+    nuevo.delete(obra)
+    onCambiar(nuevo)
+  }
+
+  return (
+    <div className="selector-obras" ref={ref}>
+      <div className="selector-obras-campo" onClick={() => setAbierto(true)}>
+        {[...seleccionadas].map((o) => (
+          <span key={o} className="chip-obra">
+            {o}
+            <button type="button" onClick={(e) => quitar(o, e)} aria-label={`Quitar ${o}`}>✕</button>
+          </span>
+        ))}
+        <input
+          type="text"
+          className="selector-obras-input"
+          placeholder={seleccionadas.size === 0 ? 'Filtrar por obra…' : ''}
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          onFocus={() => setAbierto(true)}
+        />
+      </div>
+      {abierto && (
+        <div className="selector-obras-lista">
+          {obrasFiltradas.length === 0 && <div className="selector-obras-vacio">Sin resultados</div>}
+          {obrasFiltradas.map((o) => (
+            <label key={o} className="selector-obras-opcion">
+              <input type="checkbox" checked={seleccionadas.has(o)} onChange={() => alternar(o)} />
+              {o}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -146,7 +212,7 @@ export default function DiarioGeneralPage() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [pestana, setPestana] = useState('Pedidos de Material')
-  const [busquedaObra, setBusquedaObra] = useState('')
+  const [obrasSeleccionadas, setObrasSeleccionadas] = useState(() => new Set())
   const [filtroCategoria, setFiltroCategoria] = useState('Todas')
 
   useEffect(() => {
@@ -161,12 +227,15 @@ export default function DiarioGeneralPage() {
     return items.filter((it) => CATEGORIAS_MATERIAL.includes(it.categoria) && it.ubicacion !== 'Obra')
   }, [items, pestana])
 
+  const obrasDisponibles = useMemo(() => {
+    return [...new Set(itemsDeLaPestana.map((it) => it.obra).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+  }, [itemsDeLaPestana])
+
   const itemsFiltrados = useMemo(() => {
-    const texto = busquedaObra.trim().toLowerCase()
     return itemsDeLaPestana
-      .filter((it) => !texto || it.obra?.toLowerCase().includes(texto))
+      .filter((it) => obrasSeleccionadas.size === 0 || obrasSeleccionadas.has(it.obra))
       .filter((it) => pestana !== 'Pedidos de Material' || filtroCategoria === 'Todas' || it.categoria === filtroCategoria)
-  }, [itemsDeLaPestana, busquedaObra, filtroCategoria, pestana])
+  }, [itemsDeLaPestana, obrasSeleccionadas, filtroCategoria, pestana])
 
   function handleCambioPestana(p) {
     setPestana(p)
@@ -209,14 +278,11 @@ export default function DiarioGeneralPage() {
       {!cargando && !error && (
         <div className="filtro-tabla">
           <div className="filtro-campo">
-            <label htmlFor="filtro-obra">Obra</label>
-            <input
-              id="filtro-obra"
-              type="text"
-              className="input-filtro"
-              placeholder="Filtrar por obra…"
-              value={busquedaObra}
-              onChange={(e) => setBusquedaObra(e.target.value)}
+            <label>Obra</label>
+            <SelectorObrasMultiple
+              obras={obrasDisponibles}
+              seleccionadas={obrasSeleccionadas}
+              onCambiar={setObrasSeleccionadas}
             />
           </div>
           {pestana === 'Pedidos de Material' && (

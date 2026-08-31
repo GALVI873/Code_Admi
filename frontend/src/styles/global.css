@@ -297,6 +297,107 @@ body {
   color: #999;
 }
 
+/* Filtro de obra con selección múltiple (Diario General): campo tipo chips
+   + un desplegable de opciones con checkbox, para poder ver varias obras a
+   la vez en vez de una búsqueda de texto que reemplaza a la anterior. */
+.selector-obras {
+  position: relative;
+  min-width: 220px;
+}
+
+.selector-obras-campo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  border: 1px solid #dfe6e9;
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: white;
+  cursor: text;
+}
+
+.selector-obras-campo:focus-within {
+  border-color: var(--azul-clar);
+}
+
+.selector-obras-input {
+  flex: 1 1 80px;
+  min-width: 80px;
+  border: none;
+  outline: none;
+  font-size: 13.5px;
+  padding: 3px 2px;
+}
+
+.chip-obra {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #eaf0fb;
+  color: var(--azul-med);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 6px 3px 10px;
+  border-radius: 14px;
+  white-space: nowrap;
+}
+
+.chip-obra button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+  font-size: 11px;
+  padding: 0;
+  line-height: 1;
+  opacity: .7;
+}
+
+.chip-obra button:hover {
+  opacity: 1;
+}
+
+.selector-obras-lista {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #dfe6e9;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+  padding: 4px;
+}
+
+.selector-obras-opcion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.selector-obras-opcion:hover {
+  background: #f7f9fc;
+}
+
+.selector-obras-opcion input {
+  cursor: pointer;
+}
+
+.selector-obras-vacio {
+  padding: 8px;
+  font-size: 12.5px;
+  color: #999;
+}
+
 .pantalla-cargando {
   min-height: 100vh;
   display: flex;
