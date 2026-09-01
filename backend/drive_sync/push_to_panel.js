@@ -1,7 +1,12 @@
 // Sube al panel (SQLite en producción) los campos ya extraídos de un Excel de
 // obra. Si Cliente/RAL/Vidrio/Persiana vienen vacíos del Excel (obra todavía
 // sin completar la hoja "Ficha"), busca el presupuesto enviado más reciente
-// con ese nombre de obra y completa desde ahí.
+// dentro de la carpeta "Enviados" propia de la obra y completa desde ahí —
+// como este script no recibe el id de esa carpeta (solo el nombre de obra),
+// en la práctica nunca encuentra nada; queda así por compatibilidad con
+// scripts viejos, no por uso activo (ver comentario en
+// extract_from_sent_pdf.js sobre por qué se eliminó la búsqueda global por
+// nombre).
 // Uso: node push_to_panel.js <obra> <archivo.xlsx>
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });

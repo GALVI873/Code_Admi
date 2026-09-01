@@ -1,11 +1,8 @@
-// Busca el presupuesto enviado más reciente de una obra. Dos fuentes, en
-// orden de prioridad:
-// 1. Una subcarpeta de envíos dentro de la propia carpeta de la obra (ej.
-//    ".../Pasaje del Sur/Enviados/") — confiable, no depende de adivinar
-//    nombres.
-// 2. Si no existe esa subcarpeta (obras que todavía no migraron a esa
-//    convención), la carpeta global "Presupuestos Enviados", cruzando por
-//    coincidencia de palabras con el nombre de la obra.
+// Busca el presupuesto enviado más reciente de una obra, ÚNICAMENTE en la
+// subcarpeta de envíos dentro de la propia carpeta de la obra (ej.
+// ".../Pasaje del Sur/Enviados/"). Ya no hay una búsqueda de respaldo por
+// nombre en una carpeta global — ver el comentario junto a
+// pdfsEnCarpetaObra sobre por qué se eliminó.
 // Sirve para dos cosas:
 // 1. Respaldo de Cliente/RAL/Vidrio/Persiana cuando la hoja "Ficha" del
 //    Excel interno viene vacía.
@@ -19,17 +16,9 @@
 const pdfParse = require('pdf-parse');
 const { getDrive, descargarComoBuffer } = require('./drive_client.js');
 
-// La carpeta de enviados no tiene los PDFs sueltos: están organizados en
-// subcarpetas por año ("1.PPTOS 26 GALVI", "1.PPTOS 25 GALVI", "PPTOS
-// ANTERIORES"). Por eso hace falta bajar recursivamente en vez de listar
-// solo los hijos directos (bug original: nunca encontraba nada y por eso
-// ninguna obra tenía fecha_ultimo_envio).
-//
-// Se cachea el índice completo en memoria la primera vez que se pide, para
-// no repetir el recorrido del árbol una vez por cada obra (puede haber
-// cientos de PDFs).
-let indicePdfsEnviadosCache = null;
-
+// La carpeta de envíos de una obra no siempre tiene los PDFs sueltos como
+// hijos directos (a veces hay sub-subcarpetas), por eso se recorre
+// recursivamente en vez de listar solo los hijos directos.
 async function listarPdfsRecursivo(drive, folderId, encontrados) {
   const res = await drive.files.list({
     q: `'${folderId}' in parents and trashed = false`,
@@ -45,80 +34,26 @@ async function listarPdfsRecursivo(drive, folderId, encontrados) {
   }
 }
 
-async function obtenerIndicePdfsEnviados(drive, enviadosFolderId) {
-  if (!indicePdfsEnviadosCache) {
-    indicePdfsEnviadosCache = [];
-    await listarPdfsRecursivo(drive, enviadosFolderId, indicePdfsEnviadosCache);
-  }
-  return indicePdfsEnviadosCache;
-}
-
-// Cruce por palabras en vez de substring exacto: desde que "obra" se resuelve
-// por carpeta (ver resolver_obra.js) puede traer texto que el PDF enviado no
-// tiene (ej. carpeta "IESO Amalia Avia 20" vs PDF "...IESO Amalia Avia,
-// Ejuca.pdf") o al revés. Cuenta como match si casi todas las palabras
-// significativas (>2 letras, o cualquier número) de la obra aparecen en el
-// nombre del PDF.
-//
-// Los números SIEMPRE cuentan como palabra significativa, sin importar el
-// largo — caso real: "Hidra 19" vs "Hidra 14" son obras distintas, pero
-// "19"/"14" tienen 2 dígitos y quedaban afuera del filtro de >2 letras; con
-// solo "hidra" como palabra a comparar, cualquier PDF de "Hidra 14" hacía
-// match al 100% con la obra "Hidra 19" y le pisaba el envío. Mismo problema
-// de fondo que Navacerrada (nombre corto sin carpeta de Enviados propia),
-// pero acá ni siquiera hacía falta que el nombre fuera raro: cualquier par
-// de obras "Palabra N" / "Palabra M" corre el mismo riesgo si el número es
-// de una o dos cifras.
-function normalizarPalabras(texto) {
-  return texto
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '') // quita acentos para comparar
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((p) => p.length > 2 || /^\d+$/.test(p));
-}
-
-const UMBRAL_COINCIDENCIA_PALABRAS = 0.7;
-
-function coincideConObra(obra, nombreArchivo) {
-  const palabrasObra = normalizarPalabras(obra);
-  if (palabrasObra.length === 0) return nombreArchivo.toLowerCase().includes(obra.toLowerCase());
-  const palabrasArchivo = new Set(normalizarPalabras(nombreArchivo));
-  const coincidentes = palabrasObra.filter((p) => palabrasArchivo.has(p));
-  return coincidentes.length / palabrasObra.length >= UMBRAL_COINCIDENCIA_PALABRAS;
-}
-
 // Un PDF no puede ser el envío de una obra si se creó en Drive ANTES de que
 // la carpeta de esa obra existiera — caso real: "Navacerrada" (Arq. Silvia
-// San Martín) no tiene carpeta "Enviados" propia, así que se cae a la
-// búsqueda global por nombre; ahí "Navacerrada" (una sola palabra
-// significativa, coincide con casi cualquier cosa) enganchó un presupuesto
-// de 2024 de la MISMA arquitecta para un proyecto distinto que reusa el
-// mismo nombre de lugar — el archivo es real, pero no es de esta obra. Sin
-// esta fecha de corte, cualquier obra con nombre corto/común y sin carpeta
-// de Enviados propia corre el mismo riesgo.
+// San Martín) enganchó por error un presupuesto de 2024 de la MISMA
+// arquitecta para un proyecto distinto que reusa el mismo nombre de lugar.
 function esPosterior(archivo, fechaCreacionCarpeta) {
   if (!fechaCreacionCarpeta) return true;
   return archivo.createdTime.slice(0, 10) >= fechaCreacionCarpeta;
 }
 
-async function buscarPdfEnviado(drive, enviadosFolderId, obra, fechaCreacionCarpeta) {
-  const indice = await obtenerIndicePdfsEnviados(drive, enviadosFolderId);
-  const coincidencias = indice
-    .filter((f) => coincideConObra(obra, f.name))
-    .filter((f) => esPosterior(f, fechaCreacionCarpeta))
-    .sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
-  return coincidencias[0] || null;
-}
-
-// Prioridad alternativa: si dentro de la propia carpeta de la obra hay una
-// subcarpeta de envíos (cualquier nombre que contenga "enviad-", ej.
-// "Enviados", "Presupuestos Enviados"), se usa el PDF más reciente de ahí en
-// vez de la búsqueda por nombre en la carpeta global — es más confiable
-// porque no depende de adivinar el nombre, está guardado a propósito junto
-// a la obra. Recorrido acotado a la carpeta de la obra, no al árbol
-// completo de Drive.
+// Única fuente de envíos: la subcarpeta de envíos dentro de la propia
+// carpeta de la obra (cualquier nombre que contenga "enviad-", ej.
+// "Enviados", "Presupuestos Enviados"). Antes, si esta subcarpeta no
+// existía, se caía a buscar por coincidencia de nombre en la carpeta global
+// "Presupuestos Enviados" — eso causó dos bugs reales de obras cruzadas
+// (Navacerrada enganchó un presupuesto de 2024 de otro proyecto con el
+// mismo nombre de lugar; "Hidra 19" enganchó el envío de "Hidra, 14" porque
+// el número de la obra no alcanzaba para distinguirlas). Se decidió
+// eliminar esa búsqueda global por completo: si una obra no tiene su propia
+// carpeta de Enviados, simplemente no se le detecta envío y se queda en su
+// estatus previo (En Estudio/En Valoración) hasta que exista esa carpeta.
 async function pdfsEnCarpetaObra(drive, obraFolderId, fechaCreacionCarpeta) {
   const res = await drive.files.list({
     q: `'${obraFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
@@ -476,19 +411,11 @@ async function extraerRellenoDePdf(archivo, camposFaltantes) {
 }
 
 async function completarDesdeEnviado(obra, camposFaltantes, obraFolderId, fechaCreacionCarpeta) {
-  const drive = getDrive();
+  if (!obraFolderId) return {};
 
-  let archivo = null;
-  if (obraFolderId) {
-    const { variantes } = await buscarVariantesEnCarpetaObra(drive, obraFolderId, fechaCreacionCarpeta);
-    archivo = variantes[0] ? variantes[0].archivo : null;
-  }
-  if (!archivo) {
-    const enviadosFolderId = process.env.GOOGLE_DRIVE_ENVIADOS_FOLDER_ID;
-    if (enviadosFolderId) {
-      archivo = await buscarPdfEnviado(drive, enviadosFolderId, obra, fechaCreacionCarpeta);
-    }
-  }
+  const drive = getDrive();
+  const { variantes } = await buscarVariantesEnCarpetaObra(drive, obraFolderId, fechaCreacionCarpeta);
+  const archivo = variantes[0] ? variantes[0].archivo : null;
   if (!archivo) return {};
 
   return extraerRellenoDePdf(archivo, camposFaltantes);
@@ -506,17 +433,6 @@ async function resolverEnviosDeObra(obra, camposFaltantes, obraFolderId, fechaCr
   let precioComplementario = null;
   if (obraFolderId) {
     ({ variantes, precioComplementario } = await buscarVariantesEnCarpetaObra(drive, obraFolderId, fechaCreacionCarpeta));
-  }
-  if (variantes.length === 0) {
-    const enviadosFolderId = process.env.GOOGLE_DRIVE_ENVIADOS_FOLDER_ID;
-    if (enviadosFolderId) {
-      const archivo = await buscarPdfEnviado(drive, enviadosFolderId, obra, fechaCreacionCarpeta);
-      if (archivo) {
-        const buffer = await descargarComoBuffer(drive, archivo.id);
-        const { text } = await pdfParse(buffer);
-        variantes = [{ etiqueta: null, archivo, text }];
-      }
-    }
   }
   if (variantes.length === 0) return [{ sufijo: '', campos: {} }];
 
@@ -546,7 +462,6 @@ module.exports = {
   completarDesdeEnviado,
   resolverEnviosDeObra,
   parseTextoPresupuestoEnviado,
-  coincideConObra,
   extraerEtiquetaOpcion,
   extraerCamposFicha,
   extraerNumeroPpto,
