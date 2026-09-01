@@ -391,6 +391,18 @@ function BotonInteresante({ presupuesto, onCambio, puedeMarcar }) {
   )
 }
 
+// Insignia de "hay mensajes sin leer" en la conversación de la obra — con
+// tantas obras en la lista, sin esto no hay forma de notar que llegó un
+// mensaje nuevo sin abrir cada ficha una por una.
+function InsigniaMensajes({ presupuesto }) {
+  if (!presupuesto.tiene_mensajes_sin_leer) return null
+  return (
+    <span className="obra-card-insignia-mensajes" title="Tiene mensajes nuevos en la conversación">
+      💬
+    </span>
+  )
+}
+
 function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio, puedeMarcarInteresante }) {
   const alerta = faltaEnvio(presupuesto)
   return (
@@ -405,6 +417,7 @@ function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio, puedeMarcarInteres
     >
       {alerta && <InsigniaAlerta />}
       <BotonInteresante presupuesto={presupuesto} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
+      <InsigniaMensajes presupuesto={presupuesto} />
       <div className="obra-card-titulo" title={presupuesto.obra}>{presupuesto.obra}</div>
       <div className="obra-card-cliente" title={presupuesto.cliente || ''}>{presupuesto.cliente || 'Sin cliente'}</div>
       <div className="obra-card-meta">
@@ -445,6 +458,7 @@ function TarjetaGrupoSeguimiento({ grupo, onAbrir, onCambio, puedeMarcarInteresa
       }}
     >
       {alerta && <InsigniaAlerta />}
+      <InsigniaMensajes presupuesto={opciones[0]} />
       <div className="obra-card-titulo" title={base}>{base}</div>
       <div className="obra-card-cliente" title={opciones[0].cliente || ''}>{opciones[0].cliente || 'Sin cliente'}</div>
       <div className="seguimiento-opciones-chips">
@@ -459,7 +473,7 @@ function TarjetaGrupoSeguimiento({ grupo, onAbrir, onCambio, puedeMarcarInteresa
   )
 }
 
-function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta, puedeMarcarInteresante, accessToken, usuarioEmail }) {
+function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta, puedeMarcarInteresante, accessToken, usuarioEmail, onLeido }) {
   const [ofertasAbiertas, setOfertasAbiertas] = useState(false)
   const [pestanaActivaId, setPestanaActivaId] = useState(opciones[0]?.id)
   const [chatAbierto, setChatAbierto] = useState(false)
@@ -498,7 +512,7 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
             <BotonInteresante presupuesto={activo} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
             <button
               type="button"
-              className={`chat-obra-boton ${chatAbierto ? 'chat-obra-boton-activo' : ''}`}
+              className={`chat-obra-boton ${chatAbierto ? 'chat-obra-boton-activo' : ''} ${activo.tiene_mensajes_sin_leer ? 'chat-obra-boton-nuevo' : ''}`}
               onClick={() => setChatAbierto((v) => !v)}
               aria-label="Conversación con Álvaro"
               title="Conversación con Álvaro"
@@ -515,6 +529,7 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
             accessToken={accessToken}
             usuarioEmail={usuarioEmail}
             onCerrar={() => setChatAbierto(false)}
+            onLeido={onLeido}
           />
         )}
 
@@ -722,6 +737,14 @@ export default function SeguimientoPage() {
     }
   }
 
+  // Solo local: el backend ya marcó la conversación como leída al abrir el
+  // hilo. Se limpia la insignia en TODAS las opciones que comparten la misma
+  // obra base (la conversación es una sola para todas, ver ComentariosObra),
+  // no solo en la pestaña que estaba activa.
+  function handleLeido(base) {
+    setFilas((f) => f.map((p) => (nombreBase(p.obra) === base ? { ...p, tiene_mensajes_sin_leer: false } : p)))
+  }
+
   async function handleAgregarOferta(obra, proveedor, fechaSolicitud) {
     try {
       const { id } = await agregarSolicitudOferta(accessToken, obra, proveedor, fechaSolicitud)
@@ -870,6 +893,7 @@ export default function SeguimientoPage() {
           puedeMarcarInteresante={puedeMarcarInteresante}
           accessToken={accessToken}
           usuarioEmail={usuario.email}
+          onLeido={() => handleLeido(obraSeleccionadaBase)}
         />
       )}
     </div>

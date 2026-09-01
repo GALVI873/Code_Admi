@@ -125,6 +125,19 @@ function BotonInteresante({ presupuesto, onCambio, puedeMarcar }) {
   )
 }
 
+// Insignia de "hay mensajes sin leer" en la conversación de la obra — con
+// tantas obras en la lista, sin esto no hay forma de notar que llegó un
+// mensaje nuevo sin abrir cada ficha una por una. Esquina inferior derecha:
+// las de arriba ya las ocupan la alerta y la estrella.
+function InsigniaMensajes({ presupuesto }) {
+  if (!presupuesto.tiene_mensajes_sin_leer) return null
+  return (
+    <span className="obra-card-insignia-mensajes" title="Tiene mensajes nuevos en la conversación">
+      💬
+    </span>
+  )
+}
+
 // Fecha límite que Geraldinne le puso a la obra desde su vista — acá es
 // solo lectura (Álvaro no la gestiona, es información de ella para
 // organizarse), pero se avisa igual como una notificación arriba a la
@@ -152,6 +165,7 @@ function TarjetaObra({ presupuesto, onAbrir, onCambio, puedeCambiarPrioridad, pu
     >
       {alerta && <InsigniaAlerta />}
       <BotonInteresante presupuesto={presupuesto} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
+      <InsigniaMensajes presupuesto={presupuesto} />
       <div className="obra-card-titulo" title={presupuesto.obra}>{presupuesto.obra}</div>
       <div className="obra-card-cliente" title={presupuesto.cliente || ''}>{presupuesto.cliente || 'Sin cliente'}</div>
       <div className="obra-card-meta">
@@ -162,7 +176,7 @@ function TarjetaObra({ presupuesto, onAbrir, onCambio, puedeCambiarPrioridad, pu
   )
 }
 
-function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, puedeMarcarInteresante, accessToken, usuarioEmail }) {
+function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, puedeMarcarInteresante, accessToken, usuarioEmail, onLeido }) {
   const [chatAbierto, setChatAbierto] = useState(false)
 
   useEffect(() => {
@@ -190,7 +204,7 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, p
             <BotonInteresante presupuesto={presupuesto} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
             <button
               type="button"
-              className={`chat-obra-boton ${chatAbierto ? 'chat-obra-boton-activo' : ''}`}
+              className={`chat-obra-boton ${chatAbierto ? 'chat-obra-boton-activo' : ''} ${presupuesto.tiene_mensajes_sin_leer ? 'chat-obra-boton-nuevo' : ''}`}
               onClick={() => setChatAbierto((v) => !v)}
               aria-label="Conversación con Geraldinne"
               title="Conversación con Geraldinne"
@@ -207,6 +221,7 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, p
             accessToken={accessToken}
             usuarioEmail={usuarioEmail}
             onCerrar={() => setChatAbierto(false)}
+            onLeido={onLeido}
           />
         )}
 
@@ -317,6 +332,13 @@ export default function PresupuestosEnEstudioPage() {
       setFilas(anteriores)
       setError(err.message)
     }
+  }
+
+  // Solo local: el backend ya marcó la conversación como leída al abrir el
+  // hilo (comentarios_obra.php), acá solo se apaga la insignia en la
+  // tarjeta sin esperar a recargar toda la lista.
+  function handleLeido(id) {
+    setFilas((f) => f.map((p) => (p.id === id ? { ...p, tiene_mensajes_sin_leer: false } : p)))
   }
 
   return (
@@ -436,6 +458,7 @@ export default function PresupuestosEnEstudioPage() {
           puedeMarcarInteresante={puedeMarcarInteresante}
           accessToken={accessToken}
           usuarioEmail={usuario.email}
+          onLeido={() => handleLeido(obraSeleccionada.id)}
         />
       )}
     </div>

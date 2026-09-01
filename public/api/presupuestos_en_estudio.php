@@ -2,7 +2,10 @@
 declare(strict_types=1);
 
 // GET: lista los presupuestos en estudio (requiere sesión + presupuestos.ver_todos,
-// presupuestos.ver_seguimiento u obras.ver_aceptadas).
+// presupuestos.ver_seguimiento u obras.ver_aceptadas). Cada fila trae
+// "tiene_mensajes_sin_leer" (bool) comparando el último mensaje de
+// comentarios_obra.php contra la última lectura de ESTE usuario — para la
+// insignia de "hay mensajes nuevos" en la tarjeta de la obra.
 // POST: upsert de un registro, usado por el proceso de sincronización con Drive
 // (protegido por SYNC_TOKEN, no por sesión de usuario — es máquina a máquina).
 // Con {accion:"listar"} devuelve obra/estatus/fecha_ultimo_envio de todas las
@@ -56,6 +59,14 @@ function normalizarProveedor(string $s): string
     $s = mb_strtolower($s, 'UTF-8');
     $s = strtr($s, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n', 'ü' => 'u']);
     return preg_replace('/[^a-z0-9]/', '', $s);
+}
+
+// Misma normalización que comentarios_obra.php: la conversación se
+// identifica por el nombre BASE de la obra (sin "— Opción A/B"), así que
+// para saber si HAY mensajes sin leer hay que agrupar por esa misma clave.
+function nombreBaseObra(string $obra): string
+{
+    return trim((string) preg_replace('/\s*—\s*Opci[oó]n\s+\w+\s*$/iu', '', $obra));
 }
 
 try {
@@ -157,6 +168,29 @@ try {
         $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN precio_complementario REAL');
     }
 
+    // Definidas también acá (no solo en comentarios_obra.php) porque el GET
+    // de abajo necesita leerlas para marcar qué obras tienen mensajes sin
+    // leer — mismo criterio del resto del proyecto: cada archivo asegura las
+    // tablas que toca, sin depender de qué endpoint las creó primero.
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS comentarios_obra (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          obra TEXT NOT NULL,
+          autor_nombre TEXT NOT NULL,
+          autor_email TEXT NOT NULL,
+          mensaje TEXT NOT NULL,
+          creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    ");
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS comentarios_obra_leido (
+          obra TEXT NOT NULL,
+          usuario_email TEXT NOT NULL,
+          ultima_lectura TEXT NOT NULL,
+          PRIMARY KEY (obra, usuario_email)
+        )
+    ");
+
     $columnasOfertas = array_column($db->query('PRAGMA table_info(ofertas_proveedor)')->fetchAll(), 'name');
     if (!in_array('estatus', $columnasOfertas, true)) {
         $db->exec("ALTER TABLE ofertas_proveedor ADD COLUMN estatus TEXT NOT NULL DEFAULT 'Recibido'");
@@ -236,8 +270,34 @@ try {
         // (fecha_ultimo_envio NULL) quedan al final (SQLite ordena NULL como
         // el valor más chico, así que en DESC caen últimas).
         $stmt = $db->query('SELECT * FROM presupuestos_en_estudio ORDER BY fecha_ultimo_envio DESC');
+        $presupuestos = $stmt->fetchAll();
         $ofertas = $db->query('SELECT * FROM ofertas_proveedor ORDER BY obra, fecha DESC')->fetchAll();
-        Response::json(['presupuestos' => $stmt->fetchAll(), 'ofertas' => $ofertas]);
+
+        // Insignia de "hay mensajes sin leer" por obra: se compara el
+        // mensaje más reciente de cada conversación contra la última vez que
+        // ESTE usuario la abrió (comentarios_obra_leido, que se actualiza
+        // sola en comentarios_obra.php al hacer GET/POST del hilo). Sin
+        // registro de lectura para esa obra, cualquier mensaje cuenta como
+        // no leído.
+        $ultimoMensajePorObra = [];
+        foreach ($db->query('SELECT obra, MAX(creado_en) AS ultimo FROM comentarios_obra GROUP BY obra')->fetchAll() as $r) {
+            $ultimoMensajePorObra[$r['obra']] = $r['ultimo'];
+        }
+        $lecturaPorObra = [];
+        $stmtLectura = $db->prepare('SELECT obra, ultima_lectura FROM comentarios_obra_leido WHERE usuario_email = ?');
+        $stmtLectura->execute([$usuario['email']]);
+        foreach ($stmtLectura->fetchAll() as $r) {
+            $lecturaPorObra[$r['obra']] = $r['ultima_lectura'];
+        }
+        foreach ($presupuestos as &$p) {
+            $base = nombreBaseObra($p['obra']);
+            $ultimo = $ultimoMensajePorObra[$base] ?? null;
+            $leido = $lecturaPorObra[$base] ?? null;
+            $p['tiene_mensajes_sin_leer'] = $ultimo !== null && ($leido === null || $ultimo > $leido);
+        }
+        unset($p);
+
+        Response::json(['presupuestos' => $presupuestos, 'ofertas' => $ofertas]);
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'PATCH') {

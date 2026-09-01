@@ -701,6 +701,54 @@ body {
   border-color: var(--naranja);
 }
 
+/* Insignia de "mensajes sin leer" — esquina inferior derecha, las de arriba
+   ya las ocupan la alerta y la estrella. Con muchas obras en la lista es la
+   única forma de notar que llegó un mensaje nuevo sin abrir cada ficha. */
+.obra-card-insignia-mensajes {
+  position: absolute;
+  bottom: -8px;
+  right: -8px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--azul-clar);
+  font-size: 12px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 2px 6px rgba(74, 158, 218, .5);
+  cursor: help;
+  animation: pulso-mensaje 2s ease-in-out infinite;
+}
+
+@keyframes pulso-mensaje {
+  0%, 100% { box-shadow: 0 2px 6px rgba(74, 158, 218, .5), 0 0 0 0 rgba(74, 158, 218, .5); }
+  50% { box-shadow: 0 2px 6px rgba(74, 158, 218, .5), 0 0 0 6px rgba(74, 158, 218, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .obra-card-insignia-mensajes { animation: none; }
+}
+
+/* Punto en el globo 💬 del header de la ficha, mismo aviso que la insignia
+   de la tarjeta pero visible una vez ya adentro del detalle. */
+.chat-obra-boton-nuevo {
+  position: relative;
+}
+
+.chat-obra-boton-nuevo::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--azul-clar);
+  border: 1.5px solid white;
+}
+
 .modal-header-acciones {
   display: flex;
   align-items: center;

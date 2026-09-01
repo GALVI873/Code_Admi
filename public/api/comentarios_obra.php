@@ -19,15 +19,32 @@ declare(strict_types=1);
 // GET ?obra=... : requiere sesión + (presupuestos.ver_todos o
 // presupuestos.ver_seguimiento) — cualquiera de los dos, mismo criterio que
 // el resto de presupuestos_en_estudio.php. Devuelve el hilo completo, más
-// viejo primero.
+// viejo primero, y de paso marca la conversación como leída por este
+// usuario (comentarios_obra_leido) — abrir el hilo ES la señal de lectura,
+// no hace falta una acción aparte.
 // POST {obra, mensaje}: mismo permiso, agrega un mensaje atribuido al
-// usuario de la sesión (nombre/email del JWT, no un campo del body).
+// usuario de la sesión (nombre/email del JWT, no un campo del body). También
+// marca la conversación como leída por quien escribe, para que su propio
+// mensaje no le quede marcado como "sin leer" a sí mismo.
+//
+// comentarios_obra_leido guarda, por obra + usuario, la fecha del último
+// vistazo — presupuestos_en_estudio.php la usa para decidir qué tarjetas
+// muestran la insignia de "mensajes nuevos".
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
 
 function nombreBaseObra(string $obra): string
 {
     return trim((string) preg_replace('/\s*—\s*Opci[oó]n\s+\w+\s*$/iu', '', $obra));
+}
+
+function marcarLeido(PDO $db, string $obra, string $email): void
+{
+    $db->prepare("
+        INSERT INTO comentarios_obra_leido (obra, usuario_email, ultima_lectura)
+        VALUES (?, ?, datetime('now'))
+        ON CONFLICT(obra, usuario_email) DO UPDATE SET ultima_lectura = excluded.ultima_lectura
+    ")->execute([$obra, $email]);
 }
 
 try {
@@ -43,6 +60,14 @@ try {
           creado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
     ");
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS comentarios_obra_leido (
+          obra TEXT NOT NULL,
+          usuario_email TEXT NOT NULL,
+          ultima_lectura TEXT NOT NULL,
+          PRIMARY KEY (obra, usuario_email)
+        )
+    ");
 
     $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
     AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento']);
@@ -54,7 +79,11 @@ try {
         }
         $stmt = $db->prepare('SELECT * FROM comentarios_obra WHERE obra = ? ORDER BY creado_en ASC, id ASC');
         $stmt->execute([$obra]);
-        Response::json(['comentarios' => $stmt->fetchAll()]);
+        $comentarios = $stmt->fetchAll();
+
+        marcarLeido($db, $obra, $usuario['email']);
+
+        Response::json(['comentarios' => $comentarios]);
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -70,6 +99,9 @@ try {
         $id = (int) $db->lastInsertId();
         $stmt = $db->prepare('SELECT * FROM comentarios_obra WHERE id = ?');
         $stmt->execute([$id]);
+
+        marcarLeido($db, $obra, $usuario['email']);
+
         Response::json(['comentario' => $stmt->fetch()]);
     }
 

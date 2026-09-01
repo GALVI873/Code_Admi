@@ -26,7 +26,7 @@ function formatoFechaHora(iso) {
 // en el flujo normal — a pedido explícito: una conversación larga no debe
 // empujar el resto de la ficha hacia abajo. onCerrar la abre/cierra el
 // globo 💬 del header, acá adentro solo hace falta la X para cerrarla.
-export default function ComentariosObra({ obra, accessToken, usuarioEmail, onCerrar }) {
+export default function ComentariosObra({ obra, accessToken, usuarioEmail, onCerrar, onLeido }) {
   const obraBase = nombreBaseObra(obra)
   const [comentarios, setComentarios] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -39,7 +39,12 @@ export default function ComentariosObra({ obra, accessToken, usuarioEmail, onCer
     setCargando(true)
     comentariosObra(accessToken, obraBase)
       .then((data) => {
-        if (activo) setComentarios(data.comentarios || [])
+        if (!activo) return
+        setComentarios(data.comentarios || [])
+        // El GET ya marcó la conversación como leída en el backend — acá
+        // solo se avisa al padre para que borre la insignia de "sin leer"
+        // en la tarjeta sin esperar a recargar toda la lista.
+        onLeido?.()
       })
       .catch((err) => {
         if (activo) setError(err.message)
@@ -50,6 +55,7 @@ export default function ComentariosObra({ obra, accessToken, usuarioEmail, onCer
     return () => {
       activo = false
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [obraBase, accessToken])
 
   async function enviar(e) {
