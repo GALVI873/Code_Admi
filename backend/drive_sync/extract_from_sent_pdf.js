@@ -57,7 +57,18 @@ async function obtenerIndicePdfsEnviados(drive, enviadosFolderId) {
 // por carpeta (ver resolver_obra.js) puede traer texto que el PDF enviado no
 // tiene (ej. carpeta "IESO Amalia Avia 20" vs PDF "...IESO Amalia Avia,
 // Ejuca.pdf") o al revés. Cuenta como match si casi todas las palabras
-// significativas (>2 letras) de la obra aparecen en el nombre del PDF.
+// significativas (>2 letras, o cualquier número) de la obra aparecen en el
+// nombre del PDF.
+//
+// Los números SIEMPRE cuentan como palabra significativa, sin importar el
+// largo — caso real: "Hidra 19" vs "Hidra 14" son obras distintas, pero
+// "19"/"14" tienen 2 dígitos y quedaban afuera del filtro de >2 letras; con
+// solo "hidra" como palabra a comparar, cualquier PDF de "Hidra 14" hacía
+// match al 100% con la obra "Hidra 19" y le pisaba el envío. Mismo problema
+// de fondo que Navacerrada (nombre corto sin carpeta de Enviados propia),
+// pero acá ni siquiera hacía falta que el nombre fuera raro: cualquier par
+// de obras "Palabra N" / "Palabra M" corre el mismo riesgo si el número es
+// de una o dos cifras.
 function normalizarPalabras(texto) {
   return texto
     .toLowerCase()
@@ -65,7 +76,7 @@ function normalizarPalabras(texto) {
     .replace(/[̀-ͯ]/g, '') // quita acentos para comparar
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
-    .filter((p) => p.length > 2);
+    .filter((p) => p.length > 2 || /^\d+$/.test(p));
 }
 
 const UMBRAL_COINCIDENCIA_PALABRAS = 0.7;
