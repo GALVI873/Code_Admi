@@ -462,6 +462,7 @@ function TarjetaGrupoSeguimiento({ grupo, onAbrir, onCambio, puedeMarcarInteresa
 function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta, puedeMarcarInteresante, accessToken, usuarioEmail }) {
   const [ofertasAbiertas, setOfertasAbiertas] = useState(false)
   const [pestanaActivaId, setPestanaActivaId] = useState(opciones[0]?.id)
+  const [chatAbierto, setChatAbierto] = useState(false)
 
   // Se resetea a la primera pestaña solo cuando se abre una obra distinta
   // (por base, no por el array de opciones, que cambia de referencia cada
@@ -469,6 +470,7 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
   useEffect(() => {
     setPestanaActivaId(opciones[0]?.id)
     setOfertasAbiertas(false)
+    setChatAbierto(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base])
 
@@ -491,10 +493,30 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
             <h2>{base}</h2>
             <p>{activo.cliente || 'Sin cliente'}</p>
           </div>
-          <InsigniaPrioridad presupuesto={activo} />
-          <BotonInteresante presupuesto={activo} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
-          <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
+          <div className="modal-header-acciones">
+            <InsigniaPrioridad presupuesto={activo} />
+            <BotonInteresante presupuesto={activo} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
+            <button
+              type="button"
+              className={`chat-obra-boton ${chatAbierto ? 'chat-obra-boton-activo' : ''}`}
+              onClick={() => setChatAbierto((v) => !v)}
+              aria-label="Conversación con Álvaro"
+              title="Conversación con Álvaro"
+            >
+              💬
+            </button>
+            <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
+          </div>
         </div>
+
+        {chatAbierto && (
+          <ComentariosObra
+            obra={activo.obra}
+            accessToken={accessToken}
+            usuarioEmail={usuarioEmail}
+            onCerrar={() => setChatAbierto(false)}
+          />
+        )}
 
         {opciones.length > 1 && (
           <div className="seguimiento-pestanas">
@@ -528,8 +550,6 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
             <FechaLimiteEntrega presupuesto={activo} onCambio={onCambio} />
           </div>
         </div>
-
-        <ComentariosObra obra={activo.obra} accessToken={accessToken} usuarioEmail={usuarioEmail} />
 
         <LineaTiempo
           presupuesto={activo}

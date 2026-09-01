@@ -163,6 +163,12 @@ function TarjetaObra({ presupuesto, onAbrir, onCambio, puedeCambiarPrioridad, pu
 }
 
 function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, puedeMarcarInteresante, accessToken, usuarioEmail }) {
+  const [chatAbierto, setChatAbierto] = useState(false)
+
+  useEffect(() => {
+    setChatAbierto(false)
+  }, [presupuesto.id])
+
   useEffect(() => {
     function alEscape(e) {
       if (e.key === 'Escape') onCerrar()
@@ -182,9 +188,27 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, p
           <div className="modal-header-acciones">
             <NotificacionFechaLimite presupuesto={presupuesto} />
             <BotonInteresante presupuesto={presupuesto} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
+            <button
+              type="button"
+              className={`chat-obra-boton ${chatAbierto ? 'chat-obra-boton-activo' : ''}`}
+              onClick={() => setChatAbierto((v) => !v)}
+              aria-label="Conversación con Geraldinne"
+              title="Conversación con Geraldinne"
+            >
+              💬
+            </button>
             <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
           </div>
         </div>
+
+        {chatAbierto && (
+          <ComentariosObra
+            obra={presupuesto.obra}
+            accessToken={accessToken}
+            usuarioEmail={usuarioEmail}
+            onCerrar={() => setChatAbierto(false)}
+          />
+        )}
 
         {faltaEnvio(presupuesto) && (
           <p className="modal-aviso">⚠ "Pdt Aprobación" sin ningún presupuesto enviado registrado en Drive.</p>
@@ -212,8 +236,6 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, p
           <div><dt>% Ganancia</dt><dd>{formatoPorcentaje(presupuesto.porcentaje_ganancia)}</dd></div>
           <div><dt>Fecha último envío</dt><dd>{formatoFecha(presupuesto.fecha_ultimo_envio)}</dd></div>
         </dl>
-
-        <ComentariosObra obra={presupuesto.obra} accessToken={accessToken} usuarioEmail={usuarioEmail} />
       </div>
     </div>
   )

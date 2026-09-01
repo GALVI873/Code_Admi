@@ -734,6 +734,7 @@ body {
 }
 
 .modal-caja {
+  position: relative;
   background: white;
   border-radius: 12px;
   padding: 28px;
@@ -862,21 +863,55 @@ body {
 /* Conversación entre Álvaro y Geraldinne dentro del detalle de una obra
    (ComentariosObra.jsx) — no es tiempo real, es un hilo que se recarga al
    abrir la obra, por eso el look de lista simple en vez de burbujas con
-   animación de "escribiendo…". */
-.chat-obra {
-  margin-top: 22px;
-  padding-top: 18px;
-  border-top: 1px solid #f0f0f0;
+   animación de "escribiendo…". Ventana flotante (ancla en modal-caja, que
+   tiene position:relative) en vez de quedar fija en el flujo de la ficha:
+   una conversación larga no debe empujar el resto hacia abajo, se abre con
+   el globo 💬 del header y queda por encima sin mover nada.  */
+.chat-obra-flotante {
+  position: absolute;
+  top: 54px;
+  right: 24px;
+  width: 300px;
+  max-width: calc(100% - 48px);
+  background: white;
+  border: 1px solid #e3e8f0;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .18);
+  padding: 14px;
+  z-index: 30;
+}
+
+.chat-obra-encabezado {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
 }
 
 .chat-obra-titulo {
-  display: block;
   font-size: 13px;
   font-weight: 700;
   color: #7a8699;
   text-transform: uppercase;
   letter-spacing: .03em;
-  margin-bottom: 10px;
+}
+
+.chat-obra-boton {
+  background: none;
+  border: none;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px;
+  color: #7a8699;
+}
+
+.chat-obra-boton:hover {
+  color: var(--azul);
+}
+
+.chat-obra-boton-activo {
+  color: var(--azul);
 }
 
 .chat-obra-mensajes {

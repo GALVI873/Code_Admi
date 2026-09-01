@@ -21,7 +21,12 @@ function formatoFechaHora(iso) {
   return `${dia}/${mes}/${anio} ${(hora || '').slice(0, 5)}`
 }
 
-export default function ComentariosObra({ obra, accessToken, usuarioEmail }) {
+// Se muestra como ventana flotante dentro de la ficha (ancla en
+// modal-caja, que por eso tiene position:relative) en vez de quedar fija
+// en el flujo normal — a pedido explícito: una conversación larga no debe
+// empujar el resto de la ficha hacia abajo. onCerrar la abre/cierra el
+// globo 💬 del header, acá adentro solo hace falta la X para cerrarla.
+export default function ComentariosObra({ obra, accessToken, usuarioEmail, onCerrar }) {
   const obraBase = nombreBaseObra(obra)
   const [comentarios, setComentarios] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -65,8 +70,11 @@ export default function ComentariosObra({ obra, accessToken, usuarioEmail }) {
   }
 
   return (
-    <div className="chat-obra">
-      <span className="chat-obra-titulo">Conversación</span>
+    <div className="chat-obra chat-obra-flotante" onClick={(e) => e.stopPropagation()}>
+      <div className="chat-obra-encabezado">
+        <span className="chat-obra-titulo">Conversación</span>
+        <button type="button" className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar conversación">✕</button>
+      </div>
       <div className="chat-obra-mensajes">
         {cargando && <p className="dashboard-nota">Cargando…</p>}
         {!cargando && comentarios.length === 0 && (
