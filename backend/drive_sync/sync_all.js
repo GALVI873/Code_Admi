@@ -1,10 +1,17 @@
-// Recorre toda la carpeta de "presupuestos en estudio". La obra se identifica
-// por el nombre de su carpeta (ver resolver_obra.js), no por el archivo:
-// cuando hay varios Excel para la misma obra (versiones numeradas, variantes
-// "- Persianas"/"- Barandillas") se sube solo uno. Excluye archivos
-// temporales de bloqueo (~$) y cálculos auxiliares ("Calculo Composite").
-// Omite obras cuyo último envío registrado supera los 3 meses, y al final
-// reconcilia el panel borrando las que ya no aparecen en este recorrido.
+// Recorre toda la carpeta de "presupuestos en estudio". Las obras se
+// identifican por carpeta (Categoría/[Contacto]/Obra — Particulares no
+// tiene nivel de contacto), no por archivo: la sola existencia de la
+// carpeta ya es una solicitud real y sube al panel como "En Estudio",
+// tenga o no todavía su Excel de cálculo (antes una obra sin Excel era
+// invisible para la sincronización — caso real: una carpeta de prueba sin
+// nada adentro nunca aparecía en el panel). Cuando el Excel sí existe se
+// lee para completar el resto de los campos y decidir si pasa a "En
+// Valoración"; puede haber varios Excel para la misma obra (versiones
+// numeradas, o copias archivadas en subcarpetas tipo "Doc"/"Pptos ant") y
+// se elige uno solo — ver esMejorCandidato. Excluye archivos temporales de
+// bloqueo (~$) y cálculos auxiliares ("Calculo Composite"). Omite obras
+// cuyo último envío registrado supera los 3 meses, y al final reconcilia
+// el panel borrando las que ya no aparecen en este recorrido.
 // Si la carpeta "Enviados" de una obra trae PDFs etiquetados "Opción A" /
 // "Opción B" (alternativas, no revisiones), sube una fila por opción
 // ("Obra — Opción A", "Obra — Opción B") en vez de una sola.
@@ -13,13 +20,15 @@
 // Valoración" si no las tiene ya (ver asegurarCarpetasNuevaObra) — así
 // queda listo el lugar donde guardar el PDF/las ofertas sin que nadie
 // tenga que armar la carpeta a mano.
+// Cuando el mismo nombre de obra aparece en más de una carpeta del árbol
+// (nombres de lugar reusados, carpetas viejas archivadas en otra
+// categoría/contacto), se elige una sola — ver resolverObrasUnicas.
 const path = require('path');
 const fs = require('fs');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { extraerCampos } = require('./extract_fields.js');
 const { resolverEnviosDeObra } = require('./extract_from_sent_pdf.js');
 const { getDrive, descargarComoBuffer } = require('./drive_client.js');
-const { indiceCarpetaObra } = require('./resolver_obra.js');
 
 const CAMPOS_RESPALDABLES = ['cliente', 'ral', 'persiana', 'vidrio'];
 const MESES_ANTIGUEDAD_MAXIMA = 3;
@@ -57,64 +66,85 @@ const CATEGORIA_SINGULAR = {
   Reformistas: 'Reformista',
 };
 
-function categoriaYContacto(cadenaNombres) {
-  const categoriaCarpeta = cadenaNombres[0];
-  const categoria = CATEGORIA_SINGULAR[categoriaCarpeta] || categoriaCarpeta;
-  const contacto = categoriaCarpeta === 'Particulares' ? null : cadenaNombres[1] || null;
-  return { categoria, contacto };
-}
-
-async function recorrer(drive, folderId, cadenaNombres, cadenaIds, cadenaCreatedTimes, encontrados) {
+async function listarHijos(drive, folderId, soloCarpetas) {
+  const filtroTipo = soloCarpetas ? " and mimeType = 'application/vnd.google-apps.folder'" : '';
   const res = await drive.files.list({
-    q: `'${folderId}' in parents and trashed = false`,
+    q: `'${folderId}' in parents and trashed = false${filtroTipo}`,
     fields: 'files(id, name, mimeType, modifiedTime, createdTime)',
     pageSize: 1000,
   });
-  for (const file of res.data.files) {
-    if (file.mimeType === 'application/vnd.google-apps.folder') {
-      await recorrer(
-        drive,
-        file.id,
-        [...cadenaNombres, file.name],
-        [...cadenaIds, file.id],
-        [...cadenaCreatedTimes, file.createdTime],
-        encontrados,
-      );
-    } else if (/CALCULO.*\.xlsx$/i.test(file.name) && esArchivoValido(file.name)) {
-      const idx = indiceCarpetaObra(cadenaNombres);
-      encontrados.push({
-        fileId: file.id,
-        nombreArchivo: file.name,
-        modifiedTime: file.modifiedTime,
-        obra: cadenaNombres[idx].trim(),
-        obraFolderId: cadenaIds[idx],
-        // Cuántos niveles de subcarpeta hay entre la carpeta de la obra y
-        // el archivo (0 = vive directo en la carpeta de la obra). Un caso
-        // real (Av. Fuentelarreina 24) tenía un cálculo viejo/incompleto
-        // archivado dentro de una subcarpeta "Doc" con fecha de
-        // modificación más reciente que el cálculo bueno que vive en la
-        // raíz de la obra — el desempate por fecha subía el equivocado.
-        // Ver deduplicarPorObra: se prioriza el archivo más cerca de la
-        // raíz antes que la fecha.
-        profundidadDesdeObra: cadenaNombres.length - 1 - idx,
-        // Se toma como fecha de "solicitud" para la línea de tiempo de
-        // seguimiento (ver PresupuestosEnEstudioPage/SeguimientoPage) — el
-        // día que se creó la carpeta de la obra en Drive.
-        fechaCreacionCarpeta: cadenaCreatedTimes[idx] ? cadenaCreatedTimes[idx].slice(0, 10) : null,
-        ...categoriaYContacto(cadenaNombres),
+  return res.data.files;
+}
+
+// No toda obra vive a la misma profundidad bajo su categoría: lo normal es
+// Categoría/Contacto/Obra, pero hay casos reales de obras colgando DIRECTO
+// de la categoría, sin contacto de por medio (ej. "Proveedores/La
+// Sacedilla" en vez de "Proveedores/Prometall/La Sacedilla" — ambas
+// carpetas "La Sacedilla" existen, la buena es la de profundidad 1). Se
+// distingue mirando el contenido: una carpeta de obra tiene algún archivo
+// suelto directo (el Excel, un PDF...) o ya trae alguna de las subcarpetas
+// propias de una obra (Enviados/Organización/Valoración); una carpeta de
+// contacto normalmente solo contiene más carpetas (las obras de ese
+// contacto) y ninguna de esas marcas.
+async function esCarpetaDeObra(drive, folderId) {
+  const hijos = await listarHijos(drive, folderId, false);
+  if (hijos.some((h) => h.mimeType !== 'application/vnd.google-apps.folder')) return true;
+  return hijos.some((h) => /envia/i.test(h.name) || /^\d*\.?\s*organizaci[oó]n/i.test(h.name) || /valoraci/i.test(h.name));
+}
+
+// Enumera las carpetas de obra por su posición en el árbol, en vez de
+// depender de encontrar un Excel de cálculo dentro (así se descubre igual
+// una obra recién creada, sin Excel todavía).
+async function listarObrasDeCategoria(drive, categoriaFolder) {
+  const categoria = CATEGORIA_SINGULAR[categoriaFolder.name] || categoriaFolder.name;
+  if (categoriaFolder.name === 'Particulares') {
+    const obraFolders = await listarHijos(drive, categoriaFolder.id, true);
+    return obraFolders.map((f) => ({
+      obra: f.name.trim(),
+      obraFolderId: f.id,
+      categoria,
+      contacto: null,
+      fechaCreacionCarpeta: f.createdTime ? f.createdTime.slice(0, 10) : null,
+    }));
+  }
+  const hijosDirectos = await listarHijos(drive, categoriaFolder.id, true);
+  const obras = [];
+  for (const hijo of hijosDirectos) {
+    if (await esCarpetaDeObra(drive, hijo.id)) {
+      // Cuelga directo de la categoría, sin contacto — igual que Particulares.
+      obras.push({
+        obra: hijo.name.trim(),
+        obraFolderId: hijo.id,
+        categoria,
+        contacto: null,
+        fechaCreacionCarpeta: hijo.createdTime ? hijo.createdTime.slice(0, 10) : null,
+      });
+      continue;
+    }
+    // Es un contacto: sus hijos son las obras.
+    const obraFolders = await listarHijos(drive, hijo.id, true);
+    for (const f of obraFolders) {
+      obras.push({
+        obra: f.name.trim(),
+        obraFolderId: f.id,
+        categoria,
+        contacto: hijo.name,
+        fechaCreacionCarpeta: f.createdTime ? f.createdTime.slice(0, 10) : null,
       });
     }
   }
+  return obras;
 }
 
-// La obra ahora se identifica por carpeta, no por archivo: puede haber
-// varios Excel para la misma obra (versiones numeradas, variantes como
-// "- Persianas"/"- Barandillas", o copias archivadas en subcarpetas tipo
-// "Doc"/"Pptos ant"). Se queda uno solo por obra, en este orden de
-// prioridad: el más cerca de la raíz de la obra (menos profundidad) desempata
-// primero — un archivo archivado en una subcarpeta no debería ganarle a uno
-// que vive directo en la obra solo por tener fecha de modificación más
-// reciente; luego el de mayor prefijo numérico; y por último el modificado
+// Puede haber varios Excel de cálculo para la misma obra (versiones
+// numeradas, o copias archivadas en subcarpetas tipo "Doc"/"Pptos ant") —
+// se recorre la carpeta de la obra recursivamente y se elige uno solo, en
+// este orden de prioridad: el más cerca de la raíz de la obra (menos
+// profundidad) desempata primero — un archivo archivado en una subcarpeta
+// no debería ganarle a uno que vive directo en la obra solo por tener
+// fecha de modificación más reciente (caso real: Av. Fuentelarreina 24,
+// un cálculo viejo/incompleto en "Doc" con fecha más nueva le ganaba al
+// bueno); luego el de mayor prefijo numérico; y por último el modificado
 // más reciente.
 function esMejorCandidato(nuevo, actual) {
   if (nuevo.profundidadDesdeObra !== actual.profundidadDesdeObra) {
@@ -126,20 +156,75 @@ function esMejorCandidato(nuevo, actual) {
   return nuevo.modifiedTime > actual.modifiedTime;
 }
 
-function deduplicarPorObra(archivos) {
-  const grupos = new Map();
-  for (const a of archivos) {
-    const candidato = { ...a, prefijo: extraerPrefijoNumerico(a.nombreArchivo) ?? -1 };
-    const actual = grupos.get(a.obra);
-    if (!actual || esMejorCandidato(candidato, actual)) {
-      grupos.set(a.obra, candidato);
+async function buscarCalculoDeObra(drive, obraFolderId) {
+  const candidatos = [];
+  async function recorrer(folderId, profundidad) {
+    const hijos = await listarHijos(drive, folderId, false);
+    for (const f of hijos) {
+      if (f.mimeType === 'application/vnd.google-apps.folder') {
+        await recorrer(f.id, profundidad + 1);
+      } else if (/CALCULO.*\.xlsx$/i.test(f.name) && esArchivoValido(f.name)) {
+        candidatos.push({
+          fileId: f.id,
+          nombreArchivo: f.name,
+          modifiedTime: f.modifiedTime,
+          profundidadDesdeObra: profundidad,
+          prefijo: extraerPrefijoNumerico(f.name) ?? -1,
+        });
+      }
     }
   }
-  return Array.from(grupos.values());
+  await recorrer(obraFolderId, 0);
+  if (candidatos.length === 0) return null;
+  return candidatos.reduce((mejor, actual) => (esMejorCandidato(actual, mejor) ? actual : mejor));
 }
 
 function esperar(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Puede haber más de una carpeta con el mismo nombre de obra en ramas
+// distintas del árbol — nombres de lugar comunes que se reusan entre
+// clientes/años, o carpetas viejas que quedaron archivadas en otra
+// categoría/contacto. Casos reales encontrados: "La Sacedilla" (una vacía,
+// otra con el Excel real) y "Menendez Pelayo" (9 carpetas, solo 1 con
+// Excel de cálculo — el resto son archivos sueltos de años anteriores).
+// Antes esto no era un problema porque una obra solo se descubría A PARTIR
+// de encontrar su Excel (una carpeta sin Excel ni existía para el
+// recorrido); ahora que toda carpeta cuenta como obra desde el vamos, hace
+// falta elegir UNA sola por nombre — se prefiere la que tenga Excel de
+// cálculo por sobre la que no; si hay empate (varias con Excel, o ninguna
+// con Excel), se deja la primera encontrada y se avisa por consola para
+// que alguien revise a mano si hace falta.
+async function resolverObrasUnicas(drive, obras) {
+  const porNombre = new Map();
+  for (const info of obras) {
+    if (!porNombre.has(info.obra)) porNombre.set(info.obra, []);
+    porNombre.get(info.obra).push(info);
+  }
+
+  const resueltas = [];
+  for (const [obra, candidatos] of porNombre) {
+    if (candidatos.length === 1) {
+      const calculo = await buscarCalculoDeObra(drive, candidatos[0].obraFolderId);
+      resueltas.push({ ...candidatos[0], calculo });
+      continue;
+    }
+
+    let mejor = null;
+    for (const candidato of candidatos) {
+      const calculo = await buscarCalculoDeObra(drive, candidato.obraFolderId);
+      if (!mejor || (calculo && !mejor.calculo)) {
+        mejor = { ...candidato, calculo };
+      }
+    }
+    console.log(
+      `AVISO: "${obra}" tiene ${candidatos.length} carpetas con el mismo nombre en el árbol — se usó la de ` +
+      `${mejor.categoria}${mejor.contacto ? '/' + mejor.contacto : ''}${mejor.calculo ? ' (con Excel de cálculo)' : ' (ninguna tenía Excel, cualquiera daba igual)'}.`,
+    );
+    resueltas.push(mejor);
+  }
+  return resueltas;
 }
 
 // Obras marcadas "Descartado" en el panel: ya no interesa mantenerlas al
@@ -213,19 +298,19 @@ async function main() {
     fields: 'files(id, name, createdTime)',
   });
 
-  let encontrados = [];
+  let obras = [];
   for (const cat of categorias.data.files) {
-    await recorrer(drive, cat.id, [cat.name], [cat.id], [cat.createdTime], encontrados);
+    obras = obras.concat(await listarObrasDeCategoria(drive, cat));
   }
-  const antesDedup = encontrados.length;
-  encontrados = deduplicarPorObra(encontrados);
-  console.log(`Encontrados: ${antesDedup} archivos -> ${encontrados.length} obras tras deduplicar por carpeta\n`);
+  const antesDeResolver = obras.length;
+  obras = await resolverObrasUnicas(drive, obras);
+  console.log(`Carpetas de obra encontradas: ${antesDeResolver} -> ${obras.length} obras tras resolver nombres repetidos\n`);
 
   const resultados = { ok: [], omitidos: [], error: [] };
   const nombresActivos = []; // obra final (con sufijo de opción si aplica) por cada variante considerada este run
 
-  for (const archivo of encontrados) {
-    const obra = archivo.obra;
+  for (const info of obras) {
+    const obra = info.obra;
     // Descartado sin variantes de opción es el caso común: se salta antes
     // de leer el Excel/PDF. Si la obra tiene opciones ("— Opción A/B"), el
     // nombre base no va a matchear acá — se filtra más abajo, por variante,
@@ -242,18 +327,29 @@ async function main() {
     // envíen, sin tener que armar la carpeta a mano.
     if (!basesExistentes.has(obra)) {
       try {
-        await asegurarCarpetasNuevaObra(drive, archivo.obraFolderId, obra);
+        await asegurarCarpetasNuevaObra(drive, info.obraFolderId, obra);
       } catch (err) {
         console.error(`ERROR creando carpetas para obra nueva "${obra}": ${err.message}`);
       }
     }
 
-    const tmpPath = path.join(__dirname, `tmp_${archivo.fileId}.xlsx`);
+    let tmpPath = null;
     try {
-      const buffer = await descargarComoBuffer(drive, archivo.fileId);
-      fs.writeFileSync(tmpPath, buffer);
-      const camposBase = extraerCampos(tmpPath);
-      const faltantes = CAMPOS_RESPALDABLES.filter((c) => camposBase[c] === null || camposBase[c] === undefined);
+      const calculo = info.calculo;
+
+      // Sin Excel todavía: la sola carpeta ya es una solicitud real, sube
+      // como "En Estudio" con el resto de los campos vacíos — antes se
+      // quedaba completamente invisible hasta que alguien subiera el Excel.
+      let camposBase = { estatus: 'En Estudio' };
+      let faltantes = CAMPOS_RESPALDABLES;
+
+      if (calculo) {
+        tmpPath = path.join(__dirname, `tmp_${calculo.fileId}.xlsx`);
+        const buffer = await descargarComoBuffer(drive, calculo.fileId);
+        fs.writeFileSync(tmpPath, buffer);
+        camposBase = extraerCampos(tmpPath);
+        faltantes = CAMPOS_RESPALDABLES.filter((c) => camposBase[c] === null || camposBase[c] === undefined);
+      }
 
       // Una entrada por PDF encontrado: normalmente una sola (la más
       // reciente), o varias si la carpeta de la obra tiene "opciones"
@@ -265,7 +361,7 @@ async function main() {
       // distinto que reusa el mismo nombre de lugar (caso real: Navacerrada).
       let envios;
       try {
-        envios = await resolverEnviosDeObra(obra, faltantes, archivo.obraFolderId, archivo.fechaCreacionCarpeta);
+        envios = await resolverEnviosDeObra(obra, faltantes, info.obraFolderId, info.fechaCreacionCarpeta);
       } catch {
         envios = [{ sufijo: '', campos: {} }]; // sigue sin el respaldo/fecha si la búsqueda falla
       }
@@ -303,23 +399,23 @@ async function main() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             obra: obraFinal,
-            categoria: archivo.categoria,
-            contacto: archivo.contacto,
-            fecha_creacion_carpeta: archivo.fechaCreacionCarpeta,
+            categoria: info.categoria,
+            contacto: info.contacto,
+            fecha_creacion_carpeta: info.fechaCreacionCarpeta,
             ...campos,
           }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(JSON.stringify(data));
 
-        console.log(`OK: ${obraFinal}`);
+        console.log(`OK${calculo ? '' : ' (sin Excel de cálculo todavía)'}: ${obraFinal}`);
         resultados.ok.push(obraFinal);
       }
     } catch (err) {
-      console.error(`ERROR en "${obra}" (${archivo.nombreArchivo}): ${err.message}`);
-      resultados.error.push({ obra, archivo: archivo.nombreArchivo, error: err.message });
+      console.error(`ERROR en "${obra}": ${err.message}`);
+      resultados.error.push({ obra, error: err.message });
     } finally {
-      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+      if (tmpPath && fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
     }
     await esperar(250);
   }
