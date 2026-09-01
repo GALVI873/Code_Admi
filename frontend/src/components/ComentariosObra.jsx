@@ -15,10 +15,16 @@ function nombreBaseObra(obra) {
 
 function formatoFechaHora(iso) {
   if (!iso) return ''
-  // SQLite guarda "AAAA-MM-DD HH:MM:SS" en UTC.
-  const [fecha, hora] = iso.split(' ')
-  const [anio, mes, dia] = fecha.split('-')
-  return `${dia}/${mes}/${anio} ${(hora || '').slice(0, 5)}`
+  // SQLite guarda "AAAA-MM-DD HH:MM:SS" en UTC (datetime('now')) — hay que
+  // decírselo explícitamente a Date (agregando la "Z") para que el
+  // navegador la convierta a la hora local de quien la está viendo; si no,
+  // queda fija en UTC y se ve 1-2 horas atrás según la época del año.
+  const fecha = new Date(iso.replace(' ', 'T') + 'Z')
+  const dia = String(fecha.getDate()).padStart(2, '0')
+  const mes = String(fecha.getMonth() + 1).padStart(2, '0')
+  const horas = String(fecha.getHours()).padStart(2, '0')
+  const minutos = String(fecha.getMinutes()).padStart(2, '0')
+  return `${dia}/${mes}/${fecha.getFullYear()} ${horas}:${minutos}`
 }
 
 // Se muestra como ventana flotante dentro de la ficha (ancla en

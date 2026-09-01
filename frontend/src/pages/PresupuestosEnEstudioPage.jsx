@@ -46,6 +46,22 @@ function formatoFecha(iso) {
   return `${dia}/${mes}/${anio}`
 }
 
+// Una obra con varias alternativas de presupuesto (ej. "Alfonso XIII, Bajo
+// 2 — Opción A" / "— Opción B") vive en Drive y en el panel como filas
+// separadas — cada opción tiene vida propia, puede aceptarse o descartarse
+// en momentos distintos. Pero es UNA obra con pestañas adentro, no dos
+// tarjetas repetidas: nombreBase() quita el sufijo para agruparlas,
+// etiquetaOpcion() lo recupera para nombrar cada pestaña — mismo criterio
+// que la página Presupuesto (Geraldinne).
+function nombreBase(obra) {
+  return (obra || '').replace(/\s*—\s*Opci[oó]n\s+\w+\s*$/i, '')
+}
+
+function etiquetaOpcion(obra) {
+  const m = (obra || '').match(/—\s*(Opci[oó]n\s+\w+)\s*$/i)
+  return m ? m[1] : null
+}
+
 // "Pdt Aprobación" puesto a mano sin que exista un PDF en la carpeta
 // Enviados de la obra es un estado inconsistente — probablemente alguien se
 // adelantó o el PDF todavía no se subió a Drive. No se bloquea (el estatus
@@ -158,9 +174,9 @@ function TarjetaObra({ presupuesto, onAbrir, onCambio, puedeCambiarPrioridad, pu
       className={`obra-card ${alerta ? 'obra-card-alerta' : ''}`}
       role="button"
       tabIndex={0}
-      onClick={() => onAbrir(presupuesto.id)}
+      onClick={() => onAbrir(nombreBase(presupuesto.obra))}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') onAbrir(presupuesto.id)
+        if (e.key === 'Enter' || e.key === ' ') onAbrir(nombreBase(presupuesto.obra))
       }}
     >
       {alerta && <InsigniaAlerta />}
@@ -176,12 +192,65 @@ function TarjetaObra({ presupuesto, onAbrir, onCambio, puedeCambiarPrioridad, pu
   )
 }
 
-function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, puedeMarcarInteresante, accessToken, usuarioEmail, onLeido }) {
+// Tarjeta de una obra con varias opciones vivas: mismo look que TarjetaObra
+// (de hecho lo reusa cuando hay una sola opción, caso más común y sin
+// cambios visuales) pero cuando hay más de una, en vez de un único select de
+// Estatus/Prioridad muestra una insignia por opción — cada una con su propio
+// color de estatus — porque acá no hay un solo valor que mostrar; editar
+// cada opción se sigue haciendo adentro, en su propia pestaña del detalle.
+function TarjetaGrupoObra({ grupo, onAbrir, onCambio, puedeCambiarPrioridad, puedeMarcarInteresante }) {
+  const { base, opciones } = grupo
+  if (opciones.length === 1) {
+    return (
+      <TarjetaObra
+        presupuesto={opciones[0]}
+        onAbrir={onAbrir}
+        onCambio={onCambio}
+        puedeCambiarPrioridad={puedeCambiarPrioridad}
+        puedeMarcarInteresante={puedeMarcarInteresante}
+      />
+    )
+  }
+
+  const alerta = opciones.some(faltaEnvio)
+  return (
+    <div
+      className={`obra-card ${alerta ? 'obra-card-alerta' : ''}`}
+      role="button"
+      tabIndex={0}
+      onClick={() => onAbrir(base)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onAbrir(base)
+      }}
+    >
+      {alerta && <InsigniaAlerta />}
+      <InsigniaMensajes presupuesto={opciones[0]} />
+      <div className="obra-card-titulo" title={base}>{base}</div>
+      <div className="obra-card-cliente" title={opciones[0].cliente || ''}>{opciones[0].cliente || 'Sin cliente'}</div>
+      <div className="seguimiento-opciones-chips">
+        {opciones.map((o) => (
+          <span key={o.id} className={`seguimiento-chip-opcion ${CLASE_ESTATUS[o.estatus] || ''}`}>
+            {etiquetaOpcion(o.obra) || o.obra}
+          </span>
+        ))}
+      </div>
+      {grupo.prioridadAlta && <span className="badge badge-rechazado">Alta</span>}
+    </div>
+  )
+}
+
+function DetalleObra({ base, opciones, onCerrar, onCambio, puedeCambiarPrioridad, puedeMarcarInteresante, accessToken, usuarioEmail, onLeido }) {
+  const [pestanaActivaId, setPestanaActivaId] = useState(opciones[0]?.id)
   const [chatAbierto, setChatAbierto] = useState(false)
 
+  // Se resetea a la primera pestaña solo cuando se abre una obra distinta
+  // (por base, no por el array de opciones, que cambia de referencia cada
+  // vez que se guarda algo aunque sea la misma obra).
   useEffect(() => {
+    setPestanaActivaId(opciones[0]?.id)
     setChatAbierto(false)
-  }, [presupuesto.id])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base])
 
   useEffect(() => {
     function alEscape(e) {
@@ -191,20 +260,22 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, p
     return () => window.removeEventListener('keydown', alEscape)
   }, [onCerrar])
 
+  const activo = opciones.find((o) => o.id === pestanaActivaId) || opciones[0]
+
   return (
     <div className="modal-fondo" onClick={onCerrar}>
       <div className="modal-caja" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <h2>{presupuesto.obra}</h2>
-            <p>{presupuesto.cliente || 'Sin cliente'}</p>
+            <h2>{base}</h2>
+            <p>{activo.cliente || 'Sin cliente'}</p>
           </div>
           <div className="modal-header-acciones">
-            <NotificacionFechaLimite presupuesto={presupuesto} />
-            <BotonInteresante presupuesto={presupuesto} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
+            <NotificacionFechaLimite presupuesto={activo} />
+            <BotonInteresante presupuesto={activo} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
             <button
               type="button"
-              className={`chat-obra-boton ${chatAbierto ? 'chat-obra-boton-activo' : ''} ${presupuesto.tiene_mensajes_sin_leer ? 'chat-obra-boton-nuevo' : ''}`}
+              className={`chat-obra-boton ${chatAbierto ? 'chat-obra-boton-activo' : ''} ${activo.tiene_mensajes_sin_leer ? 'chat-obra-boton-nuevo' : ''}`}
               onClick={() => setChatAbierto((v) => !v)}
               aria-label="Conversación con Geraldinne"
               title="Conversación con Geraldinne"
@@ -217,7 +288,7 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, p
 
         {chatAbierto && (
           <ComentariosObra
-            obra={presupuesto.obra}
+            obra={activo.obra}
             accessToken={accessToken}
             usuarioEmail={usuarioEmail}
             onCerrar={() => setChatAbierto(false)}
@@ -225,31 +296,46 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, p
           />
         )}
 
-        {faltaEnvio(presupuesto) && (
+        {opciones.length > 1 && (
+          <div className="seguimiento-pestanas">
+            {opciones.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                className={`seguimiento-pestana ${CLASE_ESTATUS[o.estatus] || ''} ${o.id === activo.id ? 'seguimiento-pestana-activa' : ''}`}
+                onClick={() => setPestanaActivaId(o.id)}
+              >
+                {etiquetaOpcion(o.obra) || o.obra}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {faltaEnvio(activo) && (
           <p className="modal-aviso">⚠ "Pdt Aprobación" sin ningún presupuesto enviado registrado en Drive.</p>
         )}
 
         <div className="modal-meta">
           <div className="modal-campo">
             <span>Estatus</span>
-            <SelectEstatus presupuesto={presupuesto} onCambio={onCambio} />
+            <SelectEstatus presupuesto={activo} onCambio={onCambio} />
           </div>
           <div className="modal-campo">
             <span>Prioridad</span>
-            <SelectPrioridad presupuesto={presupuesto} onCambio={onCambio} puedeCambiar={puedeCambiarPrioridad} />
+            <SelectPrioridad presupuesto={activo} onCambio={onCambio} puedeCambiar={puedeCambiarPrioridad} />
           </div>
         </div>
 
         <dl className="modal-detalle">
-          <div><dt>Nº Ventanas</dt><dd>{presupuesto.no_ventanas ?? '—'}</dd></div>
-          <div><dt>Precio/m²</dt><dd>{formatoMoneda(presupuesto.precio_m2)}</dd></div>
-          <div><dt>RAL / Color</dt><dd>{presupuesto.ral || '—'}</dd></div>
-          <div><dt>Persiana</dt><dd>{presupuesto.persiana || '—'}</dd></div>
-          <div><dt>Vidrio</dt><dd>{presupuesto.vidrio || '—'}</dd></div>
-          <div><dt>Precio último ppto.</dt><dd>{formatoMoneda(presupuesto.precio_ultimo_presupuesto)}</dd></div>
-          <div><dt>Presupuesto persianas/motores</dt><dd>{formatoMoneda(presupuesto.precio_complementario)}</dd></div>
-          <div><dt>% Ganancia</dt><dd>{formatoPorcentaje(presupuesto.porcentaje_ganancia)}</dd></div>
-          <div><dt>Fecha último envío</dt><dd>{formatoFecha(presupuesto.fecha_ultimo_envio)}</dd></div>
+          <div><dt>Nº Ventanas</dt><dd>{activo.no_ventanas ?? '—'}</dd></div>
+          <div><dt>Precio/m²</dt><dd>{formatoMoneda(activo.precio_m2)}</dd></div>
+          <div><dt>RAL / Color</dt><dd>{activo.ral || '—'}</dd></div>
+          <div><dt>Persiana</dt><dd>{activo.persiana || '—'}</dd></div>
+          <div><dt>Vidrio</dt><dd>{activo.vidrio || '—'}</dd></div>
+          <div><dt>Precio último ppto.</dt><dd>{formatoMoneda(activo.precio_ultimo_presupuesto)}</dd></div>
+          <div><dt>Presupuesto persianas/motores</dt><dd>{formatoMoneda(activo.precio_complementario)}</dd></div>
+          <div><dt>% Ganancia</dt><dd>{formatoPorcentaje(activo.porcentaje_ganancia)}</dd></div>
+          <div><dt>Fecha último envío</dt><dd>{formatoFecha(activo.fecha_ultimo_envio)}</dd></div>
         </dl>
       </div>
     </div>
@@ -265,7 +351,7 @@ export default function PresupuestosEnEstudioPage() {
   const [filtroCategoria, setFiltroCategoria] = useState('Todos')
   const [filtroContacto, setFiltroContacto] = useState('Todos')
   const [filtroEstatus, setFiltroEstatus] = useState('Todos')
-  const [obraSeleccionadaId, setObraSeleccionadaId] = useState(null)
+  const [obraSeleccionadaBase, setObraSeleccionadaBase] = useState(null)
   const puedeCambiarPrioridad = tienePermiso('presupuestos.gestionar_prioridad')
   const puedeMarcarInteresante = tienePermiso('presupuestos.marcar_interesante')
 
@@ -301,7 +387,6 @@ export default function PresupuestosEnEstudioPage() {
       .filter((p) => !terminoObra || p.obra?.toLowerCase().includes(terminoObra))
       .filter((p) => filtroCategoria === 'Todos' || p.categoria === filtroCategoria)
       .filter((p) => filtroContacto === 'Todos' || p.contacto === filtroContacto)
-      .sort((a, b) => (a.obra || '').localeCompare(b.obra || '', 'es'))
   }, [filasSegunEstatus, busquedaObra, filtroCategoria, filtroContacto])
 
   function handleCambioCategoria(valor) {
@@ -309,19 +394,65 @@ export default function PresupuestosEnEstudioPage() {
     setFiltroContacto('Todos') // el contacto elegido puede no existir en la nueva categoría
   }
 
+  // Agrupa las opciones de una misma obra ("— Opción A"/"— Opción B") bajo
+  // una sola tarjeta (antes salían como obras separadas). El estatus que
+  // decide en qué sección aparece el grupo es el menos avanzado entre sus
+  // opciones vivas (el orden de ESTATUS_OPCIONES) — si una sigue "En
+  // Estudio" y otra ya está "Aceptado", la obra sigue necesitando trabajo
+  // activo, así que se queda en la sección de "En Estudio".
+  const gruposObra = useMemo(() => {
+    const mapa = new Map()
+    for (const p of filasFiltradas) {
+      const base = nombreBase(p.obra)
+      if (!mapa.has(base)) mapa.set(base, [])
+      mapa.get(base).push(p)
+    }
+    return Array.from(mapa.entries())
+      .map(([base, opciones]) => {
+        const estatusRepresentativo = opciones.reduce((mejor, o) => {
+          const iActual = ESTATUS_OPCIONES.indexOf(o.estatus)
+          const iMejor = ESTATUS_OPCIONES.indexOf(mejor)
+          if (iActual === -1) return mejor
+          if (iMejor === -1) return o.estatus
+          return iActual < iMejor ? o.estatus : mejor
+        }, opciones[0].estatus)
+        return {
+          base,
+          opciones,
+          prioridadAlta: opciones.some((o) => o.prioridad === 'Alta'),
+          estatusRepresentativo,
+        }
+      })
+      .sort((a, b) => a.base.localeCompare(b.base, 'es'))
+  }, [filasFiltradas])
+
+  const totalGruposSegunEstatus = useMemo(
+    () => new Set(filasSegunEstatus.map((p) => nombreBase(p.obra))).size,
+    [filasSegunEstatus],
+  )
+
   // Agrupadas por estatus (en el orden de ESTATUS_OPCIONES: En Estudio ->
   // En Valoración -> En Revisión -> Pdt Aprobación -> Aceptado) para que el
   // grid tenga secciones claras en vez de una sola pared de tarjetas. Al
   // filtrar por un estatus puntual no hace falta el agrupamiento: ya es un
-  // solo grupo.
+  // solo grupo (y solo entran las obras que tengan AL MENOS una opción en
+  // ese estatus puntual).
   const gruposVisibles = useMemo(() => {
-    if (filtroEstatus !== 'Todos') return [{ estatus: filtroEstatus, items: filasFiltradas }]
+    if (filtroEstatus !== 'Todos') {
+      return [{ estatus: filtroEstatus, items: gruposObra.filter((g) => g.opciones.some((o) => o.estatus === filtroEstatus)) }]
+    }
     return ESTATUS_OPCIONES.filter((e) => e !== 'Descartado')
-      .map((estatus) => ({ estatus, items: filasFiltradas.filter((p) => p.estatus === estatus) }))
+      .map((estatus) => ({ estatus, items: gruposObra.filter((g) => g.estatusRepresentativo === estatus) }))
       .filter((g) => g.items.length > 0)
-  }, [filasFiltradas, filtroEstatus])
+  }, [gruposObra, filtroEstatus])
 
-  const obraSeleccionada = filas.find((p) => p.id === obraSeleccionadaId) || null
+  // Todas las opciones vivas de la obra abierta (no solo las que pasan los
+  // filtros del grid) para que, una vez adentro, las pestañas no dependan de
+  // qué se estaba filtrando afuera cuando se abrió la tarjeta.
+  const opcionesSeleccionadas = useMemo(
+    () => (obraSeleccionadaBase ? filas.filter((p) => nombreBase(p.obra) === obraSeleccionadaBase) : []),
+    [filas, obraSeleccionadaBase],
+  )
 
   async function handleCambio(id, cambios) {
     const anteriores = filas
@@ -335,10 +466,11 @@ export default function PresupuestosEnEstudioPage() {
   }
 
   // Solo local: el backend ya marcó la conversación como leída al abrir el
-  // hilo (comentarios_obra.php), acá solo se apaga la insignia en la
-  // tarjeta sin esperar a recargar toda la lista.
-  function handleLeido(id) {
-    setFilas((f) => f.map((p) => (p.id === id ? { ...p, tiene_mensajes_sin_leer: false } : p)))
+  // hilo (comentarios_obra.php). Se limpia la insignia en TODAS las opciones
+  // que comparten la misma obra base (la conversación es una sola para
+  // todas, ver ComentariosObra), no solo en la pestaña que estaba activa.
+  function handleLeido(base) {
+    setFilas((f) => f.map((p) => (nombreBase(p.obra) === base ? { ...p, tiene_mensajes_sin_leer: false } : p)))
   }
 
   return (
@@ -407,7 +539,7 @@ export default function PresupuestosEnEstudioPage() {
             </select>
           </div>
           <span className="filtro-contador">
-            {filasFiltradas.length} de {filasSegunEstatus.length}
+            {gruposObra.length} de {totalGruposSegunEstatus}
           </span>
         </div>
       )}
@@ -430,11 +562,11 @@ export default function PresupuestosEnEstudioPage() {
                 </h2>
               )}
               <div className="obras-grid">
-                {grupo.items.map((p) => (
-                  <TarjetaObra
-                    key={p.id}
-                    presupuesto={p}
-                    onAbrir={setObraSeleccionadaId}
+                {grupo.items.map((g) => (
+                  <TarjetaGrupoObra
+                    key={g.base}
+                    grupo={g}
+                    onAbrir={setObraSeleccionadaBase}
                     onCambio={handleCambio}
                     puedeCambiarPrioridad={puedeCambiarPrioridad}
                     puedeMarcarInteresante={puedeMarcarInteresante}
@@ -443,22 +575,23 @@ export default function PresupuestosEnEstudioPage() {
               </div>
             </section>
           ))}
-          {filasFiltradas.length === 0 && (
+          {gruposObra.length === 0 && (
             <p className="dashboard-nota">Ningún presupuesto coincide con los filtros aplicados.</p>
           )}
         </>
       )}
 
-      {obraSeleccionada && (
+      {obraSeleccionadaBase && opcionesSeleccionadas.length > 0 && (
         <DetalleObra
-          presupuesto={obraSeleccionada}
-          onCerrar={() => setObraSeleccionadaId(null)}
+          base={obraSeleccionadaBase}
+          opciones={opcionesSeleccionadas}
+          onCerrar={() => setObraSeleccionadaBase(null)}
           onCambio={handleCambio}
           puedeCambiarPrioridad={puedeCambiarPrioridad}
           puedeMarcarInteresante={puedeMarcarInteresante}
           accessToken={accessToken}
           usuarioEmail={usuario.email}
-          onLeido={() => handleLeido(obraSeleccionada.id)}
+          onLeido={() => handleLeido(obraSeleccionadaBase)}
         />
       )}
     </div>
