@@ -8,6 +8,11 @@
 // Si la carpeta "Enviados" de una obra trae PDFs etiquetados "Opción A" /
 // "Opción B" (alternativas, no revisiones), sube una fila por opción
 // ("Obra — Opción A", "Obra — Opción B") en vez de una sola.
+// Toda obra que aparece por primera vez (nunca estuvo antes en el panel)
+// recibe automáticamente sus carpetas "Enviados" y "1.Organización/
+// Valoración" si no las tiene ya (ver asegurarCarpetasNuevaObra) — así
+// queda listo el lugar donde guardar el PDF/las ofertas sin que nadie
+// tenga que armar la carpeta a mano.
 const path = require('path');
 const fs = require('fs');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
@@ -141,7 +146,11 @@ function esperar(ms) {
 // día, ni el trabajo de leer su Excel/PDF ni la escritura al panel. Trae el
 // listado completo con una sola llamada (acción de solo lectura protegida
 // por el mismo SYNC_TOKEN) para poder saltarlas antes de tocar Drive.
-async function obtenerObrasDescartadas() {
+// De paso devuelve también el nombre BASE (sin "— Opción A/B") de toda obra
+// que YA existía en el panel antes de esta corrida — sirve para detectar
+// obras nuevas y provisionarles las carpetas de Enviados/Valoración (ver
+// asegurarCarpetasNuevaObra).
+async function obtenerEstadoPanel() {
   const url = `${process.env.PANEL_API_URL}/presupuestos_en_estudio.php?token=${process.env.SYNC_TOKEN}`;
   const res = await fetch(url, {
     method: 'POST',
@@ -150,12 +159,53 @@ async function obtenerObrasDescartadas() {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(JSON.stringify(data));
-  return new Set(data.presupuestos.filter((p) => p.estatus === 'Descartado').map((p) => p.obra));
+  return {
+    descartadas: new Set(data.presupuestos.filter((p) => p.estatus === 'Descartado').map((p) => p.obra)),
+    basesExistentes: new Set(data.presupuestos.map((p) => p.obra.replace(/\s*—\s*Opci[oó]n\s+\w+\s*$/i, '').trim())),
+  };
+}
+
+async function buscarSubcarpeta(drive, parentId, patron) {
+  const res = await drive.files.list({
+    q: `'${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+    fields: 'files(id, name)',
+  });
+  return res.data.files.find((f) => patron.test(f.name)) || null;
+}
+
+async function crearCarpeta(drive, parentId, nombre) {
+  const creada = await drive.files.create({
+    resource: { name: nombre, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] },
+    fields: 'id, name',
+  });
+  return creada.data;
+}
+
+async function obtenerOCrearSubcarpeta(drive, parentId, nombre, patron) {
+  const existente = await buscarSubcarpeta(drive, parentId, patron);
+  if (existente) return existente;
+  return crearCarpeta(drive, parentId, nombre);
+}
+
+// Provisiona en Drive lo que una obra recién descubierta necesita para
+// poder avanzar sola por el flujo automático de estatus: una carpeta
+// "Enviados" (ahí se guarda el PDF del presupuesto ya enviado — sin esto la
+// obra nunca puede llegar a "Pdt Aprobación", ver pdfsEnCarpetaObra en
+// extract_from_sent_pdf.js) y una carpeta "Valoración" dentro de
+// "1.Organización" (para las ofertas de proveedor que pide Geraldinne, ver
+// carpetaValoracion en extract_ofertas_proveedor.js). Idempotente: si ya
+// existe una carpeta cuyo nombre matchea el patrón esperado, no crea otra
+// — puede correr de nuevo sin duplicar nada.
+async function asegurarCarpetasNuevaObra(drive, obraFolderId, obra) {
+  await obtenerOCrearSubcarpeta(drive, obraFolderId, 'Enviados', /envia/i);
+  const organizacion = await obtenerOCrearSubcarpeta(drive, obraFolderId, '1.Organización', /^\d*\.?\s*organizaci[oó]n/i);
+  await obtenerOCrearSubcarpeta(drive, organizacion.id, 'Valoración', /valoraci/i);
+  console.log(`Carpetas provisionadas (obra nueva): ${obra}`);
 }
 
 async function main() {
   const drive = getDrive();
-  const descartadas = await obtenerObrasDescartadas();
+  const { descartadas, basesExistentes } = await obtenerEstadoPanel();
   console.log(`Obras descartadas (se omiten): ${descartadas.size}\n`);
 
   const categorias = await drive.files.list({
@@ -185,6 +235,19 @@ async function main() {
       resultados.omitidos.push({ obra, motivo: 'Descartado' });
       continue;
     }
+
+    // Obra nueva (su nombre base nunca apareció en el panel antes de esta
+    // corrida): se le crean las carpetas de Enviados/Valoración de una vez,
+    // para que Geraldinne/Álvaro ya tengan dónde guardar el PDF cuando lo
+    // envíen, sin tener que armar la carpeta a mano.
+    if (!basesExistentes.has(obra)) {
+      try {
+        await asegurarCarpetasNuevaObra(drive, archivo.obraFolderId, obra);
+      } catch (err) {
+        console.error(`ERROR creando carpetas para obra nueva "${obra}": ${err.message}`);
+      }
+    }
+
     const tmpPath = path.join(__dirname, `tmp_${archivo.fileId}.xlsx`);
     try {
       const buffer = await descargarComoBuffer(drive, archivo.fileId);

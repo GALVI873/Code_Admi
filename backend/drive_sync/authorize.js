@@ -17,10 +17,16 @@ const oauth2Client = new google.auth.OAuth2(
   REDIRECT_URI,
 );
 
+// Antes era "drive.readonly" (todo lo que hacían los scripts era leer). Se
+// amplía a acceso completo porque sync_all.js ahora también CREA carpetas
+// ("Enviados" y "1.Organización/Valoración" para obras nuevas) dentro de
+// carpetas de obra que no creó esta app — "drive.file" no alcanza para eso,
+// ese scope solo da acceso a archivos que la app misma creó o que el
+// usuario abrió a mano con un selector de archivos.
 const authUrl = oauth2Client.generateAuthUrl({
   access_type: 'offline',
   prompt: 'consent',
-  scope: ['https://www.googleapis.com/auth/drive.readonly'],
+  scope: ['https://www.googleapis.com/auth/drive'],
 });
 
 console.log('AUTH_URL:' + authUrl);
