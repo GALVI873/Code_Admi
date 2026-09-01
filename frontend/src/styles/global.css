@@ -830,27 +830,6 @@ body {
   font-size: 12.5px;
 }
 
-.modal-campo-ancho {
-  margin-bottom: 20px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.textarea-inline {
-  border: 1px solid #dfe6e9;
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-size: 13.5px;
-  font-family: inherit;
-  background: white;
-  resize: vertical;
-}
-
-.textarea-inline:focus {
-  outline: none;
-  border-color: var(--azul-clar);
-}
-
 .modal-detalle {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -880,28 +859,80 @@ body {
   margin: 22px 0 10px;
 }
 
-.modal-comentario-caja {
-  background: #dde1e7;
-  border-radius: 8px;
-  padding: 12px 14px;
-  margin-bottom: 20px;
+/* Conversación entre Álvaro y Geraldinne dentro del detalle de una obra
+   (ComentariosObra.jsx) — no es tiempo real, es un hilo que se recarga al
+   abrir la obra, por eso el look de lista simple en vez de burbujas con
+   animación de "escribiendo…". */
+.chat-obra {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #f0f0f0;
 }
 
-.modal-comentario-caja span {
+.chat-obra-titulo {
   display: block;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
-  color: #5b6472;
+  color: #7a8699;
   text-transform: uppercase;
   letter-spacing: .03em;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
 
-.modal-comentario-lectura {
-  font-size: 14px;
+.chat-obra-mensajes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+
+.chat-obra-mensaje {
+  background: #f7f9fc;
+  border: 1px solid #e3e8f0;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.chat-obra-mensaje-propio {
+  background: #eaf0fb;
+  border-color: #cddcf3;
+}
+
+.chat-obra-mensaje-cabecera {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 3px;
+}
+
+.chat-obra-mensaje-autor {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--azul-med);
+}
+
+.chat-obra-mensaje-fecha {
+  font-size: 11px;
+  color: #999;
+  white-space: nowrap;
+}
+
+.chat-obra-mensaje-texto {
+  font-size: 13.5px;
   color: var(--texto);
   white-space: pre-wrap;
   margin: 0;
+}
+
+.chat-obra-form {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-obra-form .input-filtro {
+  flex: 1;
 }
 
 .notificacion-fecha-limite {

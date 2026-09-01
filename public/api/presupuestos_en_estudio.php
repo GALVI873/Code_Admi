@@ -13,14 +13,17 @@ declare(strict_types=1);
 // lo leído de la carpeta "Valoración" contra las solicitudes "Pendiente" que
 // Geraldinne ya había cargado (ver PATCH abajo) en vez de reemplazar todo —
 // así no se pisa lo que ella cargó a mano.
-// PATCH: cambia prioridad, interesante, estatus, el comentario/fecha límite de
+// PATCH: cambia prioridad, interesante, estatus, la fecha límite de
 // Geraldinne, y/o gestiona sus solicitudes de valoración a proveedor:
 //   - "prioridad" requiere el permiso presupuestos.gestionar_prioridad (solo admin).
 //   - "interesante" requiere presupuestos.marcar_interesante (admin — Álvaro/
 //     Valentina — y también Geraldinne, rol presupuestos).
 //   - "estatus" requiere ver_todos o ver_seguimiento (cualquiera que pueda ver la tabla).
-//   - "comentario_geraldinne"/"fecha_limite_entrega" requieren presupuestos.ver_seguimiento
-//     (solo Geraldinne — Álvaro las ve en su vista pero no las edita).
+//   - "fecha_limite_entrega" requiere presupuestos.ver_seguimiento (solo
+//     Geraldinne — Álvaro la ve en su vista pero no la edita).
+//   - la conversación entre Álvaro y Geraldinne sobre una obra ya no vive acá
+//     como un solo campo de texto: ver comentarios_obra.php (hilo de
+//     mensajes, no un upsert de una sola fila).
 //   - {accion:"agregar_solicitud_oferta", obra, proveedor, fecha_solicitud},
 //     {accion:"eliminar_oferta", oferta_id} y {accion:"cambiar_estatus_oferta",
 //     oferta_id, estatus:"Pendiente"|"No recibido"} requieren
@@ -323,13 +326,6 @@ try {
             }
             $db->prepare("UPDATE presupuestos_en_estudio SET estatus = ?, actualizado_en = datetime('now') WHERE id = ?")
                 ->execute([$estatus, $id]);
-        }
-
-        if (array_key_exists('comentario_geraldinne', $body)) {
-            AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_seguimiento');
-            $comentario = trim((string) $body['comentario_geraldinne']);
-            $db->prepare("UPDATE presupuestos_en_estudio SET comentario_geraldinne = ?, actualizado_en = datetime('now') WHERE id = ?")
-                ->execute([$comentario === '' ? null : $comentario, $id]);
         }
 
         if (array_key_exists('fecha_limite_entrega', $body)) {

@@ -7,6 +7,7 @@ import {
   eliminarOferta,
   cambiarEstatusOferta,
 } from '../api/client.js'
+import ComentariosObra from '../components/ComentariosObra.jsx'
 
 // Espacio de trabajo personal de Geraldinne. Nunca muestra Descartadas —a
 // diferencia de Presupuestos en Estudio, acá ni siquiera es una opción de
@@ -368,36 +369,6 @@ function FechaLimiteEntrega({ presupuesto, onCambio }) {
   )
 }
 
-// Comentario libre de Geraldinne para Álvaro sobre la obra — a diferencia
-// de los selects (que guardan en cada cambio), un textarea guarda recién al
-// salir del campo para no mandar un PATCH por cada letra tecleada. Estado
-// local propio porque el valor puede quedar "sucio" mientras se escribe,
-// antes de confirmar con onBlur.
-function ComentarioParaAlvaro({ presupuesto, onCambio }) {
-  const [valor, setValor] = useState(presupuesto.comentario_geraldinne || '')
-
-  useEffect(() => {
-    setValor(presupuesto.comentario_geraldinne || '')
-  }, [presupuesto.id, presupuesto.comentario_geraldinne])
-
-  function guardar() {
-    if (valor !== (presupuesto.comentario_geraldinne || '')) {
-      onCambio(presupuesto.id, { comentario_geraldinne: valor })
-    }
-  }
-
-  return (
-    <textarea
-      className="textarea-inline"
-      rows={3}
-      placeholder="Dejar un comentario para Álvaro sobre esta obra…"
-      value={valor}
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => setValor(e.target.value)}
-      onBlur={guardar}
-    />
-  )
-}
 
 // Estrella para marcar una obra de alto interés — antes exclusiva de
 // Álvaro/Valentina (permiso presupuestos.marcar_interesante), ahora
@@ -488,7 +459,7 @@ function TarjetaGrupoSeguimiento({ grupo, onAbrir, onCambio, puedeMarcarInteresa
   )
 }
 
-function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta, puedeMarcarInteresante }) {
+function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta, puedeMarcarInteresante, accessToken, usuarioEmail }) {
   const [ofertasAbiertas, setOfertasAbiertas] = useState(false)
   const [pestanaActivaId, setPestanaActivaId] = useState(opciones[0]?.id)
 
@@ -558,10 +529,7 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
           </div>
         </div>
 
-        <div className="modal-campo modal-campo-ancho">
-          <span>Comentario para Álvaro</span>
-          <ComentarioParaAlvaro presupuesto={activo} onCambio={onCambio} />
-        </div>
+        <ComentariosObra obra={activo.obra} accessToken={accessToken} usuarioEmail={usuarioEmail} />
 
         <LineaTiempo
           presupuesto={activo}
@@ -880,6 +848,8 @@ export default function SeguimientoPage() {
           onEliminarOferta={handleEliminarOferta}
           onCambiarEstatusOferta={handleCambiarEstatusOferta}
           puedeMarcarInteresante={puedeMarcarInteresante}
+          accessToken={accessToken}
+          usuarioEmail={usuario.email}
         />
       )}
     </div>

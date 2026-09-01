@@ -113,3 +113,17 @@ export function actualizarUbicacionDiarioGeneral(accessToken, id, ubicacion) {
     body: JSON.stringify({ id, ubicacion }),
   })
 }
+
+export function comentariosObra(accessToken, obra) {
+  return request(`/comentarios_obra.php?obra=${encodeURIComponent(obra)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
+export function agregarComentarioObra(accessToken, obra, mensaje) {
+  return request('/comentarios_obra.php', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ obra, mensaje }),
+  })
+}

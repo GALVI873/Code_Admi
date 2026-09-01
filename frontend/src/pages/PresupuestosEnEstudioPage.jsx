@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { presupuestosEnEstudio, actualizarPresupuestoEnEstudio } from '../api/client.js'
+import ComentariosObra from '../components/ComentariosObra.jsx'
 
 // Orden = flujo real: "En Estudio" es el default al descubrir la obra en
 // Drive (solo existe la carpeta, sin valores en la hoja de cálculo);
@@ -161,7 +162,7 @@ function TarjetaObra({ presupuesto, onAbrir, onCambio, puedeCambiarPrioridad, pu
   )
 }
 
-function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, puedeMarcarInteresante }) {
+function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, puedeMarcarInteresante, accessToken, usuarioEmail }) {
   useEffect(() => {
     function alEscape(e) {
       if (e.key === 'Escape') onCerrar()
@@ -200,13 +201,6 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, p
           </div>
         </div>
 
-        {presupuesto.comentario_geraldinne && (
-          <div className="modal-comentario-caja">
-            <span>Comentario de Geraldinne</span>
-            <p className="modal-comentario-lectura">{presupuesto.comentario_geraldinne}</p>
-          </div>
-        )}
-
         <dl className="modal-detalle">
           <div><dt>Nº Ventanas</dt><dd>{presupuesto.no_ventanas ?? '—'}</dd></div>
           <div><dt>Precio/m²</dt><dd>{formatoMoneda(presupuesto.precio_m2)}</dd></div>
@@ -218,13 +212,15 @@ function DetalleObra({ presupuesto, onCerrar, onCambio, puedeCambiarPrioridad, p
           <div><dt>% Ganancia</dt><dd>{formatoPorcentaje(presupuesto.porcentaje_ganancia)}</dd></div>
           <div><dt>Fecha último envío</dt><dd>{formatoFecha(presupuesto.fecha_ultimo_envio)}</dd></div>
         </dl>
+
+        <ComentariosObra obra={presupuesto.obra} accessToken={accessToken} usuarioEmail={usuarioEmail} />
       </div>
     </div>
   )
 }
 
 export default function PresupuestosEnEstudioPage() {
-  const { accessToken, tienePermiso } = useAuth()
+  const { usuario, accessToken, tienePermiso } = useAuth()
   const [filas, setFilas] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
@@ -416,6 +412,8 @@ export default function PresupuestosEnEstudioPage() {
           onCambio={handleCambio}
           puedeCambiarPrioridad={puedeCambiarPrioridad}
           puedeMarcarInteresante={puedeMarcarInteresante}
+          accessToken={accessToken}
+          usuarioEmail={usuario.email}
         />
       )}
     </div>
