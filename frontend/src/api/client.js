@@ -116,6 +116,28 @@ export function quitarConfirmacionObraAceptada(accessToken, obra, campo) {
   })
 }
 
+export function planosObra(accessToken, obra) {
+  return request(`/planos.php?obra=${encodeURIComponent(obra)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
+export function guardarPosicionPlano(accessToken, obra, posicionBase, pagina, xPct, yPct) {
+  return request('/planos.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ obra, posicion_base: posicionBase, pagina, x_pct: xPct, y_pct: yPct }),
+  })
+}
+
+export function quitarPosicionPlano(accessToken, obra, posicionBase) {
+  return request('/planos.php', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ obra, posicion_base: posicionBase }),
+  })
+}
+
 export function diarioGeneral(accessToken) {
   return request('/diario_general.php', {
     headers: { Authorization: `Bearer ${accessToken}` },

@@ -1458,3 +1458,90 @@ select.celda-editable-material {
     display: none;
   }
 }
+
+.planos-obra {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.planos-barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.planos-barra .seguimiento-pestanas {
+  margin-bottom: 0;
+}
+
+.planos-calibrar-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #7a8699;
+  cursor: pointer;
+}
+
+.planos-calibrar-panel {
+  background: #eaf0fb;
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.planos-calibrar-panel .dashboard-nota {
+  margin: 0 0 8px;
+}
+
+.planos-calibrar-lista {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.planos-calibrar-lista .chip-obra {
+  border: none;
+  cursor: pointer;
+}
+
+.planos-calibrar-lista .chip-obra-activo {
+  background: var(--azul-med);
+  color: white;
+}
+
+.planos-lienzo {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  border: 1px solid #dfe6e9;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.planos-lienzo img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  user-select: none;
+}
+
+.planos-marca {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(122, 134, 153, .35);
+  border: 2px solid #7a8699;
+  transform: translate(-50%, -50%);
+  cursor: default;
+}
+
+.planos-marca-en-obra {
+  background: rgba(45, 178, 96, .45);
+  border-color: #2db260;
+  box-shadow: 0 0 0 4px rgba(45, 178, 96, .25);
+}

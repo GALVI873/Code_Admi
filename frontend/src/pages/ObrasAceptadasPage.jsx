@@ -7,6 +7,9 @@ import {
   confirmarCampoObraAceptada,
   quitarConfirmacionObraAceptada,
   actualizarMaterialObraAceptada,
+  planosObra,
+  guardarPosicionPlano,
+  quitarPosicionPlano,
 } from '../api/client.js'
 
 // Espacio de trabajo de Alfredo (Gestión de Obras). Primera versión: solo
@@ -503,7 +506,189 @@ function FichaObraAceptada({ presupuesto, confirmaciones, onConfirmar, onQuitar 
   )
 }
 
-const PESTANAS_DETALLE = ['Ficha', 'Seguimiento']
+// El plano dibuja una sola vez la posición física ("2") aunque en BD esté
+// partida en varios ítems ("2.1"/"2.2", ej. dos hojas de una misma
+// ventana) — se calibra y se pinta por esta base, no por el código exacto
+// del Excel.
+function posicionBaseDe(posicion) {
+  if (!posicion) return null
+  const punto = posicion.indexOf('.')
+  return punto === -1 ? posicion : posicion.slice(0, punto)
+}
+
+function posicionesCarpinteriaEnObra(materiales) {
+  const set = new Set()
+  for (const m of materiales) {
+    if (/carpinter/i.test(m.material || '') && (m.estado || '').trim().toUpperCase() === 'EN OBRA') {
+      const base = posicionBaseDe(m.posicion)
+      if (base) set.add(base)
+    }
+  }
+  return set
+}
+
+// Los planos son un escaneo con la numeración de posición escrita a mano
+// (no hay texto embebido en el PDF, ver sync_planos.js) — no hay forma de
+// calcular sola la coordenada de cada una, así que se calibra una vez a
+// mano desde acá (modo "Calibrar posiciones": elegir la posición, click en
+// el plano) y queda guardada para las próximas veces. El verde se recalcula
+// solo con lo que ya está cargado en `materiales` — no hace falta releer
+// nada cuando Alfredo cambia el Estado de una posición de carpintería en la
+// pestaña Seguimiento, por eso se ve reflejado al toque.
+function PlanosObra({ obra, materiales }) {
+  const { accessToken } = useAuth()
+  const [paginas, setPaginas] = useState([])
+  const [posiciones, setPosiciones] = useState([])
+  const [paginaActiva, setPaginaActiva] = useState(1)
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState('')
+  const [modoCalibrar, setModoCalibrar] = useState(false)
+  const [posicionArmada, setPosicionArmada] = useState('')
+
+  useEffect(() => {
+    let cancelado = false
+    setCargando(true)
+    setError('')
+    setModoCalibrar(false)
+    setPosicionArmada('')
+    planosObra(accessToken, obra)
+      .then((data) => {
+        if (cancelado) return
+        setPaginas(data.paginas || [])
+        setPosiciones(data.posiciones || [])
+        setPaginaActiva((data.paginas || [])[0]?.pagina || 1)
+      })
+      .catch((err) => !cancelado && setError(err.message))
+      .finally(() => !cancelado && setCargando(false))
+    return () => {
+      cancelado = true
+    }
+  }, [obra, accessToken])
+
+  const posicionesBase = useMemo(() => {
+    const set = new Set()
+    materiales.forEach((m) => {
+      const base = posicionBaseDe(m.posicion)
+      if (base) set.add(base)
+    })
+    return [...set].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }))
+  }, [materiales])
+
+  const enObra = useMemo(() => posicionesCarpinteriaEnObra(materiales), [materiales])
+  const posicionesCalibradas = useMemo(() => new Set(posiciones.map((p) => p.posicion_base)), [posiciones])
+  const posicionesSinCalibrar = posicionesBase.filter((p) => !posicionesCalibradas.has(p))
+  const paginaImagen = paginas.find((p) => p.pagina === paginaActiva)
+  const posicionesDeEstaPagina = posiciones.filter((p) => p.pagina === paginaActiva)
+
+  async function handleClickImagen(e) {
+    if (!modoCalibrar || !posicionArmada) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const xPct = ((e.clientX - rect.left) / rect.width) * 100
+    const yPct = ((e.clientY - rect.top) / rect.height) * 100
+    const posicionGuardada = posicionArmada
+    try {
+      await guardarPosicionPlano(accessToken, obra, posicionGuardada, paginaActiva, xPct, yPct)
+      setPosiciones((ps) => [
+        ...ps.filter((p) => p.posicion_base !== posicionGuardada),
+        { posicion_base: posicionGuardada, pagina: paginaActiva, x_pct: xPct, y_pct: yPct },
+      ])
+      setPosicionArmada('')
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  async function handleQuitarMarca(posicionBase) {
+    try {
+      await quitarPosicionPlano(accessToken, obra, posicionBase)
+      setPosiciones((ps) => ps.filter((p) => p.posicion_base !== posicionBase))
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  if (cargando) return <p className="dashboard-nota">Cargando planos…</p>
+  if (error) return <div className="auth-error">{error}</div>
+  if (paginas.length === 0) return <p className="dashboard-nota">Todavía no hay planos sincronizados para esta obra.</p>
+
+  return (
+    <div className="planos-obra">
+      <div className="planos-barra">
+        <div className="seguimiento-pestanas">
+          {paginas.map((p) => (
+            <button
+              key={p.pagina}
+              type="button"
+              className={`seguimiento-pestana ${p.pagina === paginaActiva ? 'seguimiento-pestana-activa' : ''}`}
+              onClick={() => setPaginaActiva(p.pagina)}
+            >
+              Página {p.pagina}
+            </button>
+          ))}
+        </div>
+        <label className="planos-calibrar-toggle">
+          <input
+            type="checkbox"
+            checked={modoCalibrar}
+            onChange={(e) => {
+              setModoCalibrar(e.target.checked)
+              setPosicionArmada('')
+            }}
+          />
+          Calibrar posiciones
+        </label>
+      </div>
+
+      {modoCalibrar && (
+        <div className="planos-calibrar-panel">
+          <p className="dashboard-nota">
+            {posicionArmada
+              ? `Hacé click en el plano donde está dibujada la posición "${posicionArmada}". Click sobre una marca ya puesta la quita.`
+              : 'Elegí abajo la posición que vas a ubicar y después hacé click sobre el plano. Click sobre una marca ya puesta la quita.'}
+          </p>
+          <div className="planos-calibrar-lista">
+            {posicionesSinCalibrar.length === 0 && <span className="dashboard-nota">Todas las posiciones ya están ubicadas.</span>}
+            {posicionesSinCalibrar.map((p) => (
+              <button
+                key={p}
+                type="button"
+                className={`chip-obra ${p === posicionArmada ? 'chip-obra-activo' : ''}`}
+                onClick={() => setPosicionArmada(p === posicionArmada ? '' : p)}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {paginaImagen && (
+        <div
+          className="planos-lienzo"
+          onClick={handleClickImagen}
+          style={{ cursor: modoCalibrar && posicionArmada ? 'crosshair' : 'default' }}
+        >
+          <img src={paginaImagen.imagen_base64} alt={`Plano página ${paginaActiva}`} draggable={false} />
+          {posicionesDeEstaPagina.map((p) => (
+            <span
+              key={p.posicion_base}
+              className={`planos-marca ${enObra.has(p.posicion_base) ? 'planos-marca-en-obra' : ''}`}
+              style={{ left: `${p.x_pct}%`, top: `${p.y_pct}%` }}
+              title={`Posición ${p.posicion_base}${enObra.has(p.posicion_base) ? ' — EN OBRA' : ''}`}
+              onClick={(e) => {
+                if (!modoCalibrar) return
+                e.stopPropagation()
+                handleQuitarMarca(p.posicion_base)
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const PESTANAS_DETALLE = ['Ficha', 'Seguimiento', 'Planos']
 
 // Página propia (no modal): la información de una obra aceptada —
 // especialmente Seguimiento, con su tabla ancha y filtros por columna —
@@ -545,11 +730,13 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar
         ))}
       </div>
 
-      {pestana === 'Ficha' ? (
+      {pestana === 'Ficha' && (
         <FichaObraAceptada presupuesto={presupuesto} confirmaciones={confirmaciones} onConfirmar={onConfirmar} onQuitar={onQuitar} />
-      ) : (
+      )}
+      {pestana === 'Seguimiento' && (
         <SeguimientoPorPosicion materiales={materiales} onCambiarMaterial={(m, campo, valor) => onCambiarMaterial(presupuesto.obra, m, campo, valor)} />
       )}
+      {pestana === 'Planos' && <PlanosObra obra={presupuesto.obra} materiales={materiales} />}
     </div>
   )
 }
