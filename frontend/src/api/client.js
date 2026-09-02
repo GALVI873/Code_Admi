@@ -78,6 +78,22 @@ export function seguimientoMateriales(accessToken) {
   })
 }
 
+export function actualizarMaterialObraAceptada(accessToken, obra, material, campo, valor) {
+  return request('/seguimiento_materiales.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({
+      obra,
+      posicion: material.posicion,
+      tipo: material.tipo,
+      material: material.material,
+      descripcion: material.descripcion,
+      campo,
+      valor,
+    }),
+  })
+}
+
 export function obrasAceptadas(accessToken) {
   return request('/obras_aceptadas.php', {
     headers: { Authorization: `Bearer ${accessToken}` },

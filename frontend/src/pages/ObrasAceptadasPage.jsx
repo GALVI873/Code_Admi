@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { obrasAceptadas, seguimientoMateriales, confirmarCampoObraAceptada, quitarConfirmacionObraAceptada } from '../api/client.js'
+import {
+  obrasAceptadas,
+  seguimientoMateriales,
+  confirmarCampoObraAceptada,
+  quitarConfirmacionObraAceptada,
+  actualizarMaterialObraAceptada,
+} from '../api/client.js'
 
 // Espacio de trabajo de Alfredo (Gestión de Obras). Primera versión: solo
 // lectura, la lista de obras que Geraldinne ya movió a "Aceptadas" — según
@@ -46,59 +52,147 @@ function TarjetaObraAceptada({ presupuesto, materiales, onAbrir }) {
   )
 }
 
-// Cada posición (ventana) agrupa sus propias líneas de material
-// (Carpintería, Vidrio, Precerco...) — según Alfredo, así es como él arma
-// la hoja de seguimiento en la práctica: todo lo de una misma ventana
-// junto, no una lista plana de líneas sueltas.
-function SeguimientoPorPosicion({ materiales }) {
+// Campo de texto editable con guardado al perder el foco — usado para
+// Estado/Fecha Estimada/Comentario. Estado local propio porque el valor
+// puede quedar "sucio" mientras se escribe, antes de confirmar con onBlur
+// (mismo patrón que otros campos editables del panel).
+function CeldaEditable({ valor, tipo, lista, placeholder, onGuardar }) {
+  const [texto, setTexto] = useState(valor || '')
+
+  useEffect(() => {
+    setTexto(valor || '')
+  }, [valor])
+
+  function guardar() {
+    if (texto !== (valor || '')) onGuardar(texto)
+  }
+
+  return (
+    <input
+      type={tipo || 'text'}
+      className="input-filtro celda-editable-material"
+      list={lista}
+      placeholder={placeholder}
+      value={texto}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => setTexto(e.target.value)}
+      onBlur={guardar}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+      }}
+    />
+  )
+}
+
+function FilaMaterial({ m, estadosSugeridos, onCambiar }) {
+  return (
+    <tr>
+      <td className="seguimiento-oferta-proveedor">{m.material || '—'}</td>
+      <td>{m.descripcion || '—'}</td>
+      <td className="celda-confirmacion">
+        <CeldaEditable
+          valor={m.estado}
+          lista="estados-material-sugeridos"
+          placeholder="Estado…"
+          onGuardar={(v) => onCambiar(m, 'estado', v)}
+        />
+      </td>
+      <td>{m.proveedor || '—'}</td>
+      <td>{formatoFecha(m.fecha_pedido) || '—'}</td>
+      <td>{m.numero_orden || '—'}</td>
+      <td className="celda-confirmacion">
+        {m.fecha_estimada ? (
+          formatoFecha(m.fecha_estimada)
+        ) : (
+          <CeldaEditable valor="" tipo="date" onGuardar={(v) => onCambiar(m, 'fecha_estimada', v)} />
+        )}
+      </td>
+      <td className="celda-confirmacion">
+        <CeldaEditable
+          valor={m.comentario}
+          placeholder="Comentario…"
+          onGuardar={(v) => onCambiar(m, 'comentario', v)}
+        />
+      </td>
+      <datalist id="estados-material-sugeridos">
+        {estadosSugeridos.map((e) => <option key={e} value={e} />)}
+      </datalist>
+    </tr>
+  )
+}
+
+// Se agrupa primero por Tipo (el modelo de ventana — un mismo tipo puede
+// repetirse en varias posiciones físicas distintas de la obra) y dentro de
+// cada tipo por Posición (la ventana física puntual), con todas sus líneas
+// de material (Precerco/Carpintería/Vidrio/Persiana...) juntas — según
+// Alfredo, así es como él arma la hoja de seguimiento en la práctica.
+function agruparPorTipoYPosicion(materiales) {
+  const porTipo = new Map()
+  for (const m of materiales) {
+    const tipo = m.tipo || '(sin tipo)'
+    if (!porTipo.has(tipo)) porTipo.set(tipo, new Map())
+    const porPosicion = porTipo.get(tipo)
+    const pos = m.posicion || '(sin posición)'
+    if (!porPosicion.has(pos)) porPosicion.set(pos, [])
+    porPosicion.get(pos).push(m)
+  }
+  return [...porTipo.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, 'es', { numeric: true }))
+    .map(([tipo, porPosicion]) => ({
+      tipo,
+      posiciones: [...porPosicion.entries()]
+        .sort(([a], [b]) => a.localeCompare(b, 'es', { numeric: true }))
+        .map(([posicion, items]) => ({ posicion, items })),
+    }))
+}
+
+function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
   if (materiales.length === 0) {
     return <p className="seguimiento-ofertas-vacio">Todavía no hay seguimiento de material cargado para esta obra.</p>
   }
 
-  const grupos = []
-  const indicePorPosicion = new Map()
-  for (const m of materiales) {
-    const clave = m.posicion || '(sin posición)'
-    if (!indicePorPosicion.has(clave)) {
-      indicePorPosicion.set(clave, grupos.length)
-      grupos.push({ posicion: clave, items: [] })
-    }
-    grupos[indicePorPosicion.get(clave)].items.push(m)
-  }
+  const estadosSugeridos = useMemo(
+    () => [...new Set(materiales.map((m) => m.estado).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es')),
+    [materiales],
+  )
+  const grupos = useMemo(() => agruparPorTipoYPosicion(materiales), [materiales])
 
   return (
     <div className="posiciones-seguimiento">
       {grupos.map((grupo) => (
-        <div key={grupo.posicion} className="posicion-caja">
-          <div className="posicion-titulo">Posición {grupo.posicion}</div>
-          <div className="tabla-scroll">
-            <table className="tabla-ofertas">
-              <thead>
-                <tr>
-                  <th>Material</th>
-                  <th>Estado</th>
-                  <th>Proveedor</th>
-                  <th>Fecha Pedido</th>
-                  <th>Nº Orden</th>
-                  <th>Fecha Estimada</th>
-                  <th>Comentario</th>
-                </tr>
-              </thead>
-              <tbody>
-                {grupo.items.map((m) => (
-                  <tr key={m.id}>
-                    <td className="seguimiento-oferta-proveedor">{m.material || '—'}</td>
-                    <td>{m.estado || '—'}</td>
-                    <td>{m.proveedor || '—'}</td>
-                    <td>{formatoFecha(m.fecha_pedido) || '—'}</td>
-                    <td>{m.numero_orden || '—'}</td>
-                    <td>{formatoFecha(m.fecha_estimada) || '—'}</td>
-                    <td>{m.comentario || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div key={grupo.tipo} className="tipo-caja">
+          <div className="tipo-titulo">Tipo {grupo.tipo}</div>
+          {grupo.posiciones.map((sub) => (
+            <div key={sub.posicion} className="posicion-caja">
+              <div className="posicion-titulo">Posición {sub.posicion}</div>
+              <div className="tabla-scroll">
+                <table className="tabla-ofertas">
+                  <thead>
+                    <tr>
+                      <th>Material</th>
+                      <th>Descripción</th>
+                      <th>Estado</th>
+                      <th>Proveedor</th>
+                      <th>Fecha Pedido</th>
+                      <th>Nº Orden</th>
+                      <th>Fecha Estimada</th>
+                      <th>Comentario</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sub.items.map((m) => (
+                      <FilaMaterial
+                        key={m.filaExcel ?? `${m.tipo}-${m.posicion}-${m.material}-${m.descripcion}`}
+                        m={m}
+                        estadosSugeridos={estadosSugeridos}
+                        onCambiar={onCambiarMaterial}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
         </div>
       ))}
     </div>
@@ -233,7 +327,7 @@ function FichaObraAceptada({ presupuesto, confirmaciones, onConfirmar, onQuitar 
 
 const PESTANAS_DETALLE = ['Ficha', 'Seguimiento']
 
-function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar, onConfirmar, onQuitar }) {
+function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar, onConfirmar, onQuitar, onCambiarMaterial }) {
   const [pestana, setPestana] = useState('Ficha')
 
   useEffect(() => {
@@ -279,7 +373,7 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar
         {pestana === 'Ficha' ? (
           <FichaObraAceptada presupuesto={presupuesto} confirmaciones={confirmaciones} onConfirmar={onConfirmar} onQuitar={onQuitar} />
         ) : (
-          <SeguimientoPorPosicion materiales={materiales} />
+          <SeguimientoPorPosicion materiales={materiales} onCambiarMaterial={(m, campo, valor) => onCambiarMaterial(presupuesto.obra, m, campo, valor)} />
         )}
       </div>
     </div>
@@ -385,6 +479,24 @@ export default function ObrasAceptadasPage() {
     }
   }
 
+  // Se compara por referencia (=== m), no por contenido: puede haber dos
+  // ítems con exactamente los mismos valores (ej. dos paños de vidrio
+  // idénticos en la misma posición) — comparar por referencia asegura que
+  // se actualiza solo la fila que Alfredo tocó, aunque haya otra idéntica
+  // al lado. El guardado en el servidor sí identifica por contenido (no hay
+  // otra clave estable entre sincronizaciones, ver seguimiento_materiales.php)
+  // así que un duplicado exacto comparte el mismo valor guardado ahí.
+  async function handleCambiarMaterial(obra, m, campo, valor) {
+    const anteriores = materiales
+    setMateriales((ms) => ms.map((x) => (x === m ? { ...x, [campo]: valor } : x)))
+    try {
+      await actualizarMaterialObraAceptada(accessToken, obra, m, campo, valor)
+    } catch (err) {
+      setMateriales(anteriores)
+      setError(err.message)
+    }
+  }
+
   if (usuario?.email !== EMAIL_AUTORIZADO) {
     return (
       <div className="dashboard">
@@ -480,6 +592,7 @@ export default function ObrasAceptadasPage() {
           onCerrar={() => setObraSeleccionadaId(null)}
           onConfirmar={handleConfirmarCampo}
           onQuitar={handleQuitarConfirmacion}
+          onCambiarMaterial={handleCambiarMaterial}
         />
       )}
     </div>

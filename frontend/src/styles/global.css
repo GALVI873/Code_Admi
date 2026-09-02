@@ -858,6 +858,37 @@ body {
   margin-bottom: 8px;
 }
 
+/* Agrupa las posicion-caja de un mismo Tipo (modelo de ventana) — un tipo
+   puede repetirse en varias posiciones físicas de la obra. */
+.tipo-caja {
+  background: white;
+  border: 1px solid #dfe6e9;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.tipo-caja .posicion-caja + .posicion-caja {
+  margin-top: 10px;
+}
+
+.tipo-titulo {
+  display: inline-block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: white;
+  background: var(--azul);
+  padding: 4px 12px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+
+.celda-editable-material {
+  width: 100%;
+  min-width: 110px;
+  padding: 4px 8px;
+  font-size: 12.5px;
+}
+
 .modal-campo {
   display: flex;
   flex-direction: column;
