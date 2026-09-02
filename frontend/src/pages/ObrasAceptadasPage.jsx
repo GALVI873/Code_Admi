@@ -537,24 +537,31 @@ function posicionBaseDe(posicion) {
   return punto === -1 ? posicion : posicion.slice(0, punto)
 }
 
-function posicionesCarpinteriaEnObra(materiales) {
-  const set = new Set()
+// El color de cada marca del plano sale del Estado del ítem de Vidrio de
+// esa posición (no de Carpintería) — tolerante a variantes del texto libre
+// que viene del Excel ("EN FABRICACION" sin tilde, etc.), por eso busca la
+// palabra suelta en vez de comparar exacto.
+function posicionesPorEstadoVidrio(materiales) {
+  const enObra = new Set()
+  const enFabricacion = new Set()
   for (const m of materiales) {
-    if (/carpinter/i.test(m.material || '') && (m.estado || '').trim().toUpperCase() === 'EN OBRA') {
-      const base = posicionBaseDe(m.posicion)
-      if (base) set.add(base)
-    }
+    if (!/vidrio/i.test(m.material || '')) continue
+    const base = posicionBaseDe(m.posicion)
+    if (!base) continue
+    const estado = (m.estado || '').toUpperCase()
+    if (estado.includes('OBRA')) enObra.add(base)
+    else if (estado.includes('FABRICA')) enFabricacion.add(base)
   }
-  return set
+  return { enObra, enFabricacion }
 }
 
 // Los planos son un escaneo con la numeración de posición escrita a mano
 // (no hay texto embebido en el PDF, ver sync_planos.js) — no hay forma de
 // calcular sola la coordenada de cada una, así que se calibra una vez a
 // mano desde acá (modo "Calibrar posiciones": elegir la posición, click en
-// el plano) y queda guardada para las próximas veces. El verde se recalcula
+// el plano) y queda guardada para las próximas veces. El color se recalcula
 // solo con lo que ya está cargado en `materiales` — no hace falta releer
-// nada cuando Alfredo cambia el Estado de una posición de carpintería en la
+// nada cuando Alfredo cambia el Estado del Vidrio de una posición en la
 // pestaña Seguimiento, por eso se ve reflejado al toque.
 function PlanosObra({ obra, materiales }) {
   const { accessToken } = useAuth()
@@ -611,7 +618,7 @@ function PlanosObra({ obra, materiales }) {
     return map
   }, [materiales])
 
-  const enObra = useMemo(() => posicionesCarpinteriaEnObra(materiales), [materiales])
+  const { enObra, enFabricacion } = useMemo(() => posicionesPorEstadoVidrio(materiales), [materiales])
   const posicionesCalibradas = useMemo(() => new Set(posiciones.map((p) => p.posicion_base)), [posiciones])
   const posicionesSinCalibrar = posicionesBase.filter((p) => !posicionesCalibradas.has(p))
   const paginaImagen = paginas.find((p) => p.pagina === paginaActiva)
@@ -709,20 +716,24 @@ function PlanosObra({ obra, materiales }) {
           <img src={paginaImagen.imagen_base64} alt={`Plano página ${paginaActiva}`} draggable={false} />
           {posicionesDeEstaPagina.map((p) => {
             const enObraAqui = enObra.has(p.posicion_base)
+            const enFabricacionAqui = !enObraAqui && enFabricacion.has(p.posicion_base)
             const tipo = tipoPorPosicionBase.get(p.posicion_base)
+            const estadoTexto = enObraAqui ? ' — EN OBRA' : enFabricacionAqui ? ' — FABRICACIÓN' : ''
             return (
               <span
                 key={p.posicion_base}
                 className="planos-marca-grupo"
                 style={{ left: `${p.x_pct}%`, top: `${p.y_pct}%` }}
-                title={`Posición ${p.posicion_base}${tipo ? ` (${tipo})` : ''}${enObraAqui ? ' — EN OBRA' : ''}`}
+                title={`Posición ${p.posicion_base}${tipo ? ` (${tipo})` : ''}${estadoTexto}`}
                 onClick={(e) => {
                   if (!modoCalibrar) return
                   e.stopPropagation()
                   handleQuitarMarca(p.posicion_base)
                 }}
               >
-                <span className={`planos-marca ${enObraAqui ? 'planos-marca-en-obra' : ''}`} />
+                <span
+                  className={`planos-marca ${enObraAqui ? 'planos-marca-en-obra' : ''} ${enFabricacionAqui ? 'planos-marca-en-fabricacion' : ''}`}
+                />
                 <span className="planos-marca-etiqueta">{tipo ? `${tipo} · ${p.posicion_base}` : p.posicion_base}</span>
               </span>
             )

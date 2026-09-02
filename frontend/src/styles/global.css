@@ -1553,6 +1553,12 @@ select.celda-editable-material {
   box-shadow: 0 0 0 4px rgba(45, 178, 96, .25);
 }
 
+.planos-marca-en-fabricacion {
+  background: rgba(230, 145, 26, .45);
+  border-color: #e6911a;
+  box-shadow: 0 0 0 4px rgba(230, 145, 26, .25);
+}
+
 .planos-marca-etiqueta {
   font-size: 10px;
   font-weight: 700;
