@@ -305,6 +305,11 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
     [materiales],
   )
 
+  const materialesDisponibles = useMemo(
+    () => [...new Set(materiales.map((m) => m.material).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es')),
+    [materiales],
+  )
+
   const materialesFiltrados = useMemo(
     () => materiales.filter((m) => pasaFiltros(m, filtros)),
     [materiales, filtros],
@@ -332,6 +337,22 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
             valores={tiposDisponibles}
             seleccionados={tiposSeleccionados}
             onCambiar={setTiposSeleccionados}
+          />
+        </div>
+        <div className="filtro-campo">
+          <label>Material</label>
+          <SelectorMultipleGenerico
+            valores={materialesDisponibles}
+            seleccionados={filtros.material}
+            onCambiar={(valores) => cambiarFiltroColumna('material', valores)}
+          />
+        </div>
+        <div className="filtro-campo">
+          <label>Estado</label>
+          <SelectorMultipleGenerico
+            valores={estadosDisponibles}
+            seleccionados={filtros.estado}
+            onCambiar={(valores) => cambiarFiltroColumna('estado', valores)}
           />
         </div>
         <span className="filtro-contador">
