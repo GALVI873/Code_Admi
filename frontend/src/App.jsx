@@ -35,6 +35,7 @@ export default function App() {
             <Route path="/presupuestos-en-estudio" element={<PresupuestosEnEstudioPage />} />
             <Route path="/seguimiento" element={<SeguimientoPage />} />
             <Route path="/obras-aceptadas" element={<ObrasAceptadasPage />} />
+            <Route path="/obras-aceptadas/:id" element={<ObrasAceptadasPage />} />
             <Route path="/diario-general" element={<DiarioGeneralPage />} />
           </Route>
         </Route>

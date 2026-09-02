@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import {
   obrasAceptadas,
@@ -257,6 +258,7 @@ function FilaMaterial({ m, estadosDisponibles, onCambiar }) {
 const COLUMNAS_FILTRABLES = [
   { campo: 'posicion', etiqueta: 'Posición', valor: (m) => m.posicion || '—' },
   { campo: 'material', etiqueta: 'Material', valor: (m) => m.material || '—' },
+  { campo: 'descripcion', etiqueta: 'Descripción', valor: (m) => m.descripcion || '—' },
   { campo: 'estado', etiqueta: 'Estado', valor: (m) => m.estado || '—' },
   { campo: 'proveedor', etiqueta: 'Proveedor', valor: (m) => m.proveedor || '—' },
   { campo: 'fecha_pedido', etiqueta: 'Fecha Pedido', valor: (m) => formatoFecha(m.fecha_pedido) || '—' },
@@ -503,6 +505,11 @@ function FichaObraAceptada({ presupuesto, confirmaciones, onConfirmar, onQuitar 
 
 const PESTANAS_DETALLE = ['Ficha', 'Seguimiento']
 
+// Página propia (no modal): la información de una obra aceptada —
+// especialmente Seguimiento, con su tabla ancha y filtros por columna —
+// necesita todo el ancho de la pantalla, no el espacio acotado de un
+// modal encima de la lista. Tiene su propia URL (/obras-aceptadas/:id) para
+// poder volver a abrirla o pasarla por link.
 function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar, onConfirmar, onQuitar, onCambiarMaterial }) {
   const [pestana, setPestana] = useState('Ficha')
 
@@ -510,54 +517,47 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar
     setPestana('Ficha')
   }, [presupuesto.id])
 
-  useEffect(() => {
-    function alEscape(e) {
-      if (e.key === 'Escape') onCerrar()
-    }
-    window.addEventListener('keydown', alEscape)
-    return () => window.removeEventListener('keydown', alEscape)
-  }, [onCerrar])
-
   return (
-    <div className="modal-fondo" onClick={onCerrar}>
-      <div className="modal-caja modal-caja-ancha" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <div>
-            <h2>{presupuesto.obra}</h2>
-            <p>
-              {presupuesto.cliente || 'Sin cliente'}
-              {presupuesto.numero_ppto && ` · Nº Ppto ${presupuesto.numero_ppto}`}
-              {presupuesto.fecha_ppto && ` · Presupuesto ${formatoFecha(presupuesto.fecha_ppto)}`}
-            </p>
-          </div>
-          <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
-        </div>
+    <div className="dashboard dashboard-ancho">
+      <button type="button" className="boton-volver" onClick={onCerrar}>← Volver a Obras Aceptadas</button>
 
-        <div className="seguimiento-pestanas">
-          {PESTANAS_DETALLE.map((p) => (
-            <button
-              key={p}
-              type="button"
-              className={`seguimiento-pestana ${p === pestana ? 'seguimiento-pestana-activa' : ''}`}
-              onClick={() => setPestana(p)}
-            >
-              {p}
-            </button>
-          ))}
+      <header className="dashboard-header">
+        <div>
+          <h1>{presupuesto.obra}</h1>
+          <p>
+            {presupuesto.cliente || 'Sin cliente'}
+            {presupuesto.numero_ppto && ` · Nº Ppto ${presupuesto.numero_ppto}`}
+            {presupuesto.fecha_ppto && ` · Presupuesto ${formatoFecha(presupuesto.fecha_ppto)}`}
+          </p>
         </div>
+      </header>
 
-        {pestana === 'Ficha' ? (
-          <FichaObraAceptada presupuesto={presupuesto} confirmaciones={confirmaciones} onConfirmar={onConfirmar} onQuitar={onQuitar} />
-        ) : (
-          <SeguimientoPorPosicion materiales={materiales} onCambiarMaterial={(m, campo, valor) => onCambiarMaterial(presupuesto.obra, m, campo, valor)} />
-        )}
+      <div className="seguimiento-pestanas">
+        {PESTANAS_DETALLE.map((p) => (
+          <button
+            key={p}
+            type="button"
+            className={`seguimiento-pestana ${p === pestana ? 'seguimiento-pestana-activa' : ''}`}
+            onClick={() => setPestana(p)}
+          >
+            {p}
+          </button>
+        ))}
       </div>
+
+      {pestana === 'Ficha' ? (
+        <FichaObraAceptada presupuesto={presupuesto} confirmaciones={confirmaciones} onConfirmar={onConfirmar} onQuitar={onQuitar} />
+      ) : (
+        <SeguimientoPorPosicion materiales={materiales} onCambiarMaterial={(m, campo, valor) => onCambiarMaterial(presupuesto.obra, m, campo, valor)} />
+      )}
     </div>
   )
 }
 
 export default function ObrasAceptadasPage() {
   const { usuario, accessToken } = useAuth()
+  const { id: obraSeleccionadaId } = useParams()
+  const navigate = useNavigate()
   const [filas, setFilas] = useState([])
   const [materiales, setMateriales] = useState([])
   const [confirmaciones, setConfirmaciones] = useState([])
@@ -566,7 +566,6 @@ export default function ObrasAceptadasPage() {
   const [busquedaObra, setBusquedaObra] = useState('')
   const [filtroCategoria, setFiltroCategoria] = useState('Todos')
   const [filtroContacto, setFiltroContacto] = useState('Todos')
-  const [obraSeleccionadaId, setObraSeleccionadaId] = useState(null)
 
   useEffect(() => {
     Promise.all([obrasAceptadas(accessToken), seguimientoMateriales(accessToken)])
@@ -627,7 +626,9 @@ export default function ObrasAceptadasPage() {
     setFiltroContacto('Todos')
   }
 
-  const obraSeleccionada = filas.find((p) => p.id === obraSeleccionadaId) || null
+  const obraSeleccionada = obraSeleccionadaId
+    ? filas.find((p) => String(p.id) === obraSeleccionadaId) || null
+    : null
 
   async function handleConfirmarCampo(obra, campo, valor) {
     const anteriores = confirmaciones
@@ -677,6 +678,30 @@ export default function ObrasAceptadasPage() {
     return (
       <div className="dashboard">
         <p className="dashboard-nota">No tienes acceso a este espacio de trabajo.</p>
+      </div>
+    )
+  }
+
+  if (obraSeleccionadaId) {
+    if (obraSeleccionada) {
+      return (
+        <DetalleObraAceptada
+          presupuesto={obraSeleccionada}
+          materiales={materialesPorObra.get(obraSeleccionada.obra) || []}
+          confirmaciones={confirmacionesPorObra.get(obraSeleccionada.obra) || []}
+          onCerrar={() => navigate('/obras-aceptadas')}
+          onConfirmar={handleConfirmarCampo}
+          onQuitar={handleQuitarConfirmacion}
+          onCambiarMaterial={handleCambiarMaterial}
+        />
+      )
+    }
+    return (
+      <div className="dashboard dashboard-ancho">
+        <button type="button" className="boton-volver" onClick={() => navigate('/obras-aceptadas')}>← Volver a Obras Aceptadas</button>
+        {cargando && <p className="dashboard-nota">Cargando…</p>}
+        {error && <div className="auth-error">{error}</div>}
+        {!cargando && !error && <p className="dashboard-nota">No se encontró esa obra.</p>}
       </div>
     )
   }
@@ -754,22 +779,10 @@ export default function ObrasAceptadasPage() {
               key={p.id}
               presupuesto={p}
               materiales={materialesPorObra.get(p.obra) || []}
-              onAbrir={setObraSeleccionadaId}
+              onAbrir={(id) => navigate(`/obras-aceptadas/${id}`)}
             />
           ))}
         </div>
-      )}
-
-      {obraSeleccionada && (
-        <DetalleObraAceptada
-          presupuesto={obraSeleccionada}
-          materiales={materialesPorObra.get(obraSeleccionada.obra) || []}
-          confirmaciones={confirmacionesPorObra.get(obraSeleccionada.obra) || []}
-          onCerrar={() => setObraSeleccionadaId(null)}
-          onConfirmar={handleConfirmarCampo}
-          onQuitar={handleQuitarConfirmacion}
-          onCambiarMaterial={handleCambiarMaterial}
-        />
       )}
     </div>
   )

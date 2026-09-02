@@ -118,6 +118,28 @@ body {
   margin-bottom: 24px;
 }
 
+/* Vuelve a la lista desde una página de detalle de obra (ver
+   ObrasAceptadasPage) — reemplaza la ✕ de modal ahora que el detalle es su
+   propia página con URL, no un overlay. */
+.boton-volver {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--azul-med);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 16px;
+}
+
+.boton-volver:hover {
+  color: var(--azul);
+  text-decoration: underline;
+}
+
 .dashboard-header h1 {
   color: var(--azul);
   font-size: 22px;
