@@ -707,19 +707,26 @@ function PlanosObra({ obra, materiales }) {
           style={{ cursor: modoCalibrar && posicionArmada ? 'crosshair' : 'default' }}
         >
           <img src={paginaImagen.imagen_base64} alt={`Plano página ${paginaActiva}`} draggable={false} />
-          {posicionesDeEstaPagina.map((p) => (
-            <span
-              key={p.posicion_base}
-              className={`planos-marca ${enObra.has(p.posicion_base) ? 'planos-marca-en-obra' : ''}`}
-              style={{ left: `${p.x_pct}%`, top: `${p.y_pct}%` }}
-              title={`Posición ${p.posicion_base}${tipoPorPosicionBase.has(p.posicion_base) ? ` (${tipoPorPosicionBase.get(p.posicion_base)})` : ''}${enObra.has(p.posicion_base) ? ' — EN OBRA' : ''}`}
-              onClick={(e) => {
-                if (!modoCalibrar) return
-                e.stopPropagation()
-                handleQuitarMarca(p.posicion_base)
-              }}
-            />
-          ))}
+          {posicionesDeEstaPagina.map((p) => {
+            const enObraAqui = enObra.has(p.posicion_base)
+            const tipo = tipoPorPosicionBase.get(p.posicion_base)
+            return (
+              <span
+                key={p.posicion_base}
+                className="planos-marca-grupo"
+                style={{ left: `${p.x_pct}%`, top: `${p.y_pct}%` }}
+                title={`Posición ${p.posicion_base}${tipo ? ` (${tipo})` : ''}${enObraAqui ? ' — EN OBRA' : ''}`}
+                onClick={(e) => {
+                  if (!modoCalibrar) return
+                  e.stopPropagation()
+                  handleQuitarMarca(p.posicion_base)
+                }}
+              >
+                <span className={`planos-marca ${enObraAqui ? 'planos-marca-en-obra' : ''}`} />
+                <span className="planos-marca-etiqueta">{tipo ? `${tipo} · ${p.posicion_base}` : p.posicion_base}</span>
+              </span>
+            )
+          })}
         </div>
       )}
     </div>
