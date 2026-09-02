@@ -595,6 +595,22 @@ function PlanosObra({ obra, materiales }) {
     return [...set].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }))
   }, [materiales])
 
+  // Algunos planos (ej. Manipa) escriben el número de Posición tal cual en
+  // el dibujo — ahí alcanza con el número solo. Otros (ej. Archanda, un
+  // plano de arquitecto real) no muestran la Posición en ningún lado, solo
+  // el código de Tipo (V01, V17...) de cada hueco, y un mismo Tipo puede
+  // repetirse en más de una Posición (una por vivienda, por ejemplo) — por
+  // eso el selector muestra los dos datos juntos, así se puede calibrar
+  // igual sin importar qué numeración use el plano real.
+  const tipoPorPosicionBase = useMemo(() => {
+    const map = new Map()
+    materiales.forEach((m) => {
+      const base = posicionBaseDe(m.posicion)
+      if (base && m.tipo && !map.has(base)) map.set(base, m.tipo)
+    })
+    return map
+  }, [materiales])
+
   const enObra = useMemo(() => posicionesCarpinteriaEnObra(materiales), [materiales])
   const posicionesCalibradas = useMemo(() => new Set(posiciones.map((p) => p.posicion_base)), [posiciones])
   const posicionesSinCalibrar = posicionesBase.filter((p) => !posicionesCalibradas.has(p))
@@ -677,6 +693,7 @@ function PlanosObra({ obra, materiales }) {
                 onClick={() => setPosicionArmada(p === posicionArmada ? '' : p)}
               >
                 {p}
+                {tipoPorPosicionBase.has(p) && ` · ${tipoPorPosicionBase.get(p)}`}
               </button>
             ))}
           </div>
@@ -695,7 +712,7 @@ function PlanosObra({ obra, materiales }) {
               key={p.posicion_base}
               className={`planos-marca ${enObra.has(p.posicion_base) ? 'planos-marca-en-obra' : ''}`}
               style={{ left: `${p.x_pct}%`, top: `${p.y_pct}%` }}
-              title={`Posición ${p.posicion_base}${enObra.has(p.posicion_base) ? ' — EN OBRA' : ''}`}
+              title={`Posición ${p.posicion_base}${tipoPorPosicionBase.has(p.posicion_base) ? ` (${tipoPorPosicionBase.get(p.posicion_base)})` : ''}${enObra.has(p.posicion_base) ? ' — EN OBRA' : ''}`}
               onClick={(e) => {
                 if (!modoCalibrar) return
                 e.stopPropagation()
