@@ -152,13 +152,6 @@ try {
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? $_POST;
 
-        if (($body['accion'] ?? '') === 'listar_debug') {
-            $obra = trim((string) ($body['obra'] ?? ''));
-            $stmt = $db->prepare('SELECT * FROM seguimiento_materiales WHERE obra = ? ORDER BY id LIMIT 5');
-            $stmt->execute([$obra]);
-            Response::json(['materiales' => $stmt->fetchAll()]);
-        }
-
         if (($body['accion'] ?? '') === 'reemplazar_materiales') {
             $obra = trim((string) ($body['obra'] ?? ''));
             $materiales = $body['materiales'] ?? null;
