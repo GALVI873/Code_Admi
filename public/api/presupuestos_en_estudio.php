@@ -16,12 +16,16 @@ declare(strict_types=1);
 // lo leído de la carpeta "Valoración" contra las solicitudes "Pendiente" que
 // Geraldinne ya había cargado (ver PATCH abajo) en vez de reemplazar todo —
 // así no se pisa lo que ella cargó a mano.
-// PATCH: cambia prioridad, interesante, estatus, la fecha límite de
-// Geraldinne, y/o gestiona sus solicitudes de valoración a proveedor:
+// PATCH: cambia prioridad, interesante, estatus, categoría, la fecha
+// límite de Geraldinne, y/o gestiona sus solicitudes de valoración a
+// proveedor:
 //   - "prioridad" requiere el permiso presupuestos.gestionar_prioridad (solo admin).
 //   - "interesante" requiere presupuestos.marcar_interesante (admin — Álvaro/
 //     Valentina — y también Geraldinne, rol presupuestos).
 //   - "estatus" requiere ver_todos o ver_seguimiento (cualquiera que pueda ver la tabla).
+//   - "categoria" requiere ver_todos o ver_seguimiento — pensado para
+//     "Alvarada" (ver CATEGORIAS_VALIDAS), la única categoría sin carpeta
+//     propia en Drive, así que solo se puede asignar a mano.
 //   - "fecha_limite_entrega" requiere presupuestos.ver_seguimiento (solo
 //     Geraldinne — Álvaro la ve en su vista pero no la edita).
 //   - la conversación entre Álvaro y Geraldinne sobre una obra ya no vive acá
@@ -49,6 +53,13 @@ $config = require __DIR__ . '/../../backend/bootstrap.php';
 // Descartado/Aceptado son decisiones finales manuales.
 const ESTATUS_VALIDOS = ['En Estudio', 'En Valoración', 'En Revisión', 'Enviado', 'Aceptado', 'Descartado'];
 const ESTATUS_PRE_ENVIO = ['En Estudio', 'En Valoración', 'En Revisión'];
+
+// Categorías normales (Arquitecto/Constructor/Particular/Proveedor/
+// Reformista) las calcula sola la sincronización a partir de la carpeta de
+// Drive en la que vive la obra — "Alvarada" es la única que se pone a mano
+// desde el panel (no tiene carpeta propia en Drive), por eso el UPDATE de
+// la sincronización más abajo la deja sin tocar si ya está puesta.
+const CATEGORIAS_VALIDAS = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista', 'Alvarada'];
 
 // Sin tildes/mayúsculas ni signos, para poder comparar "Villar" con
 // "Aluminios Villar, SL." o "ALUMINIOS VILLAR" sin depender de que el
@@ -394,6 +405,16 @@ try {
                 ->execute([$estatus, $id]);
         }
 
+        if (array_key_exists('categoria', $body)) {
+            AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento']);
+            $categoria = trim((string) $body['categoria']);
+            if (!in_array($categoria, CATEGORIAS_VALIDAS, true)) {
+                Response::error('"categoria" debe ser una de: ' . implode(', ', CATEGORIAS_VALIDAS), 422);
+            }
+            $db->prepare("UPDATE presupuestos_en_estudio SET categoria = ?, actualizado_en = datetime('now') WHERE id = ?")
+                ->execute([$categoria, $id]);
+        }
+
         if (array_key_exists('fecha_limite_entrega', $body)) {
             AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_seguimiento');
             $fecha = trim((string) $body['fecha_limite_entrega']);
@@ -580,7 +601,10 @@ try {
                 porcentaje_ganancia = excluded.porcentaje_ganancia,
                 fecha_ultimo_envio = excluded.fecha_ultimo_envio,
                 fecha_creacion_carpeta = excluded.fecha_creacion_carpeta,
-                categoria = excluded.categoria,
+                categoria = CASE
+                    WHEN presupuestos_en_estudio.categoria = 'Alvarada' THEN presupuestos_en_estudio.categoria
+                    ELSE excluded.categoria
+                END,
                 contacto = excluded.contacto,
                 actualizado_en = datetime('now')
         ");

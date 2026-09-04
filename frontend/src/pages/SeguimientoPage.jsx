@@ -9,11 +9,9 @@ import {
 } from '../api/client.js'
 import ComentariosObra from '../components/ComentariosObra.jsx'
 
-// Espacio de trabajo personal de Geraldinne. Nunca muestra Descartadas —a
-// diferencia de Presupuestos en Estudio, acá ni siquiera es una opción de
-// filtro, porque a ella no le interesan las obras cerradas.
+// Espacio de trabajo personal de Geraldinne.
 const EMAIL_AUTORIZADO = 'presupuestos@galvi.es'
-const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Enviado', 'Aceptado']
+const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Enviado', 'Aceptado', 'Descartado']
 const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista', 'Alvarada']
 
 // Del Vademecum (Z:\DRIVE GALVI\Vademecum.xlsx, hoja "Proveedores") — solo
@@ -54,6 +52,7 @@ const CLASE_ESTATUS = {
   'En Revisión': 'select-estatus-en-revision',
   Enviado: 'select-estatus-enviado',
   Aceptado: 'select-estatus-aceptado',
+  Descartado: 'select-estatus-descartado',
 }
 
 // "Enviado" puesto a mano sin que exista un PDF en la carpeta Enviados de
@@ -354,6 +353,24 @@ function SelectEstatus({ presupuesto, onCambio }) {
   )
 }
 
+// "Alvarada" es la única categoría sin carpeta propia en Drive — se asigna
+// a mano desde acá, y el backend la protege para que la sincronización no
+// la pise en la próxima corrida (ver presupuestos_en_estudio.php).
+function SelectCategoria({ presupuesto, onCambio }) {
+  return (
+    <select
+      className="select-inline"
+      value={presupuesto.categoria || ''}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onCambio(presupuesto.id, { categoria: e.target.value })}
+    >
+      {CATEGORIAS_CLIENTE.map((op) => (
+        <option key={op} value={op}>{op}</option>
+      ))}
+    </select>
+  )
+}
+
 // Fecha límite que Geraldinne le pone a la obra — a Álvaro no le sirve
 // (por eso Presupuestos en Estudio ni la muestra), es solo para que ella
 // organice su propio trabajo.
@@ -564,6 +581,10 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
             <span>Fecha límite de entrega</span>
             <FechaLimiteEntrega presupuesto={activo} onCambio={onCambio} />
           </div>
+          <div className="modal-campo">
+            <span>Categoría</span>
+            <SelectCategoria presupuesto={activo} onCambio={onCambio} />
+          </div>
         </div>
 
         <LineaTiempo
@@ -621,17 +642,18 @@ export default function SeguimientoPage() {
       .finally(() => setCargando(false))
   }, [accessToken])
 
-  // Nunca Descartadas, sin excepción — a diferencia de Presupuestos en
-  // Estudio, acá no hay forma de volver a mostrarlas.
-  const filasVivas = useMemo(() => filas.filter((p) => p.estatus !== 'Descartado'), [filas])
+  // Ya no se excluyen las Descartadas de acá — Geraldinne también necesita
+  // poder verlas y filtrar por ellas, igual que Aceptado. El nombre queda
+  // igual (se usa en varios lugares más abajo) aunque ahora no filtre nada
+  // por estatus.
+  const filasVivas = filas
 
-  // "Todos" oculta además "Enviado" — a Geraldinne solo le interesa ese
-  // estatus cuando lo busca a propósito (filtrando por él), no como parte
-  // del vistazo general del día a día. Mismo patrón que Descartado en
-  // Presupuestos en Estudio, aplicado acá solo a este estatus y solo en
-  // esta página.
+  // "Todos" oculta "Enviado" y "Descartado" — a Geraldinne solo le
+  // interesan esos estatus cuando los busca a propósito (filtrando por
+  // ellos), no como parte del vistazo general del día a día. Mismo patrón
+  // que Descartado en Presupuestos en Estudio.
   const filasSegunEstatus = useMemo(
-    () => filasVivas.filter((p) => (filtroEstatus === 'Todos' ? p.estatus !== 'Enviado' : p.estatus === filtroEstatus)),
+    () => filasVivas.filter((p) => (filtroEstatus === 'Todos' ? p.estatus !== 'Enviado' && p.estatus !== 'Descartado' : p.estatus === filtroEstatus)),
     [filasVivas, filtroEstatus],
   )
 
@@ -697,15 +719,16 @@ export default function SeguimientoPage() {
 
   // Agrupadas por estatus para que el grid tenga secciones claras en vez de
   // una sola pared de tarjetas (mismo patrón que Presupuestos en Estudio).
-  // "Enviado" queda fuera del agrupamiento por defecto porque
-  // filasSegunEstatus ya lo excluyó de "Todos"; al filtrar puntualmente por
-  // ese estatus no hace falta agrupar, ya es un solo grupo (y solo entran
-  // las obras que tengan AL MENOS una opción en ese estatus puntual).
+  // "Enviado" y "Descartado" quedan fuera del agrupamiento por defecto
+  // porque filasSegunEstatus ya los excluyó de "Todos"; al filtrar
+  // puntualmente por alguno de los dos no hace falta agrupar, ya es un
+  // solo grupo (y solo entran las obras que tengan AL MENOS una opción en
+  // ese estatus puntual).
   const gruposVisibles = useMemo(() => {
     if (filtroEstatus !== 'Todos') {
       return [{ estatus: filtroEstatus, items: gruposObra.filter((g) => g.opciones.some((o) => o.estatus === filtroEstatus)) }]
     }
-    return ESTATUS_OPCIONES.filter((e) => e !== 'Enviado')
+    return ESTATUS_OPCIONES.filter((e) => e !== 'Enviado' && e !== 'Descartado')
       .map((estatus) => ({ estatus, items: gruposObra.filter((g) => g.estatusRepresentativo === estatus) }))
       .filter((g) => g.items.length > 0)
   }, [gruposObra, filtroEstatus])

@@ -102,6 +102,24 @@ function SelectEstatus({ presupuesto, onCambio }) {
   )
 }
 
+// "Alvarada" es la única categoría sin carpeta propia en Drive — se asigna
+// a mano desde acá, y el backend la protege para que la sincronización no
+// la pise en la próxima corrida (ver presupuestos_en_estudio.php).
+function SelectCategoria({ presupuesto, onCambio }) {
+  return (
+    <select
+      className="select-inline"
+      value={presupuesto.categoria || ''}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onCambio(presupuesto.id, { categoria: e.target.value })}
+    >
+      {CATEGORIAS_CLIENTE.map((op) => (
+        <option key={op} value={op}>{op}</option>
+      ))}
+    </select>
+  )
+}
+
 function SelectPrioridad({ presupuesto, onCambio, puedeCambiar }) {
   if (!puedeCambiar) {
     return (
@@ -325,6 +343,10 @@ function DetalleObra({ base, opciones, onCerrar, onCambio, puedeCambiarPrioridad
           <div className="modal-campo">
             <span>Prioridad</span>
             <SelectPrioridad presupuesto={activo} onCambio={onCambio} puedeCambiar={puedeCambiarPrioridad} />
+          </div>
+          <div className="modal-campo">
+            <span>Categoría</span>
+            <SelectCategoria presupuesto={activo} onCambio={onCambio} />
           </div>
         </div>
 
