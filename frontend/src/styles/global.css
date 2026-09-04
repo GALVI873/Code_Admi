@@ -244,6 +244,7 @@ body {
 .select-estatus-en-valoracion { background: #f4ecfb; color: #8e44ad; }
 .select-estatus-en-revision { background: #e8f6f5; color: #17847a; }
 .select-estatus-enviado { background: #fef9e7; color: #d68910; }
+.select-estatus-alvarada { background: #f6efe4; color: #a0672e; }
 .select-estatus-aceptado { background: #d5f5e3; color: #1e8449; }
 .select-estatus-descartado { background: #fdedec; color: var(--rojo); }
 
@@ -532,6 +533,7 @@ body {
 .obras-seccion-titulo.select-estatus-en-valoracion { color: #8e44ad; }
 .obras-seccion-titulo.select-estatus-en-revision { color: #17847a; }
 .obras-seccion-titulo.select-estatus-enviado { color: #d68910; }
+.obras-seccion-titulo.select-estatus-alvarada { color: #a0672e; }
 .obras-seccion-titulo.select-estatus-aceptado { color: #1e8449; }
 .obras-seccion-titulo.select-estatus-descartado { color: var(--rojo); }
 

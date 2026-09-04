@@ -9,20 +9,22 @@ import ComentariosObra from '../components/ComentariosObra.jsx'
 // "En Revisión" es la única fase previa al envío que se pone siempre a
 // mano; "Enviado" se pone solo en cuanto hay un PDF en la carpeta Enviados
 // de la obra (se llamaba "Pdt Aprobación", cambiado por confuso — sonaba a
-// que faltaba aprobar algo); Aceptado/Descartado son decisiones finales
-// manuales.
-const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Enviado', 'Aceptado', 'Descartado']
+// que faltaba aprobar algo); "Alvarada" es, igual que "En Revisión", una
+// fase que se pone siempre a mano — la sincronización nunca la asigna ni
+// la pisa; Aceptado/Descartado son decisiones finales manuales.
+const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Enviado', 'Alvarada', 'Aceptado', 'Descartado']
 
 // Categorías de contacto tal como las organiza Drive (Arquitectos/
-// Constructores/Particulares/Proveedores/Reformistas/Alvarada), en singular
-// para mostrar en el panel.
-const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista', 'Alvarada']
+// Constructores/Particulares/Proveedores/Reformistas), en singular para
+// mostrar en el panel.
+const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista']
 
 const CLASE_ESTATUS = {
   'En Estudio': 'select-estatus-en-estudio',
   'En Valoración': 'select-estatus-en-valoracion',
   'En Revisión': 'select-estatus-en-revision',
   Enviado: 'select-estatus-enviado',
+  Alvarada: 'select-estatus-alvarada',
   Aceptado: 'select-estatus-aceptado',
   Descartado: 'select-estatus-descartado',
 }
@@ -96,24 +98,6 @@ function SelectEstatus({ presupuesto, onCambio }) {
       onChange={(e) => onCambio(presupuesto.id, { estatus: e.target.value })}
     >
       {ESTATUS_OPCIONES.map((op) => (
-        <option key={op} value={op}>{op}</option>
-      ))}
-    </select>
-  )
-}
-
-// "Alvarada" es la única categoría sin carpeta propia en Drive — se asigna
-// a mano desde acá, y el backend la protege para que la sincronización no
-// la pise en la próxima corrida (ver presupuestos_en_estudio.php).
-function SelectCategoria({ presupuesto, onCambio }) {
-  return (
-    <select
-      className="select-inline"
-      value={presupuesto.categoria || ''}
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => onCambio(presupuesto.id, { categoria: e.target.value })}
-    >
-      {CATEGORIAS_CLIENTE.map((op) => (
         <option key={op} value={op}>{op}</option>
       ))}
     </select>
@@ -343,10 +327,6 @@ function DetalleObra({ base, opciones, onCerrar, onCambio, puedeCambiarPrioridad
           <div className="modal-campo">
             <span>Prioridad</span>
             <SelectPrioridad presupuesto={activo} onCambio={onCambio} puedeCambiar={puedeCambiarPrioridad} />
-          </div>
-          <div className="modal-campo">
-            <span>Categoría</span>
-            <SelectCategoria presupuesto={activo} onCambio={onCambio} />
           </div>
         </div>
 

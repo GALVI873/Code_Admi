@@ -11,8 +11,8 @@ import ComentariosObra from '../components/ComentariosObra.jsx'
 
 // Espacio de trabajo personal de Geraldinne.
 const EMAIL_AUTORIZADO = 'presupuestos@galvi.es'
-const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Enviado', 'Aceptado', 'Descartado']
-const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista', 'Alvarada']
+const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Enviado', 'Alvarada', 'Aceptado', 'Descartado']
+const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista']
 
 // Del Vademecum (Z:\DRIVE GALVI\Vademecum.xlsx, hoja "Proveedores") — solo
 // como sugerencias del campo de texto libre (datalist), no como opción
@@ -51,6 +51,7 @@ const CLASE_ESTATUS = {
   'En Valoración': 'select-estatus-en-valoracion',
   'En Revisión': 'select-estatus-en-revision',
   Enviado: 'select-estatus-enviado',
+  Alvarada: 'select-estatus-alvarada',
   Aceptado: 'select-estatus-aceptado',
   Descartado: 'select-estatus-descartado',
 }
@@ -369,24 +370,6 @@ function SelectEstatus({ presupuesto, onCambio }) {
   )
 }
 
-// "Alvarada" es la única categoría sin carpeta propia en Drive — se asigna
-// a mano desde acá, y el backend la protege para que la sincronización no
-// la pise en la próxima corrida (ver presupuestos_en_estudio.php).
-function SelectCategoria({ presupuesto, onCambio }) {
-  return (
-    <select
-      className="select-inline"
-      value={presupuesto.categoria || ''}
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => onCambio(presupuesto.id, { categoria: e.target.value })}
-    >
-      {CATEGORIAS_CLIENTE.map((op) => (
-        <option key={op} value={op}>{op}</option>
-      ))}
-    </select>
-  )
-}
-
 // Fecha límite que Geraldinne le pone a la obra — a Álvaro no le sirve
 // (por eso Presupuestos en Estudio ni la muestra), es solo para que ella
 // organice su propio trabajo.
@@ -599,10 +582,6 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
           <div className="modal-campo">
             <span>Fecha límite de entrega</span>
             <FechaLimiteEntrega presupuesto={activo} onCambio={onCambio} />
-          </div>
-          <div className="modal-campo">
-            <span>Categoría</span>
-            <SelectCategoria presupuesto={activo} onCambio={onCambio} />
           </div>
         </div>
 
