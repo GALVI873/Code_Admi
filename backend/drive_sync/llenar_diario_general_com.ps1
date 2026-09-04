@@ -11,13 +11,23 @@
 # claveEstableDiario en diario_general.php): se lee toda la hoja de una sola
 # vez (UsedRange.Value2, mucho mas rapido que celda por celda por COM) y se
 # arma un diccionario clave->fila antes de escribir nada.
+#
+# Los nombres de columna a buscar (Categoria, Descripcion, Ubicacion...)
+# llegan por el JSON en vez de como literales acá -- Windows PowerShell 5.1
+# lee un .ps1 sin BOM con el codepage ANSI del sistema, no como UTF-8, así
+# que una tilde escrita literal en este archivo llega corrupta en tiempo de
+# ejecución (confirmado: 'Obra' funcionaba, 'Ubicación'/'Categoría' no). El
+# JSON sí se lee forzando -Encoding UTF8 más abajo, así que ahí las tildes
+# llegan bien.
 param(
   [Parameter(Mandatory=$true)][string]$RutaExcel,
   [Parameter(Mandatory=$true)][string]$RutaJson
 )
 
 $ErrorActionPreference = 'Stop'
-$datos = Get-Content -Raw -Encoding UTF8 $RutaJson | ConvertFrom-Json
+$payload = Get-Content -Raw -Encoding UTF8 $RutaJson | ConvertFrom-Json
+$columnas = $payload.columnas
+$datos = $payload.items
 
 function Release-Com($obj) {
   if ($obj) { [System.Runtime.Interopservices.Marshal]::ReleaseComObject($obj) | Out-Null }
@@ -71,16 +81,16 @@ try {
     return -1
   }
 
-  $colObra = Buscar-Columna 'Obra'
-  $colCategoria = Buscar-Columna 'Categoría'
-  $colDescripcion = Buscar-Columna 'Descripción'
-  $colProveedor = Buscar-Columna 'Proveedor'
-  $colMaterial = Buscar-Columna 'Material'
-  $colColor = Buscar-Columna 'Color'
-  $colUbicacion = Buscar-Columna 'Ubicación'
+  $colObra = Buscar-Columna $columnas.obra
+  $colCategoria = Buscar-Columna $columnas.categoria
+  $colDescripcion = Buscar-Columna $columnas.descripcion
+  $colProveedor = Buscar-Columna $columnas.proveedor
+  $colMaterial = Buscar-Columna $columnas.material
+  $colColor = Buscar-Columna $columnas.color
+  $colUbicacion = Buscar-Columna $columnas.ubicacion
 
   if ($colObra -eq -1 -or $colUbicacion -eq -1) {
-    throw "No se encontraron las columnas 'Obra' y/o 'Ubicacion' en el encabezado"
+    throw "No se encontraron las columnas '$($columnas.obra)' y/o '$($columnas.ubicacion)' en el encabezado"
   }
 
   # Diccionario clave estable -> numero de fila REAL de la hoja (1-based).

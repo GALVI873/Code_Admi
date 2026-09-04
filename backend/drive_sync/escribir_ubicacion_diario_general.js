@@ -49,9 +49,26 @@ async function listarPendientes() {
   return data.items || [];
 }
 
+// Nombres de columna exactos de la hoja "Diario General" (ver
+// extract_diario_general.js) — se mandan por JSON en vez de dejar que el
+// .ps1 los tenga como literales, porque Windows PowerShell 5.1 lee un .ps1
+// sin BOM con el codepage ANSI del sistema y corrompe las tildes en tiempo
+// de ejecución (confirmado con una corrida real: 'Obra' funcionaba,
+// 'Ubicación'/'Categoría' no). El JSON sí se lee forzando UTF-8 en el
+// script, así que ahí las tildes llegan bien.
+const COLUMNAS = {
+  obra: 'Obra',
+  categoria: 'Categoría',
+  descripcion: 'Descripción',
+  proveedor: 'Proveedor',
+  material: 'Material',
+  color: 'Color',
+  ubicacion: 'Ubicación',
+};
+
 function escribirEnExcel(items) {
   const jsonPath = path.join(os.tmpdir(), `diario_general_ubicacion_${Date.now()}.json`);
-  fs.writeFileSync(jsonPath, JSON.stringify(items), 'utf8');
+  fs.writeFileSync(jsonPath, JSON.stringify({ columnas: COLUMNAS, items }), 'utf8');
   try {
     const salida = execFileSync(
       'powershell.exe',

@@ -183,34 +183,6 @@ try {
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? $_POST;
 
-        // TEMPORAL — debug para probar el circuito completo de escritura
-        // real (ver sesión del 2026-09-04), se quita apenas se confirme que
-        // funciona.
-        if (($body['accion'] ?? '') === 'debug_muestra') {
-            $filas = $db->query("SELECT id, obra, categoria, descripcion, proveedor, material, color, ubicacion FROM diario_general WHERE categoria = 'Gestión' LIMIT 5")->fetchAll();
-            Response::json(['filas' => $filas]);
-        }
-        if (($body['accion'] ?? '') === 'debug_set_override') {
-            $id = (int) ($body['id'] ?? 0);
-            $ubicacion = (string) ($body['ubicacion'] ?? '');
-            $fila = $db->prepare('SELECT * FROM diario_general WHERE id = ?');
-            $fila->execute([$id]);
-            $fila = $fila->fetch();
-            if (!$fila) Response::error('no encontrado', 404);
-            $clave = claveEstableDiario($fila);
-            $db->prepare("
-                INSERT INTO diario_general_ubicacion (clave_estable, ubicacion, actualizado_en)
-                VALUES (?, ?, datetime('now'))
-                ON CONFLICT(clave_estable) DO UPDATE SET ubicacion = excluded.ubicacion, actualizado_en = excluded.actualizado_en
-            ")->execute([$clave, $ubicacion]);
-            Response::json(['ok' => true, 'clave' => $clave]);
-        }
-        if (($body['accion'] ?? '') === 'debug_clear_override') {
-            $clave = (string) ($body['clave'] ?? '');
-            $db->prepare('DELETE FROM diario_general_ubicacion WHERE clave_estable = ?')->execute([$clave]);
-            Response::json(['ok' => true]);
-        }
-
         // Usado por escribir_ubicacion_diario_general.js (automatización COM
         // de Excel, corre solo en la máquina local con Drive Desktop
         // montado — no hay forma de hacer esto desde el servidor web).
