@@ -351,6 +351,7 @@ function DetalleObra({ base, opciones, onCerrar, onCambio, puedeCambiarPrioridad
 
         <dl className="modal-detalle">
           <div><dt>Nº Ventanas</dt><dd>{activo.no_ventanas ?? '—'}</dd></div>
+          <div><dt>Proveedor</dt><dd>{activo.proveedor || '—'}</dd></div>
           <div><dt>Precio/m²</dt><dd>{formatoMoneda(activo.precio_m2)}</dd></div>
           <div><dt>RAL / Color</dt><dd>{activo.ral || '—'}</dd></div>
           <div><dt>Persiana</dt><dd>{activo.persiana || '—'}</dd></div>
