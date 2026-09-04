@@ -74,6 +74,22 @@ function faltaEnvio(presupuesto) {
   return presupuesto.estatus === 'Enviado' && !presupuesto.fecha_ultimo_envio
 }
 
+// Filtro rápido, no un estatus real (no se guarda en la base ni aparece en
+// el select de Estatus para editar) — junta los presupuestos que ya se
+// enviaron hace rato y siguen sin decisión, candidatos a descartar a mano.
+// Mismo criterio que en Seguimiento (Geraldinne): la decisión sigue siendo
+// manual, esto solo evita tener que buscarlos uno por uno.
+const PROX_DESCARTAR = 'Prox. Descartar'
+const MESES_PROX_DESCARTAR = 2
+
+function esProximoADescartar(presupuesto) {
+  if (!presupuesto.fecha_ultimo_envio) return false
+  if (presupuesto.estatus === 'Aceptado' || presupuesto.estatus === 'Descartado') return false
+  const limite = new Date()
+  limite.setMonth(limite.getMonth() - MESES_PROX_DESCARTAR)
+  return new Date(presupuesto.fecha_ultimo_envio) <= limite
+}
+
 // Insignia flotante en la esquina de la tarjeta, con pulso animado, para
 // que salte a la vista al escanear el grid completo (no solo un ícono
 // chico junto al select).
@@ -188,6 +204,9 @@ function TarjetaObra({ presupuesto, onAbrir, onCambio, puedeCambiarPrioridad, pu
       <InsigniaMensajes presupuesto={presupuesto} />
       <div className="obra-card-titulo" title={presupuesto.obra}>{presupuesto.obra}</div>
       <div className="obra-card-cliente" title={presupuesto.cliente || ''}>{presupuesto.cliente || 'Sin cliente'}</div>
+      {presupuesto.fecha_ultimo_envio && (
+        <div className="obra-card-fecha-envio">Enviado {formatoFecha(presupuesto.fecha_ultimo_envio)}</div>
+      )}
       <div className="obra-card-meta">
         <SelectEstatus presupuesto={presupuesto} onCambio={onCambio} />
         <SelectPrioridad presupuesto={presupuesto} onCambio={onCambio} puedeCambiar={puedeCambiarPrioridad} />
@@ -369,10 +388,11 @@ export default function PresupuestosEnEstudioPage() {
   // "Todos" muestra los presupuestos vivos (todo menos Descartado) — las
   // descartadas solo aparecen si se filtra explícitamente por ese estatus,
   // para que la vista por defecto no se llene de obras viejas ya cerradas.
-  const filasSegunEstatus = useMemo(
-    () => filas.filter((p) => (filtroEstatus === 'Todos' ? p.estatus !== 'Descartado' : p.estatus === filtroEstatus)),
-    [filas, filtroEstatus],
-  )
+  const filasSegunEstatus = useMemo(() => {
+    if (filtroEstatus === PROX_DESCARTAR) return filas.filter(esProximoADescartar)
+    if (filtroEstatus === 'Todos') return filas.filter((p) => p.estatus !== 'Descartado')
+    return filas.filter((p) => p.estatus === filtroEstatus)
+  }, [filas, filtroEstatus])
 
   // Contactos disponibles para el segundo desplegable: solo los que
   // realmente aparecen bajo la categoría elegida (no la lista fija de
@@ -442,6 +462,13 @@ export default function PresupuestosEnEstudioPage() {
   // solo grupo (y solo entran las obras que tengan AL MENOS una opción en
   // ese estatus puntual).
   const gruposVisibles = useMemo(() => {
+    // "Prox. Descartar" no es un estatus real (ninguna opción lo tiene en
+    // o.estatus) — gruposObra ya viene filtrado por esProximoADescartar
+    // desde filasSegunEstatus/filasFiltradas, así que acá no hace falta
+    // filtrar de nuevo, alcanza con envolverlo en un solo grupo.
+    if (filtroEstatus === PROX_DESCARTAR) {
+      return [{ estatus: filtroEstatus, items: gruposObra }]
+    }
     if (filtroEstatus !== 'Todos') {
       return [{ estatus: filtroEstatus, items: gruposObra.filter((g) => g.opciones.some((o) => o.estatus === filtroEstatus)) }]
     }
@@ -540,6 +567,7 @@ export default function PresupuestosEnEstudioPage() {
               {ESTATUS_OPCIONES.map((op) => (
                 <option key={op} value={op}>{op}</option>
               ))}
+              <option value={PROX_DESCARTAR}>{PROX_DESCARTAR}</option>
             </select>
           </div>
           <span className="filtro-contador">
