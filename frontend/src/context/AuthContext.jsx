@@ -21,7 +21,7 @@ const MOCK_USUARIOS = {
       'presupuestos.editar', 'presupuestos.enviar', 'presupuestos.aprobar',
       'presupuestos.reemplazar_version', 'usuarios.gestionar',
       'presupuestos.gestionar_prioridad', 'presupuestos.marcar_interesante',
-      'obras.ver_diario_general',
+      'obras.ver_diario_general', 'obras.ver_aceptadas',
     ],
   },
   presupuestos: {

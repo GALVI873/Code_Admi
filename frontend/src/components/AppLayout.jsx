@@ -18,15 +18,15 @@ const NAV_ITEMS = [
     permiso: 'presupuestos.ver_seguimiento',
     soloEmail: 'presupuestos@galvi.es',
   },
-  // Espacio de trabajo personal de Alfredo (Gestión de Obras). Mismo
-  // criterio que Presupuesto: permiso propio (ver_aceptadas) + filtro por
-  // email como segunda capa, porque hoy es exclusivamente su vista.
+  // Espacio de trabajo de Gestión de Obras. Ya no es exclusiva de Alfredo:
+  // Álvaro (admin) también la necesita para ver el seguimiento de obra sin
+  // depender de él — mismo criterio que Diario General, solo permiso, sin
+  // filtro de email.
   {
     to: '/obras-aceptadas',
     label: 'Obras Aceptadas',
     icono: '🧱',
     permiso: 'obras.ver_aceptadas',
-    soloEmail: 'alfredo@galvi.es',
   },
   // A diferencia de las anteriores, esta SÍ es compartida a propósito: la
   // entrevista de Fase 1 confirma que tanto Alfredo como Álvaro la

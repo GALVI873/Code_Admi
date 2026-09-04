@@ -12,13 +12,16 @@ import {
   quitarPosicionPlano,
 } from '../api/client.js'
 
-// Espacio de trabajo de Alfredo (Gestión de Obras). Primera versión: solo
-// lectura, la lista de obras que Geraldinne ya movió a "Aceptadas" — según
-// la entrevista de Fase 1, desde ahí Alfredo coordina pedidos de material y
-// confirma medidas antes de pasarlas a Taller. No se le muestra precio ni
-// % de ganancia (información comercial, no operativa) — solo lo que él
-// necesita para su parte del proceso.
-const EMAIL_AUTORIZADO = 'alfredo@galvi.es'
+// Espacio de trabajo de Gestión de Obras — la lista de obras que
+// Geraldinne ya movió a "Aceptadas". Según la entrevista de Fase 1, desde
+// ahí Alfredo coordina pedidos de material y confirma medidas antes de
+// pasarlas a Taller; no se le muestra precio ni % de ganancia (información
+// comercial, no operativa) — solo lo que él necesita para su parte del
+// proceso. Álvaro (admin) también puede entrar acá (mismo permiso
+// obras.ver_aceptadas, ver AppLayout.jsx) para ver el seguimiento sin
+// depender de Alfredo — el control de acceso real vive en el permiso, no
+// en esta página (igual que Diario General), así que no hace falta
+// filtrar por email acá también.
 const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista']
 
 // Estos son los estados que todavía necesitan que Alfredo haga algo —
@@ -798,7 +801,7 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar
 }
 
 export default function ObrasAceptadasPage() {
-  const { usuario, accessToken } = useAuth()
+  const { accessToken } = useAuth()
   const { id: obraSeleccionadaId } = useParams()
   const navigate = useNavigate()
   const [filas, setFilas] = useState([])
@@ -915,14 +918,6 @@ export default function ObrasAceptadasPage() {
       setMateriales(anteriores)
       setError(err.message)
     }
-  }
-
-  if (usuario?.email !== EMAIL_AUTORIZADO) {
-    return (
-      <div className="dashboard">
-        <p className="dashboard-nota">No tienes acceso a este espacio de trabajo.</p>
-      </div>
-    )
   }
 
   if (obraSeleccionadaId) {

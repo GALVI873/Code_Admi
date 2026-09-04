@@ -264,12 +264,20 @@ try {
     // Obras, rol 'gestion_obras' ya sembrado en schema_auth.sql sin permisos
     // propios). Reusa este mismo endpoint/tabla — filtra en el frontend a
     // estatus 'Aceptado' y no expone precio/% ganancia, información
-    // comercial que no es parte de su rol operativo.
+    // comercial que no es parte de su rol operativo. Álvaro (admin) también
+    // la necesita para poder ver el seguimiento de obra sin depender de
+    // Alfredo — se otorga a los dos roles, ya no es una vista exclusiva de
+    // uno solo (ver AppLayout.jsx, se sacó el filtro por email).
     $db->exec("INSERT OR IGNORE INTO permisos (clave, descripcion) VALUES ('obras.ver_aceptadas', 'Ver las obras aceptadas en la página Obras Aceptadas')");
     $db->exec("
         INSERT OR IGNORE INTO rol_permisos (rol_id, permiso_id)
         SELECT r.id, p.id FROM roles r, permisos p
         WHERE r.nombre = 'gestion_obras' AND p.clave = 'obras.ver_aceptadas'
+    ");
+    $db->exec("
+        INSERT OR IGNORE INTO rol_permisos (rol_id, permiso_id)
+        SELECT r.id, p.id FROM roles r, permisos p
+        WHERE r.nombre = 'admin' AND p.clave = 'obras.ver_aceptadas'
     ");
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
