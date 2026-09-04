@@ -845,6 +845,11 @@ export default function ObrasAceptadasPage() {
   const [busquedaObra, setBusquedaObra] = useState('')
   const [filtroCategoria, setFiltroCategoria] = useState('Todos')
   const [filtroContacto, setFiltroContacto] = useState('Todos')
+  // A pedido de Álvaro: filtro rápido para encontrar de un vistazo qué
+  // obras tienen algo cargado en "Notas" (con o sin leer, no solo las
+  // nuevas) — botón aparte de los desplegables normales, mismo patrón que
+  // "Prox. Descartar" en Presupuestos en Estudio/Seguimiento.
+  const [soloConNotas, setSoloConNotas] = useState(false)
 
   useEffect(() => {
     Promise.all([obrasAceptadas(accessToken), seguimientoMateriales(accessToken)])
@@ -891,14 +896,17 @@ export default function ObrasAceptadasPage() {
     return Array.from(unicos).sort((a, b) => a.localeCompare(b, 'es'))
   }, [aceptadas, filtroCategoria])
 
+  const conNotas = useMemo(() => aceptadas.filter((p) => p.tiene_mensajes), [aceptadas])
+
   const filasFiltradas = useMemo(() => {
     const texto = busquedaObra.trim().toLowerCase()
     return aceptadas
       .filter((p) => !texto || p.obra?.toLowerCase().includes(texto))
       .filter((p) => filtroCategoria === 'Todos' || p.categoria === filtroCategoria)
       .filter((p) => filtroContacto === 'Todos' || p.contacto === filtroContacto)
+      .filter((p) => !soloConNotas || p.tiene_mensajes)
       .sort((a, b) => (a.obra || '').localeCompare(b.obra || '', 'es'))
-  }, [aceptadas, busquedaObra, filtroCategoria, filtroContacto])
+  }, [aceptadas, busquedaObra, filtroCategoria, filtroContacto, soloConNotas])
 
   function handleCambioCategoria(valor) {
     setFiltroCategoria(valor)
@@ -1033,6 +1041,15 @@ export default function ObrasAceptadasPage() {
               ))}
             </select>
           </div>
+          {conNotas.length > 0 && (
+            <button
+              type="button"
+              className={`filtro-con-notas ${soloConNotas ? 'filtro-con-notas-activo' : ''}`}
+              onClick={() => setSoloConNotas((v) => !v)}
+            >
+              💬 {conNotas.length} con Notas
+            </button>
+          )}
           <span className="filtro-contador">
             {filasFiltradas.length} de {aceptadas.length}
           </span>

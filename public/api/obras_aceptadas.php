@@ -156,6 +156,10 @@ try {
             $base = nombreBaseObra($o['obra']);
             $ultimo = $ultimoMensajePorObra[$base] ?? null;
             $leido = $lecturaPorObra[$base] ?? null;
+            // "tiene_mensajes" (con o sin leer) alimenta el filtro rápido de
+            // la lista ("obras con Notas"); "tiene_mensajes_sin_leer" sigue
+            // siendo la insignia/punto rojo de notificación.
+            $o['tiene_mensajes'] = $ultimo !== null;
             $o['tiene_mensajes_sin_leer'] = $ultimo !== null && ($leido === null || $ultimo > $leido);
         }
         unset($o);

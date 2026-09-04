@@ -336,6 +336,31 @@ body {
   color: white;
 }
 
+/* Mismo patrón que .filtro-prox-descartar, en azul en vez de rojo: no es
+   una alerta, es solo un atajo para encontrar de un vistazo qué obras
+   tienen algo cargado en "Notas" (ver pestaña Notas en Obras Aceptadas). */
+.filtro-con-notas {
+  border: 1px solid #b8d0f0;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #eaf0fb;
+  color: var(--azul-med);
+  white-space: nowrap;
+}
+
+.filtro-con-notas:hover {
+  background: #dce6f9;
+}
+
+.filtro-con-notas-activo {
+  background: var(--azul-med);
+  border-color: var(--azul-med);
+  color: white;
+}
+
 .dashboard-nota {
   margin-top: 14px;
   font-size: 12px;
