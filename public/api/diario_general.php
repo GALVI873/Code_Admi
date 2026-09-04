@@ -23,6 +23,11 @@ declare(strict_types=1);
 // usado por la sincronización con Drive (protegido por SYNC_TOKEN). No hay
 // upsert fila por fila porque no hay una clave estable entre corridas: el
 // Excel se reordena y las filas se agregan/quitan libremente a mano.
+// {accion:"listar_pendientes_ubicacion"} (SYNC_TOKEN) devuelve los ítems con
+// un override de Ubicación puesto desde el panel, para que
+// escribir_ubicacion_diario_general.js los escriba de vuelta en el Excel
+// real (automatización COM, igual que la Ficha de Obras Aceptadas — ver
+// llenar_diario_general_com.ps1).
 //
 // Por eso Ubicación no se guarda solo en la fila de diario_general (esa se
 // borra y reinserta entera en cada sync): se guarda además en
@@ -37,7 +42,8 @@ declare(strict_types=1);
 // hecho en el panel sobrevive a la siguiente sincronización siempre que el
 // ítem siga siendo "el mismo" según esos campos; si esos campos cambian en
 // el Excel, el override queda huérfano y simplemente deja de aplicarse (no
-// rompe nada, solo se pierde el ajuste manual).
+// rompe nada, solo se pierde el ajuste manual). La misma clave se usa para
+// ubicar la fila real en el Excel al escribir de vuelta.
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
 
@@ -176,6 +182,31 @@ try {
         }
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? $_POST;
+
+        // Usado por escribir_ubicacion_diario_general.js (automatización COM
+        // de Excel, corre solo en la máquina local con Drive Desktop
+        // montado — no hay forma de hacer esto desde el servidor web).
+        // Devuelve, para cada ítem que tiene un override de Ubicación
+        // guardado, la fila completa (con el override ya aplicado) para que
+        // el script pueda ubicar la fila real en el Excel por los mismos
+        // campos identificadores que usa claveEstableDiario.
+        if (($body['accion'] ?? '') === 'listar_pendientes_ubicacion') {
+            $items = $db->query('SELECT * FROM diario_general')->fetchAll();
+            $overrides = $db->query('SELECT clave_estable, ubicacion FROM diario_general_ubicacion')->fetchAll();
+            $overridesPorClave = [];
+            foreach ($overrides as $ov) {
+                $overridesPorClave[$ov['clave_estable']] = $ov['ubicacion'];
+            }
+            $pendientes = [];
+            foreach ($items as $it) {
+                $clave = claveEstableDiario($it);
+                if (array_key_exists($clave, $overridesPorClave)) {
+                    $it['ubicacion'] = $overridesPorClave[$clave];
+                    $pendientes[] = $it;
+                }
+            }
+            Response::json(['items' => $pendientes]);
+        }
 
         if (($body['accion'] ?? '') === 'reemplazar_todo') {
             $items = $body['items'] ?? null;
