@@ -1129,14 +1129,25 @@ select.celda-editable-material {
 
 /* Pestaña "Notas" de Obras Aceptadas — mismo componente que el flotante de
    arriba, embebido en el flujo normal de la página en vez de flotar por
-   encima (no hay modal acá, es una página propia). */
+   encima (no hay modal acá, es una página propia, tiene todo el ancho de
+   dashboard-ancho disponible). Los mensajes y el campo de texto sí quedan
+   con un ancho máximo propio (no el 100% del contenedor) para que las
+   líneas de texto no se estiren de punta a punta de la pantalla. */
 .chat-obra-tab {
-  max-width: 560px;
+  max-width: 100%;
 }
 
 .chat-obra-tab .chat-obra-mensajes {
-  max-height: 480px;
-  min-height: 120px;
+  max-height: 65vh;
+  min-height: 220px;
+}
+
+.chat-obra-tab .chat-obra-mensaje {
+  max-width: 720px;
+}
+
+.chat-obra-tab .chat-obra-form {
+  max-width: 720px;
 }
 
 .chat-obra-encabezado {
