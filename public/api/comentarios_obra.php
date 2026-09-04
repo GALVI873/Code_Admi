@@ -1,7 +1,8 @@
 <?php
 declare(strict_types=1);
 
-// Hilo de mensajes entre Álvaro y Geraldinne sobre una obra puntual —
+// Hilo de mensajes entre Álvaro, Geraldinne y Alfredo sobre una obra
+// puntual —
 // reemplaza el viejo "comentario_geraldinne" de presupuestos_en_estudio.php
 // (un solo campo de texto, de un solo sentido: ella escribía, él solo leía).
 // Se identifica por el nombre BASE de la obra (sin el sufijo "— Opción A/B"),
@@ -16,9 +17,13 @@ declare(strict_types=1);
 // arma con GET al abrir el detalle de la obra y se refresca al reabrir o
 // recargar, no empuja mensajes nuevos solo.
 //
-// GET ?obra=... : requiere sesión + (presupuestos.ver_todos o
-// presupuestos.ver_seguimiento) — cualquiera de los dos, mismo criterio que
-// el resto de presupuestos_en_estudio.php. Devuelve el hilo completo, más
+// GET ?obra=... : requiere sesión + (presupuestos.ver_todos,
+// presupuestos.ver_seguimiento u obras.ver_aceptadas) — cualquiera de los
+// tres, mismo criterio que el resto de presupuestos_en_estudio.php /
+// obras_aceptadas.php. Se usa tanto en el detalle de una obra en estudio
+// como en el de una obra aceptada (pestaña "Notas": Álvaro deja ahí lo que
+// saca de una reunión o visita a obra, Alfredo lo ve sin que se lo tengan
+// que repetir a mano). Devuelve el hilo completo, más
 // viejo primero, y de paso marca la conversación como leída por este
 // usuario (comentarios_obra_leido) — abrir el hilo ES la señal de lectura,
 // no hace falta una acción aparte.
@@ -70,7 +75,7 @@ try {
     ");
 
     $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
-    AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento']);
+    AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento', 'obras.ver_aceptadas']);
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $obra = nombreBaseObra((string) ($_GET['obra'] ?? ''));

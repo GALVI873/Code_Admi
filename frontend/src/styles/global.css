@@ -676,6 +676,7 @@ body {
 }
 
 .seguimiento-pestana {
+  position: relative;
   border: 1px solid transparent;
   border-radius: 20px;
   padding: 5px 14px;
@@ -689,6 +690,19 @@ body {
 .seguimiento-pestana-activa {
   border-color: currentColor;
   font-weight: 700;
+}
+
+/* Punto de "hay mensajes sin leer" sobre una pestaña (ej. "Notas" en Obras
+   Aceptadas) — mismo rojo que el resto de las insignias de notificación. */
+.seguimiento-pestana-punto {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--rojo);
+  border: 1.5px solid white;
 }
 
 .obra-card-insignia-alerta {
@@ -1086,6 +1100,18 @@ select.celda-editable-material {
   box-shadow: 0 10px 30px rgba(0, 0, 0, .18);
   padding: 14px;
   z-index: 30;
+}
+
+/* Pestaña "Notas" de Obras Aceptadas — mismo componente que el flotante de
+   arriba, embebido en el flujo normal de la página en vez de flotar por
+   encima (no hay modal acá, es una página propia). */
+.chat-obra-tab {
+  max-width: 560px;
+}
+
+.chat-obra-tab .chat-obra-mensajes {
+  max-height: 480px;
+  min-height: 120px;
 }
 
 .chat-obra-encabezado {

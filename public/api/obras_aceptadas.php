@@ -20,6 +20,12 @@ declare(strict_types=1);
 // backend/drive_sync/escribir_confirmaciones_aceptadas.js las escribe de
 // vuelta en la columna "Confirmación" del Excel real.
 //
+// Cada obra trae además "tiene_mensajes_sin_leer" (bool), calculado igual
+// que en presupuestos_en_estudio.php contra comentarios_obra/
+// comentarios_obra_leido (el mismo hilo de mensajes entre Álvaro/Geraldinne/
+// Alfredo — ver comentarios_obra.php) — alimenta la pestaña "Notas" del
+// detalle de obra y la insignia de "sin leer" en la tarjeta.
+//
 // GET: lista obras + confirmaciones (requiere sesión + obras.ver_aceptadas).
 // PATCH: {obra, campo, valor} — Alfredo confirma/corrige un campo puntual de
 // una obra (requiere sesión + obras.ver_aceptadas). "campo" tiene que ser
@@ -39,6 +45,17 @@ const CAMPOS_CONFIRMABLES = [
     'proveedor', 'color_carpinteria', 'correderas', 'abatibles', 'vidrio',
     'ral', 'persiana', 'color_persiana', 'modelo_lamas', 'motor_radio', 'motor_mecanico',
 ];
+
+// Mismo hilo de comentarios que usa Presupuestos en Estudio
+// (comentarios_obra.php) — acá alimenta la pestaña "Notas" del detalle de
+// obra aceptada. Se identifica por nombre BASE de la obra por consistencia
+// con el resto (una obra aceptada normalmente no trae sufijo "— Opción
+// A/B", pero si arrastra el mismo nombre que tenía en estudio, la
+// conversación sigue siendo la misma).
+function nombreBaseObra(string $obra): string
+{
+    return trim((string) preg_replace('/\s*—\s*Opci[oó]n\s+\w+\s*$/iu', '', $obra));
+}
 
 try {
     $db = Database::connection($config);
@@ -92,12 +109,57 @@ try {
         )
     ");
 
+    // Definidas también acá (no solo en comentarios_obra.php) porque el GET
+    // de abajo necesita leerlas para marcar qué obras tienen mensajes sin
+    // leer — mismo criterio del resto del proyecto: cada archivo asegura las
+    // tablas que toca, sin depender de qué endpoint las creó primero.
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS comentarios_obra (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          obra TEXT NOT NULL,
+          autor_nombre TEXT NOT NULL,
+          autor_email TEXT NOT NULL,
+          mensaje TEXT NOT NULL,
+          creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    ");
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS comentarios_obra_leido (
+          obra TEXT NOT NULL,
+          usuario_email TEXT NOT NULL,
+          ultima_lectura TEXT NOT NULL,
+          PRIMARY KEY (obra, usuario_email)
+        )
+    ");
+
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
         AuthMiddleware::requierePermiso($usuario, 'obras.ver_aceptadas');
 
         $obras = $db->query('SELECT * FROM obras_aceptadas ORDER BY obra')->fetchAll();
         $confirmaciones = $db->query('SELECT * FROM obra_aceptada_confirmaciones')->fetchAll();
+
+        // Insignia de "hay mensajes sin leer" por obra — mismo criterio que
+        // presupuestos_en_estudio.php: último mensaje de la conversación
+        // contra la última vez que ESTE usuario la abrió.
+        $ultimoMensajePorObra = [];
+        foreach ($db->query('SELECT obra, MAX(creado_en) AS ultimo FROM comentarios_obra GROUP BY obra')->fetchAll() as $r) {
+            $ultimoMensajePorObra[$r['obra']] = $r['ultimo'];
+        }
+        $lecturaPorObra = [];
+        $stmtLectura = $db->prepare('SELECT obra, ultima_lectura FROM comentarios_obra_leido WHERE usuario_email = ?');
+        $stmtLectura->execute([$usuario['email']]);
+        foreach ($stmtLectura->fetchAll() as $r) {
+            $lecturaPorObra[$r['obra']] = $r['ultima_lectura'];
+        }
+        foreach ($obras as &$o) {
+            $base = nombreBaseObra($o['obra']);
+            $ultimo = $ultimoMensajePorObra[$base] ?? null;
+            $leido = $lecturaPorObra[$base] ?? null;
+            $o['tiene_mensajes_sin_leer'] = $ultimo !== null && ($leido === null || $ultimo > $leido);
+        }
+        unset($o);
+
         Response::json(['obras' => $obras, 'confirmaciones' => $confirmaciones]);
     }
 

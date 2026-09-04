@@ -11,6 +11,7 @@ import {
   guardarPosicionPlano,
   quitarPosicionPlano,
 } from '../api/client.js'
+import ComentariosObra from '../components/ComentariosObra.jsx'
 
 // Espacio de trabajo de Gestión de Obras — la lista de obras que
 // Geraldinne ya movió a "Aceptadas". Según la entrevista de Fase 1, desde
@@ -104,6 +105,18 @@ function SelectorMultipleGenerico({ valores, seleccionados, onCambiar }) {
   )
 }
 
+// Mismo criterio que las otras vistas (PresupuestosEnEstudioPage/
+// SeguimientoPage): insignia en la esquina cuando hay mensajes sin leer en
+// la conversación de la obra (pestaña "Notas", ver ComentariosObra.jsx).
+function InsigniaMensajes({ presupuesto }) {
+  if (!presupuesto.tiene_mensajes_sin_leer) return null
+  return (
+    <span className="obra-card-insignia-mensajes" title="Tiene mensajes nuevos en la conversación">
+      💬
+    </span>
+  )
+}
+
 function TarjetaObraAceptada({ presupuesto, materiales, onAbrir }) {
   const pendientes = materiales.filter((m) => ESTADOS_PENDIENTES.includes(m.estado)).length
   return (
@@ -116,6 +129,7 @@ function TarjetaObraAceptada({ presupuesto, materiales, onAbrir }) {
         if (e.key === 'Enter' || e.key === ' ') onAbrir(presupuesto.id)
       }}
     >
+      <InsigniaMensajes presupuesto={presupuesto} />
       <div className="obra-card-titulo" title={presupuesto.obra}>{presupuesto.obra}</div>
       <div className="obra-card-cliente" title={presupuesto.cliente || ''}>{presupuesto.cliente || 'Sin cliente'}</div>
       <div className="obra-card-meta">
@@ -747,14 +761,23 @@ function PlanosObra({ obra, materiales }) {
   )
 }
 
-const PESTANAS_DETALLE = ['Ficha', 'Seguimiento', 'Planos']
+const PESTANAS_DETALLE = ['Ficha', 'Seguimiento', 'Planos', 'Notas']
 
 // Página propia (no modal): la información de una obra aceptada —
 // especialmente Seguimiento, con su tabla ancha y filtros por columna —
 // necesita todo el ancho de la pantalla, no el espacio acotado de un
 // modal encima de la lista. Tiene su propia URL (/obras-aceptadas/:id) para
 // poder volver a abrirla o pasarla por link.
-function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar, onConfirmar, onQuitar, onCambiarMaterial }) {
+//
+// "Notas" reusa ComentariosObra.jsx (mismo hilo que ya usan Álvaro y
+// Geraldinne en Presupuestos en Estudio/Presupuesto) en su variante "tab" —
+// a pedido de Álvaro: lo que saca de una reunión o visita a obra, para que
+// Alfredo lo vea sin que se lo tengan que repetir a mano. La pestaña
+// muestra un punto cuando hay mensajes sin leer, además de la insignia en
+// la tarjeta de la lista (InsigniaMensajes, mismo criterio que las otras
+// vistas).
+function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar, onConfirmar, onQuitar, onCambiarMaterial, onLeido }) {
+  const { accessToken, usuario } = useAuth()
   const [pestana, setPestana] = useState('Ficha')
 
   useEffect(() => {
@@ -785,6 +808,7 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar
             onClick={() => setPestana(p)}
           >
             {p}
+            {p === 'Notas' && presupuesto.tiene_mensajes_sin_leer && <span className="seguimiento-pestana-punto" />}
           </button>
         ))}
       </div>
@@ -796,6 +820,15 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar
         <SeguimientoPorPosicion materiales={materiales} onCambiarMaterial={(m, campo, valor) => onCambiarMaterial(presupuesto.obra, m, campo, valor)} />
       )}
       {pestana === 'Planos' && <PlanosObra obra={presupuesto.obra} materiales={materiales} />}
+      {pestana === 'Notas' && (
+        <ComentariosObra
+          obra={presupuesto.obra}
+          accessToken={accessToken}
+          usuarioEmail={usuario?.email}
+          onLeido={() => onLeido(presupuesto.obra)}
+          variante="tab"
+        />
+      )}
     </div>
   )
 }
@@ -920,6 +953,10 @@ export default function ObrasAceptadasPage() {
     }
   }
 
+  function handleLeido(obra) {
+    setFilas((fs) => fs.map((f) => (f.obra === obra ? { ...f, tiene_mensajes_sin_leer: false } : f)))
+  }
+
   if (obraSeleccionadaId) {
     if (obraSeleccionada) {
       return (
@@ -931,6 +968,7 @@ export default function ObrasAceptadasPage() {
           onConfirmar={handleConfirmarCampo}
           onQuitar={handleQuitarConfirmacion}
           onCambiarMaterial={handleCambiarMaterial}
+          onLeido={handleLeido}
         />
       )
     }

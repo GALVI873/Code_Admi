@@ -32,7 +32,13 @@ function formatoFechaHora(iso) {
 // en el flujo normal — a pedido explícito: una conversación larga no debe
 // empujar el resto de la ficha hacia abajo. onCerrar la abre/cierra el
 // globo 💬 del header, acá adentro solo hace falta la X para cerrarla.
-export default function ComentariosObra({ obra, accessToken, usuarioEmail, onCerrar, onLeido }) {
+//
+// variante="tab" es para Obras Aceptadas (pestaña "Notas" del detalle,
+// página propia con Ficha/Seguimiento/Planos/Notas — no un modal): mismo
+// componente, mismos datos, pero embebido en el flujo normal en vez de
+// flotar por encima, y sin botón de cerrar (no hay nada que cerrar, es una
+// pestaña más). onCerrar queda sin uso en ese caso.
+export default function ComentariosObra({ obra, accessToken, usuarioEmail, onCerrar, onLeido, variante = 'flotante' }) {
   const obraBase = nombreBaseObra(obra)
   const [comentarios, setComentarios] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -82,10 +88,12 @@ export default function ComentariosObra({ obra, accessToken, usuarioEmail, onCer
   }
 
   return (
-    <div className="chat-obra chat-obra-flotante" onClick={(e) => e.stopPropagation()}>
+    <div className={`chat-obra ${variante === 'tab' ? 'chat-obra-tab' : 'chat-obra-flotante'}`} onClick={(e) => e.stopPropagation()}>
       <div className="chat-obra-encabezado">
         <span className="chat-obra-titulo">Conversación</span>
-        <button type="button" className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar conversación">✕</button>
+        {variante === 'flotante' && (
+          <button type="button" className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar conversación">✕</button>
+        )}
       </div>
       <div className="chat-obra-mensajes">
         {cargando && <p className="dashboard-nota">Cargando…</p>}
