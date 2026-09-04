@@ -38,7 +38,7 @@ async function main() {
       console.log('No se encontró un presupuesto enviado para esta obra.');
     }
     if (relleno.fecha_ultimo_envio) {
-      campos.estatus = 'Pdt Aprobación';
+      campos.estatus = 'Enviado';
     }
   } catch (err) {
     console.warn('No se pudo buscar en presupuestos enviados:', err.message);

@@ -275,7 +275,7 @@ async function obtenerOCrearSubcarpeta(drive, parentId, nombre, patron) {
 // Provisiona en Drive lo que una obra recién descubierta necesita para
 // poder avanzar sola por el flujo automático de estatus: una carpeta
 // "Enviados" (ahí se guarda el PDF del presupuesto ya enviado — sin esto la
-// obra nunca puede llegar a "Pdt Aprobación", ver pdfsEnCarpetaObra en
+// obra nunca puede llegar a "Enviado", ver pdfsEnCarpetaObra en
 // extract_from_sent_pdf.js) y una carpeta "Valoración" dentro de
 // "1.Organización" (para las ofertas de proveedor que pide Geraldinne, ver
 // carpetaValoracion en extract_ofertas_proveedor.js). Idempotente: si ya
@@ -376,13 +376,13 @@ async function main() {
           continue;
         }
         const campos = { ...camposBase, ...relleno };
-        // Si hay un envío encontrado, la obra pasa a "Pdt Aprobación"
+        // Si hay un envío encontrado, la obra pasa a "Enviado"
         // automáticamente (el backend solo aplica este cambio si el estatus
         // actual sigue en una fase previa al envío — En Estudio, En
-        // Valoración o En Revisión; nunca pisa Descartado/Aceptado/Pdt
-        // Aprobación puestos a mano).
+        // Valoración o En Revisión; nunca pisa Descartado/Aceptado/Enviado
+        // puestos a mano).
         if (relleno.fecha_ultimo_envio) {
-          campos.estatus = 'Pdt Aprobación';
+          campos.estatus = 'Enviado';
         }
 
         nombresActivos.push(obraFinal);
@@ -433,7 +433,7 @@ async function main() {
   // nombre de carpeta", las filas viejas quedan con un identificador que ya
   // no se vuelve a generar. Se borran del panel las que no aparecen en este
   // recorrido de Drive y siguen en un estatus previo a la decisión final
-  // (En Estudio / En Valoración / En Revisión / Pdt Aprobación) —
+  // (En Estudio / En Valoración / En Revisión / Enviado) —
   // Descartado/Aceptado se conservan siempre como historial, aunque su obra
   // ya no exista en Drive.
   const obrasActivas = nombresActivos;

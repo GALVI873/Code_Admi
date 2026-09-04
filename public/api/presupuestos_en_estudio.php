@@ -42,11 +42,12 @@ $config = require __DIR__ . '/../../backend/bootstrap.php';
 // existe la carpeta, la hoja de cálculo todavía no tiene valores). En cuanto
 // esa hoja tiene un total real pasa sola a "En Valoración" — también
 // automático. "En Revisión" es la única fase previa al envío que se pone
-// siempre a mano. "Pdt Aprobación" es automático en cuanto la sincronización
+// siempre a mano. "Enviado" es automático en cuanto la sincronización
 // encuentra un PDF en la carpeta Enviados de la obra (para cualquiera de los
-// tres estatus previos). Descartado/Aceptado son decisiones finales
-// manuales.
-const ESTATUS_VALIDOS = ['En Estudio', 'En Valoración', 'En Revisión', 'Pdt Aprobación', 'Aceptado', 'Descartado'];
+// tres estatus previos) — se llamó "Pdt Aprobación" hasta que se renombró
+// por confuso (sonaba a que faltaba aprobar algo, no a que ya se envió).
+// Descartado/Aceptado son decisiones finales manuales.
+const ESTATUS_VALIDOS = ['En Estudio', 'En Valoración', 'En Revisión', 'Enviado', 'Aceptado', 'Descartado'];
 const ESTATUS_PRE_ENVIO = ['En Estudio', 'En Valoración', 'En Revisión'];
 
 // Sin tildes/mayúsculas ni signos, para poder comparar "Villar" con
@@ -206,6 +207,11 @@ try {
     // (mismo significado, nombre más preciso). No afecta filas nuevas, solo
     // limpia las que quedaron con el nombre viejo.
     $db->exec("UPDATE presupuestos_en_estudio SET estatus = 'Pdt Aprobación' WHERE estatus = 'Seguimiento'");
+
+    // Segundo renombre: "Pdt Aprobación" resultó confuso (sonaba a que
+    // faltaba aprobar algo) y pasó a llamarse "Enviado" — mismo significado
+    // (se detectó un PDF en la carpeta Enviados de la obra).
+    $db->exec("UPDATE presupuestos_en_estudio SET estatus = 'Enviado' WHERE estatus = 'Pdt Aprobación'");
 
     // Igual de idempotente para el permiso nuevo: se crea y se asigna solo a
     // admin si todavía no existe (no rompe nada si ya corrió antes).
@@ -540,12 +546,12 @@ try {
         //      tiene un total real (ver extract_fields.js) — antes de eso
         //      solo existe la carpeta, sin nada que valorar todavía.
         //   2. Cualquier fase previa al envío ("En Estudio", "En Valoración"
-        //      o "En Revisión") -> "Pdt Aprobación" en cuanto la
+        //      o "En Revisión") -> "Enviado" en cuanto la
         //      sincronización encuentra un envío nuevo.
         // "En Revisión" es la única fase previa al envío que se pone
         // siempre a mano — nunca la asigna la sincronización, así que
         // tampoco hay transición automática HACIA ella. Descartado,
-        // Aceptado o un Pdt Aprobación ya existente nunca se pisan. En el
+        // Aceptado o un Enviado ya existente nunca se pisan. En el
         // INSERT sí se usa el valor por defecto para una obra nueva.
         $estatusPreEnvio = "'" . implode("','", ESTATUS_PRE_ENVIO) . "'";
         $stmt = $db->prepare("
@@ -555,8 +561,8 @@ try {
             ON CONFLICT(obra) DO UPDATE SET
                 cliente = excluded.cliente,
                 estatus = CASE
-                    WHEN presupuestos_en_estudio.estatus IN ($estatusPreEnvio) AND excluded.estatus = 'Pdt Aprobación'
-                        THEN 'Pdt Aprobación'
+                    WHEN presupuestos_en_estudio.estatus IN ($estatusPreEnvio) AND excluded.estatus = 'Enviado'
+                        THEN 'Enviado'
                     WHEN presupuestos_en_estudio.estatus = 'En Estudio' AND excluded.estatus = 'En Valoración'
                         THEN 'En Valoración'
                     ELSE presupuestos_en_estudio.estatus
@@ -606,7 +612,7 @@ try {
     // lista completa de obras encontradas en este recorrido y borra las que
     // ya no aparecen (renombradas, movidas o archivadas) — pero solo si
     // siguen en un estatus previo a la decisión final (En Estudio, En
-    // Valoración, En Revisión o Pdt Aprobación). Descartado y Aceptado son
+    // Valoración, En Revisión o Enviado). Descartado y Aceptado son
     // decisiones ya tomadas y se conservan siempre como historial, aunque su
     // obra ya no exista en Drive con ese nombre.
     if ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
@@ -645,7 +651,7 @@ try {
         }
 
         $marcadores = implode(',', array_fill(0, count($obrasActivas), '?'));
-        $estatusReconciliables = "'" . implode("','", array_merge(ESTATUS_PRE_ENVIO, ['Pdt Aprobación'])) . "'";
+        $estatusReconciliables = "'" . implode("','", array_merge(ESTATUS_PRE_ENVIO, ['Enviado'])) . "'";
         $stmt = $db->prepare("
             DELETE FROM presupuestos_en_estudio
             WHERE estatus IN ($estatusReconciliables)

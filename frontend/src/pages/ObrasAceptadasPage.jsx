@@ -19,7 +19,7 @@ import {
 // % de ganancia (información comercial, no operativa) — solo lo que él
 // necesita para su parte del proceso.
 const EMAIL_AUTORIZADO = 'alfredo@galvi.es'
-const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista']
+const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista', 'Alvarada']
 
 // Estos son los estados que todavía necesitan que Alfredo haga algo —
 // "EN OBRA"/"FABRICACIÓN"/"EN BOROX" ya están en marcha, no reclaman

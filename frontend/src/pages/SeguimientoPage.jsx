@@ -13,8 +13,8 @@ import ComentariosObra from '../components/ComentariosObra.jsx'
 // diferencia de Presupuestos en Estudio, acá ni siquiera es una opción de
 // filtro, porque a ella no le interesan las obras cerradas.
 const EMAIL_AUTORIZADO = 'presupuestos@galvi.es'
-const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Pdt Aprobación', 'Aceptado']
-const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista']
+const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Enviado', 'Aceptado']
+const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista', 'Alvarada']
 
 // Del Vademecum (Z:\DRIVE GALVI\Vademecum.xlsx, hoja "Proveedores") — solo
 // como sugerencias del campo de texto libre (datalist), no como opción
@@ -52,15 +52,15 @@ const CLASE_ESTATUS = {
   'En Estudio': 'select-estatus-en-estudio',
   'En Valoración': 'select-estatus-en-valoracion',
   'En Revisión': 'select-estatus-en-revision',
-  'Pdt Aprobación': 'select-estatus-pdt-aprobacion',
+  Enviado: 'select-estatus-enviado',
   Aceptado: 'select-estatus-aceptado',
 }
 
-// "Pdt Aprobación" puesto a mano sin que exista un PDF en la carpeta
-// Enviados de la obra es un estado inconsistente — igual que en
-// Presupuestos en Estudio, se avisa pero no se bloquea.
+// "Enviado" puesto a mano sin que exista un PDF en la carpeta Enviados de
+// la obra es un estado inconsistente — igual que en Presupuestos en
+// Estudio, se avisa pero no se bloquea.
 function faltaEnvio(presupuesto) {
-  return presupuesto.estatus === 'Pdt Aprobación' && !presupuesto.fecha_ultimo_envio
+  return presupuesto.estatus === 'Enviado' && !presupuesto.fecha_ultimo_envio
 }
 
 // Una obra con varias alternativas de presupuesto (ej. "Alfonso XIII, Bajo
@@ -82,7 +82,7 @@ function InsigniaAlerta() {
   return (
     <span
       className="obra-card-insignia-alerta"
-      title="Pdt Aprobación sin ningún presupuesto enviado registrado en Drive"
+      title="Estatus Enviado sin ningún PDF de envío registrado en Drive"
       onClick={(e) => e.stopPropagation()}
     >
       ⚠
@@ -552,7 +552,7 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
         )}
 
         {faltaEnvio(activo) && (
-          <p className="modal-aviso">⚠ "Pdt Aprobación" sin ningún presupuesto enviado registrado en Drive.</p>
+          <p className="modal-aviso">⚠ "Enviado" sin ningún PDF de envío registrado en Drive.</p>
         )}
 
         <div className="modal-meta">
@@ -625,13 +625,13 @@ export default function SeguimientoPage() {
   // Estudio, acá no hay forma de volver a mostrarlas.
   const filasVivas = useMemo(() => filas.filter((p) => p.estatus !== 'Descartado'), [filas])
 
-  // "Todos" oculta además "Pdt Aprobación" — a Geraldinne solo le interesa
-  // ese estatus cuando lo busca a propósito (filtrando por él), no como
-  // parte del vistazo general del día a día. Mismo patrón que Descartado en
+  // "Todos" oculta además "Enviado" — a Geraldinne solo le interesa ese
+  // estatus cuando lo busca a propósito (filtrando por él), no como parte
+  // del vistazo general del día a día. Mismo patrón que Descartado en
   // Presupuestos en Estudio, aplicado acá solo a este estatus y solo en
   // esta página.
   const filasSegunEstatus = useMemo(
-    () => filasVivas.filter((p) => (filtroEstatus === 'Todos' ? p.estatus !== 'Pdt Aprobación' : p.estatus === filtroEstatus)),
+    () => filasVivas.filter((p) => (filtroEstatus === 'Todos' ? p.estatus !== 'Enviado' : p.estatus === filtroEstatus)),
     [filasVivas, filtroEstatus],
   )
 
@@ -697,7 +697,7 @@ export default function SeguimientoPage() {
 
   // Agrupadas por estatus para que el grid tenga secciones claras en vez de
   // una sola pared de tarjetas (mismo patrón que Presupuestos en Estudio).
-  // "Pdt Aprobación" queda fuera del agrupamiento por defecto porque
+  // "Enviado" queda fuera del agrupamiento por defecto porque
   // filasSegunEstatus ya lo excluyó de "Todos"; al filtrar puntualmente por
   // ese estatus no hace falta agrupar, ya es un solo grupo (y solo entran
   // las obras que tengan AL MENOS una opción en ese estatus puntual).
@@ -705,7 +705,7 @@ export default function SeguimientoPage() {
     if (filtroEstatus !== 'Todos') {
       return [{ estatus: filtroEstatus, items: gruposObra.filter((g) => g.opciones.some((o) => o.estatus === filtroEstatus)) }]
     }
-    return ESTATUS_OPCIONES.filter((e) => e !== 'Pdt Aprobación')
+    return ESTATUS_OPCIONES.filter((e) => e !== 'Enviado')
       .map((estatus) => ({ estatus, items: gruposObra.filter((g) => g.estatusRepresentativo === estatus) }))
       .filter((g) => g.items.length > 0)
   }, [gruposObra, filtroEstatus])

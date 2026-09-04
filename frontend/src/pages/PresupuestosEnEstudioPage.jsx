@@ -7,20 +7,22 @@ import ComentariosObra from '../components/ComentariosObra.jsx'
 // Drive (solo existe la carpeta, sin valores en la hoja de cálculo);
 // "En Valoración" es automático en cuanto esa hoja tiene un total real;
 // "En Revisión" es la única fase previa al envío que se pone siempre a
-// mano; "Pdt Aprobación" se pone solo en cuanto hay un PDF en la carpeta
-// Enviados de la obra; Aceptado/Descartado son decisiones finales manuales.
-const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Pdt Aprobación', 'Aceptado', 'Descartado']
+// mano; "Enviado" se pone solo en cuanto hay un PDF en la carpeta Enviados
+// de la obra (se llamaba "Pdt Aprobación", cambiado por confuso — sonaba a
+// que faltaba aprobar algo); Aceptado/Descartado son decisiones finales
+// manuales.
+const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Enviado', 'Aceptado', 'Descartado']
 
 // Categorías de contacto tal como las organiza Drive (Arquitectos/
-// Constructores/Particulares/Proveedores/Reformistas), en singular para
-// mostrar en el panel.
-const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista']
+// Constructores/Particulares/Proveedores/Reformistas/Alvarada), en singular
+// para mostrar en el panel.
+const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista', 'Alvarada']
 
 const CLASE_ESTATUS = {
   'En Estudio': 'select-estatus-en-estudio',
   'En Valoración': 'select-estatus-en-valoracion',
   'En Revisión': 'select-estatus-en-revision',
-  'Pdt Aprobación': 'select-estatus-pdt-aprobacion',
+  Enviado: 'select-estatus-enviado',
   Aceptado: 'select-estatus-aceptado',
   Descartado: 'select-estatus-descartado',
 }
@@ -62,12 +64,12 @@ function etiquetaOpcion(obra) {
   return m ? m[1] : null
 }
 
-// "Pdt Aprobación" puesto a mano sin que exista un PDF en la carpeta
-// Enviados de la obra es un estado inconsistente — probablemente alguien se
-// adelantó o el PDF todavía no se subió a Drive. No se bloquea (el estatus
-// siempre se puede cambiar), pero se avisa.
+// "Enviado" puesto a mano sin que exista un PDF en la carpeta Enviados de
+// la obra es un estado inconsistente — probablemente alguien se adelantó o
+// el PDF todavía no se subió a Drive. No se bloquea (el estatus siempre se
+// puede cambiar), pero se avisa.
 function faltaEnvio(presupuesto) {
-  return presupuesto.estatus === 'Pdt Aprobación' && !presupuesto.fecha_ultimo_envio
+  return presupuesto.estatus === 'Enviado' && !presupuesto.fecha_ultimo_envio
 }
 
 // Insignia flotante en la esquina de la tarjeta, con pulso animado, para
@@ -77,7 +79,7 @@ function InsigniaAlerta() {
   return (
     <span
       className="obra-card-insignia-alerta"
-      title="Pdt Aprobación sin ningún presupuesto enviado registrado en Drive"
+      title="Estatus Enviado sin ningún PDF de envío registrado en Drive"
       onClick={(e) => e.stopPropagation()}
     >
       ⚠
@@ -312,7 +314,7 @@ function DetalleObra({ base, opciones, onCerrar, onCambio, puedeCambiarPrioridad
         )}
 
         {faltaEnvio(activo) && (
-          <p className="modal-aviso">⚠ "Pdt Aprobación" sin ningún presupuesto enviado registrado en Drive.</p>
+          <p className="modal-aviso">⚠ "Enviado" sin ningún PDF de envío registrado en Drive.</p>
         )}
 
         <div className="modal-meta">
@@ -432,7 +434,7 @@ export default function PresupuestosEnEstudioPage() {
   )
 
   // Agrupadas por estatus (en el orden de ESTATUS_OPCIONES: En Estudio ->
-  // En Valoración -> En Revisión -> Pdt Aprobación -> Aceptado) para que el
+  // En Valoración -> En Revisión -> Enviado -> Aceptado) para que el
   // grid tenga secciones claras en vez de una sola pared de tarjetas. Al
   // filtrar por un estatus puntual no hace falta el agrupamiento: ya es un
   // solo grupo (y solo entran las obras que tengan AL MENOS una opción en
