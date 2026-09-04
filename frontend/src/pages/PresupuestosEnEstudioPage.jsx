@@ -374,6 +374,10 @@ export default function PresupuestosEnEstudioPage() {
   const [filtroCategoria, setFiltroCategoria] = useState('Todos')
   const [filtroContacto, setFiltroContacto] = useState('Todos')
   const [filtroEstatus, setFiltroEstatus] = useState('Todos')
+  // Botón aparte, no una opción más del desplegable de Estatus — es un
+  // filtro rápido, no un estatus real, así que se maneja como un toggle
+  // independiente que pisa a filtroEstatus mientras está activo.
+  const [soloProxDescartar, setSoloProxDescartar] = useState(false)
   const [obraSeleccionadaBase, setObraSeleccionadaBase] = useState(null)
   const puedeCambiarPrioridad = tienePermiso('presupuestos.gestionar_prioridad')
   const puedeMarcarInteresante = tienePermiso('presupuestos.marcar_interesante')
@@ -385,14 +389,26 @@ export default function PresupuestosEnEstudioPage() {
       .finally(() => setCargando(false))
   }, [accessToken])
 
+  const proxADescartar = useMemo(() => filas.filter(esProximoADescartar), [filas])
+
+  function handleToggleProxDescartar() {
+    setSoloProxDescartar((v) => !v)
+    setFiltroEstatus('Todos')
+  }
+
+  function handleCambioFiltroEstatus(valor) {
+    setFiltroEstatus(valor)
+    setSoloProxDescartar(false)
+  }
+
   // "Todos" muestra los presupuestos vivos (todo menos Descartado) — las
   // descartadas solo aparecen si se filtra explícitamente por ese estatus,
   // para que la vista por defecto no se llene de obras viejas ya cerradas.
   const filasSegunEstatus = useMemo(() => {
-    if (filtroEstatus === PROX_DESCARTAR) return filas.filter(esProximoADescartar)
+    if (soloProxDescartar) return proxADescartar
     if (filtroEstatus === 'Todos') return filas.filter((p) => p.estatus !== 'Descartado')
     return filas.filter((p) => p.estatus === filtroEstatus)
-  }, [filas, filtroEstatus])
+  }, [filas, filtroEstatus, soloProxDescartar, proxADescartar])
 
   // Contactos disponibles para el segundo desplegable: solo los que
   // realmente aparecen bajo la categoría elegida (no la lista fija de
@@ -462,12 +478,13 @@ export default function PresupuestosEnEstudioPage() {
   // solo grupo (y solo entran las obras que tengan AL MENOS una opción en
   // ese estatus puntual).
   const gruposVisibles = useMemo(() => {
-    // "Prox. Descartar" no es un estatus real (ninguna opción lo tiene en
-    // o.estatus) — gruposObra ya viene filtrado por esProximoADescartar
-    // desde filasSegunEstatus/filasFiltradas, así que acá no hace falta
-    // filtrar de nuevo, alcanza con envolverlo en un solo grupo.
-    if (filtroEstatus === PROX_DESCARTAR) {
-      return [{ estatus: filtroEstatus, items: gruposObra }]
+    // Con el botón "Prox. Descartar" activo, gruposObra ya viene filtrado
+    // por esProximoADescartar desde filasSegunEstatus/filasFiltradas, así
+    // que acá no hace falta filtrar de nuevo, alcanza con envolverlo en un
+    // solo grupo (sin encabezado — se muestra igual que filtrar por un
+    // estatus puntual).
+    if (soloProxDescartar) {
+      return [{ estatus: PROX_DESCARTAR, items: gruposObra }]
     }
     if (filtroEstatus !== 'Todos') {
       return [{ estatus: filtroEstatus, items: gruposObra.filter((g) => g.opciones.some((o) => o.estatus === filtroEstatus)) }]
@@ -475,7 +492,7 @@ export default function PresupuestosEnEstudioPage() {
     return ESTATUS_OPCIONES.filter((e) => e !== 'Descartado')
       .map((estatus) => ({ estatus, items: gruposObra.filter((g) => g.estatusRepresentativo === estatus) }))
       .filter((g) => g.items.length > 0)
-  }, [gruposObra, filtroEstatus])
+  }, [gruposObra, filtroEstatus, soloProxDescartar])
 
   // Todas las opciones vivas de la obra abierta (no solo las que pasan los
   // filtros del grid) para que, una vez adentro, las pestañas no dependan de
@@ -561,15 +578,23 @@ export default function PresupuestosEnEstudioPage() {
               id="filtro-estatus"
               className="select-inline"
               value={filtroEstatus}
-              onChange={(e) => setFiltroEstatus(e.target.value)}
+              onChange={(e) => handleCambioFiltroEstatus(e.target.value)}
             >
               <option value="Todos">Todos (activos)</option>
               {ESTATUS_OPCIONES.map((op) => (
                 <option key={op} value={op}>{op}</option>
               ))}
-              <option value={PROX_DESCARTAR}>{PROX_DESCARTAR}</option>
             </select>
           </div>
+          {proxADescartar.length > 0 && (
+            <button
+              type="button"
+              className={`filtro-prox-descartar ${soloProxDescartar ? 'filtro-prox-descartar-activo' : ''}`}
+              onClick={handleToggleProxDescartar}
+            >
+              ⚠ {proxADescartar.length} próx. a descartar
+            </button>
+          )}
           <span className="filtro-contador">
             {gruposObra.length} de {totalGruposSegunEstatus}
           </span>
@@ -587,7 +612,7 @@ export default function PresupuestosEnEstudioPage() {
         <>
           {gruposVisibles.map((grupo) => (
             <section key={grupo.estatus} className="obras-seccion">
-              {filtroEstatus === 'Todos' && (
+              {filtroEstatus === 'Todos' && !soloProxDescartar && (
                 <h2 className={`obras-seccion-titulo ${CLASE_ESTATUS[grupo.estatus] || ''}`}>
                   {grupo.estatus}
                   <span className="obras-seccion-contador">{grupo.items.length}</span>

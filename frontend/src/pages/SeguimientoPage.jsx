@@ -627,6 +627,10 @@ export default function SeguimientoPage() {
   const [filtroCategoria, setFiltroCategoria] = useState('Todos')
   const [filtroContacto, setFiltroContacto] = useState('Todos')
   const [filtroEstatus, setFiltroEstatus] = useState('Todos')
+  // Botón aparte, no una opción más del desplegable de Estatus — es un
+  // filtro rápido, no un estatus real, así que se maneja como un toggle
+  // independiente que pisa a filtroEstatus mientras está activo.
+  const [soloProxDescartar, setSoloProxDescartar] = useState(false)
   const [obraSeleccionadaBase, setObraSeleccionadaBase] = useState(null)
   const puedeMarcarInteresante = tienePermiso('presupuestos.marcar_interesante')
 
@@ -646,15 +650,27 @@ export default function SeguimientoPage() {
   // por estatus.
   const filasVivas = filas
 
+  const proxADescartar = useMemo(() => filasVivas.filter(esProximoADescartar), [filasVivas])
+
+  function handleToggleProxDescartar() {
+    setSoloProxDescartar((v) => !v)
+    setFiltroEstatus('Todos')
+  }
+
+  function handleCambioFiltroEstatus(valor) {
+    setFiltroEstatus(valor)
+    setSoloProxDescartar(false)
+  }
+
   // "Todos" oculta "Enviado" y "Descartado" — a Geraldinne solo le
   // interesan esos estatus cuando los busca a propósito (filtrando por
   // ellos), no como parte del vistazo general del día a día. Mismo patrón
   // que Descartado en Presupuestos en Estudio.
   const filasSegunEstatus = useMemo(() => {
-    if (filtroEstatus === PROX_DESCARTAR) return filasVivas.filter(esProximoADescartar)
+    if (soloProxDescartar) return proxADescartar
     if (filtroEstatus === 'Todos') return filasVivas.filter((p) => p.estatus !== 'Enviado' && p.estatus !== 'Descartado')
     return filasVivas.filter((p) => p.estatus === filtroEstatus)
-  }, [filasVivas, filtroEstatus])
+  }, [filasVivas, filtroEstatus, soloProxDescartar, proxADescartar])
 
   const contactosDisponibles = useMemo(() => {
     if (filtroCategoria === 'Todos') return []
@@ -724,12 +740,13 @@ export default function SeguimientoPage() {
   // solo grupo (y solo entran las obras que tengan AL MENOS una opción en
   // ese estatus puntual).
   const gruposVisibles = useMemo(() => {
-    // "Prox. Descartar" no es un estatus real (ninguna opción lo tiene en
-    // o.estatus) — gruposObra ya viene filtrado por esProximoADescartar
-    // desde filasSegunEstatus/filasFiltradas, así que acá no hace falta
-    // filtrar de nuevo, alcanza con envolverlo en un solo grupo.
-    if (filtroEstatus === PROX_DESCARTAR) {
-      return [{ estatus: filtroEstatus, items: gruposObra }]
+    // Con el botón "Prox. Descartar" activo, gruposObra ya viene filtrado
+    // por esProximoADescartar desde filasSegunEstatus/filasFiltradas, así
+    // que acá no hace falta filtrar de nuevo, alcanza con envolverlo en un
+    // solo grupo (sin encabezado — se muestra igual que filtrar por un
+    // estatus puntual).
+    if (soloProxDescartar) {
+      return [{ estatus: PROX_DESCARTAR, items: gruposObra }]
     }
     if (filtroEstatus !== 'Todos') {
       return [{ estatus: filtroEstatus, items: gruposObra.filter((g) => g.opciones.some((o) => o.estatus === filtroEstatus)) }]
@@ -737,7 +754,7 @@ export default function SeguimientoPage() {
     return ESTATUS_OPCIONES.filter((e) => e !== 'Enviado' && e !== 'Descartado')
       .map((estatus) => ({ estatus, items: gruposObra.filter((g) => g.estatusRepresentativo === estatus) }))
       .filter((g) => g.items.length > 0)
-  }, [gruposObra, filtroEstatus])
+  }, [gruposObra, filtroEstatus, soloProxDescartar])
 
   function handleCambioCategoria(valor) {
     setFiltroCategoria(valor)
@@ -873,15 +890,23 @@ export default function SeguimientoPage() {
               id="filtro-estatus"
               className="select-inline"
               value={filtroEstatus}
-              onChange={(e) => setFiltroEstatus(e.target.value)}
+              onChange={(e) => handleCambioFiltroEstatus(e.target.value)}
             >
               <option value="Todos">Todos</option>
               {ESTATUS_OPCIONES.map((op) => (
                 <option key={op} value={op}>{op}</option>
               ))}
-              <option value={PROX_DESCARTAR}>{PROX_DESCARTAR}</option>
             </select>
           </div>
+          {proxADescartar.length > 0 && (
+            <button
+              type="button"
+              className={`filtro-prox-descartar ${soloProxDescartar ? 'filtro-prox-descartar-activo' : ''}`}
+              onClick={handleToggleProxDescartar}
+            >
+              ⚠ {proxADescartar.length} próx. a descartar
+            </button>
+          )}
           <span className="filtro-contador">
             {gruposObra.length} de {totalGruposSegunEstatus}
           </span>
@@ -896,7 +921,7 @@ export default function SeguimientoPage() {
 
       {!cargando && !error && gruposObra.length > 0 && gruposVisibles.map((grupo) => (
         <section key={grupo.estatus} className="obras-seccion">
-          {filtroEstatus === 'Todos' && (
+          {filtroEstatus === 'Todos' && !soloProxDescartar && (
             <h2 className={`obras-seccion-titulo ${CLASE_ESTATUS[grupo.estatus] || ''}`}>
               {grupo.estatus}
               <span className="obras-seccion-contador">{grupo.items.length}</span>

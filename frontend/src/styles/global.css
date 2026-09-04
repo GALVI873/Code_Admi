@@ -314,6 +314,28 @@ body {
   white-space: nowrap;
 }
 
+.filtro-prox-descartar {
+  border: 1px solid #f0b8ab;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #fdedec;
+  color: var(--rojo);
+  white-space: nowrap;
+}
+
+.filtro-prox-descartar:hover {
+  background: #fbe0dc;
+}
+
+.filtro-prox-descartar-activo {
+  background: var(--rojo);
+  border-color: var(--rojo);
+  color: white;
+}
+
 .dashboard-nota {
   margin-top: 14px;
   font-size: 12px;
