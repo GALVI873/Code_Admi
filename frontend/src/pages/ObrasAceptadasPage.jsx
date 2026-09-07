@@ -42,6 +42,18 @@ function formatoFecha(iso) {
   return `${dia}/${mes}/${anio}`
 }
 
+// Sin tildes/mayúsculas/espacios de más, para agrupar por Cliente sin
+// depender de que dos carpetas de Drive se hayan escrito letra por letra
+// igual (ver gruposPorCliente) — mismo criterio que normalizarProveedor en
+// presupuestos_en_estudio.php.
+function normalizarClienteParaAgrupar(s) {
+  return (s || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+}
+
 // Selector con chips y checklist — mismo patrón que el filtro de obra de
 // Diario General (DiarioGeneralPage.jsx), generalizado para reusarlo acá
 // con Tipo en vez de obra. Reusa las mismas clases CSS (selector-obras/
@@ -921,16 +933,37 @@ export default function ObrasAceptadasPage() {
   // de tarjetas anchas, ahora cada cliente es un encabezado con sus obras
   // en una lista compacta y numerada debajo, para poder escanear muchos
   // clientes sin que cada obra ocupe tanto espacio.
+  //
+  // Se agrupa por CONTACTO (la carpeta Categoría/Contacto de Drive, ver
+  // sync_obras_aceptadas.js), no por el campo "cliente" del Excel, aunque
+  // acá se lo siga llamando "Cliente" — mismo criterio que el filtro
+  // "Cliente" que ya existía en esta página (filtroContacto, más abajo,
+  // también filtra por p.contacto). El campo "cliente" es texto libre que
+  // cada Ficha reescribe a mano por su cuenta (typos y variantes: "Pila
+  // Bolaños"/"Pilar Bolaños", "Silvia San Martin"/"Martín", "...- PI 2")
+  // mientras que el contacto es UNA sola carpeta real, siempre el mismo
+  // texto — agrupando por ahí esas variantes dejan de aparecer como
+  // clientes distintos. cliente solo se usa como respaldo para las
+  // categorías sin contacto (Particulares). Igual se normaliza (sin
+  // tildes/mayúsculas/espacios de más, mismo criterio que
+  // normalizarProveedor en presupuestos_en_estudio.php) por si dos
+  // carpetas de contacto distintas terminan escritas ligeramente distinto.
   const gruposPorCliente = useMemo(() => {
     const mapa = new Map()
     for (const p of filasFiltradas) {
-      const cliente = p.cliente || 'Sin cliente'
-      if (!mapa.has(cliente)) mapa.set(cliente, [])
-      mapa.get(cliente).push(p)
+      const nombreCrudo = p.contacto || p.cliente || 'Sin cliente'
+      const clave = normalizarClienteParaAgrupar(nombreCrudo)
+      if (!mapa.has(clave)) mapa.set(clave, { nombres: new Set(), obras: [] })
+      const grupo = mapa.get(clave)
+      grupo.nombres.add(nombreCrudo)
+      grupo.obras.push(p)
     }
-    return Array.from(mapa.entries())
-      .sort(([a], [b]) => a.localeCompare(b, 'es'))
-      .map(([cliente, obras]) => ({ cliente, obras }))
+    return Array.from(mapa.values())
+      .map(({ nombres, obras }) => ({
+        cliente: Array.from(nombres).sort((a, b) => a.localeCompare(b, 'es'))[0],
+        obras,
+      }))
+      .sort((a, b) => a.cliente.localeCompare(b.cliente, 'es'))
   }, [filasFiltradas])
 
   function handleCambioCategoria(valor) {
