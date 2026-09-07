@@ -508,19 +508,6 @@ try {
             Response::json(['presupuestos' => $stmt->fetchAll()]);
         }
 
-        // TEMPORAL: verificar el fallback cliente<-contacto sin necesitar una
-        // sesión de usuario real (se quita en el próximo commit).
-        if (($body['accion'] ?? '') === 'debug_ver_cliente') {
-            $obra = trim((string) ($body['obra'] ?? ''));
-            $stmt = $db->prepare('SELECT cliente, contacto FROM presupuestos_en_estudio WHERE obra = ?');
-            $stmt->execute([$obra]);
-            $fila = $stmt->fetch();
-            if ($fila && ($fila['cliente'] ?? '') === '' && !empty($fila['contacto'])) {
-                $fila['cliente'] = $fila['contacto'];
-            }
-            Response::json(['fila' => $fila]);
-        }
-
         // Empareja lo detectado en la carpeta "Valoración" de la obra contra
         // lo que ya hay en la tabla, en vez de borrar todo y volver a
         // insertar (eso pisaba las solicitudes "Pendiente" que Geraldinne
