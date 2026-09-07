@@ -8,6 +8,7 @@ import SeguimientoPage from './pages/SeguimientoPage.jsx'
 import ObrasAceptadasPage from './pages/ObrasAceptadasPage.jsx'
 import DiarioGeneralPage from './pages/DiarioGeneralPage.jsx'
 import PendientesObrasPage from './pages/PendientesObrasPage.jsx'
+import ContabilidadPage from './pages/ContabilidadPage.jsx'
 
 // No hay una sola "página principal" para todos: cada perfil tiene acceso a
 // una vista distinta (Presupuestos en Estudio para admin, Presupuesto para
@@ -39,6 +40,7 @@ export default function App() {
             <Route path="/obras-aceptadas/:id" element={<ObrasAceptadasPage />} />
             <Route path="/pendientes" element={<PendientesObrasPage />} />
             <Route path="/diario-general" element={<DiarioGeneralPage />} />
+            <Route path="/contabilidad" element={<ContabilidadPage />} />
           </Route>
         </Route>
       </Routes>

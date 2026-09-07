@@ -280,6 +280,16 @@ try {
         WHERE r.nombre = 'admin' AND p.clave = 'obras.ver_aceptadas'
     ");
 
+    // Departamento "Contabilidad": todavía sin diseñar, solo el lugar en el
+    // menú por ahora — se otorga solo a admin (Álvaro) hasta que se defina
+    // qué necesita este módulo y quién más lo usa.
+    $db->exec("INSERT OR IGNORE INTO permisos (clave, descripcion) VALUES ('contabilidad.ver', 'Ver la sección de Contabilidad (todavía sin funcionalidad)')");
+    $db->exec("
+        INSERT OR IGNORE INTO rol_permisos (rol_id, permiso_id)
+        SELECT r.id, p.id FROM roles r, permisos p
+        WHERE r.nombre = 'admin' AND p.clave = 'contabilidad.ver'
+    ");
+
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
         AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento', 'obras.ver_aceptadas']);

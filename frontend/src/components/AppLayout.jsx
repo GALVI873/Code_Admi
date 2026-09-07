@@ -1,16 +1,24 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth, MOCK_AUTH } from '../context/AuthContext.jsx'
 
-// Cada módulo de departamento agrega su entrada aquí cuando se construya
-// (Transporte, Taller, etc.) — el filtro por permiso ya queda listo.
+// Menú organizado por departamento a pedido de Álvaro — un ítem plano
+// sigue siendo un ítem plano ({to, label, icono, permiso}), pero un
+// departamento con más de una vista adentro es un grupo desplegable
+// ({grupo, icono, items:[{to, label, permiso}]}). Cada módulo nuevo agrega
+// su entrada acá (suelto o dentro de un grupo existente) cuando se
+// construya — el filtro por permiso ya queda listo para cualquiera de los
+// dos casos.
 const NAV_ITEMS = [
-  { to: '/presupuestos-en-estudio', label: 'Presupuestos en Estudio', icono: '🔍', permiso: 'presupuestos.ver_todos' },
+  { to: '/presupuestos-en-estudio', label: 'Presupuestos', icono: '🔍', permiso: 'presupuestos.ver_todos' },
   // Espacio de trabajo personal de Geraldinne. Permiso propio
   // (ver_seguimiento), no ver_todos — así no comparte puerta con
-  // Presupuestos en Estudio (la vista de admin). El filtro por email es
-  // una segunda capa además del permiso, ya que hoy es la única persona
-  // con ese permiso, pero es exclusivamente su vista, no una capacidad
-  // pensada para compartir.
+  // Presupuestos (la vista de admin). El filtro por email es una segunda
+  // capa además del permiso, ya que hoy es la única persona con ese
+  // permiso, pero es exclusivamente su vista, no una capacidad pensada
+  // para compartir. Queda como ítem suelto (no entra en el grupo
+  // "Seguimiento" de abajo): es una vista completamente distinta de las
+  // de Alfredo/Álvaro, comparte nombre de ruta nada más.
   {
     to: '/seguimiento',
     label: 'Presupuesto',
@@ -18,44 +26,50 @@ const NAV_ITEMS = [
     permiso: 'presupuestos.ver_seguimiento',
     soloEmail: 'presupuestos@galvi.es',
   },
-  // Espacio de trabajo de Gestión de Obras. Ya no es exclusiva de Alfredo:
-  // Álvaro (admin) también la necesita para ver el seguimiento de obra sin
-  // depender de él — mismo criterio que Diario General, solo permiso, sin
-  // filtro de email.
+  // Departamento "Seguimiento" (Alfredo/Álvaro) — antes tres ítems sueltos,
+  // ahora agrupados en un desplegable. "Notas" es la vista consolidada de
+  // pendientes (PendientesObrasPage.jsx, ruta /pendientes sin cambios) —
+  // solo se le cambió el nombre en el menú, a pedido explícito.
   {
-    to: '/obras-aceptadas',
-    label: 'Obras Aceptadas',
-    icono: '🧱',
-    permiso: 'obras.ver_aceptadas',
+    grupo: 'Seguimiento',
+    icono: '🏗️',
+    items: [
+      { to: '/obras-aceptadas', label: 'Obras Aceptadas', permiso: 'obras.ver_aceptadas' },
+      { to: '/diario-general', label: 'Diario General', permiso: 'obras.ver_diario_general' },
+      { to: '/pendientes', label: 'Notas', permiso: 'obras.ver_aceptadas' },
+    ],
   },
-  // Control general de pendientes de Alfredo (ver PendientesObrasPage.jsx)
-  // — junta las notas de todas las obras aceptadas en un solo lugar, mismo
-  // permiso que Obras Aceptadas (misma audiencia: Alfredo y Álvaro).
+  // Departamento nuevo, todavía sin diseñar (a pedido de Álvaro, para que
+  // el lugar ya exista en el menú) — soloRol en vez de depender solo del
+  // permiso, porque por ahora es exclusivamente exploratorio para admin;
+  // cuando se diseñe de verdad, contabilidad.ver se puede otorgar a otros
+  // roles sin tocar este archivo.
   {
-    to: '/pendientes',
-    label: 'Pendientes',
-    icono: '✅',
-    permiso: 'obras.ver_aceptadas',
-  },
-  // A diferencia de las anteriores, esta SÍ es compartida a propósito: la
-  // entrevista de Fase 1 confirma que tanto Alfredo como Álvaro la
-  // necesitan (pedidos de material y transporte/montaje) — solo permiso,
-  // sin filtro de email.
-  {
-    to: '/diario-general',
-    label: 'Diario General',
-    icono: '📋',
-    permiso: 'obras.ver_diario_general',
+    to: '/contabilidad',
+    label: 'Contabilidad',
+    icono: '💰',
+    permiso: 'contabilidad.ver',
+    soloRol: 'admin',
   },
 ]
 
 export default function AppLayout() {
   const { usuario, logout, tienePermiso } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [grupoAbierto, setGrupoAbierto] = useState(null)
 
   async function handleLogout() {
     await logout()
     navigate('/login', { replace: true })
+  }
+
+  function puedeVer(item) {
+    return (
+      tienePermiso(item.permiso) &&
+      (!item.soloEmail || usuario?.email === item.soloEmail) &&
+      (!item.soloRol || usuario?.roles?.includes(item.soloRol))
+    )
   }
 
   return (
@@ -63,17 +77,50 @@ export default function AppLayout() {
       <aside className="app-sidebar">
         <div className="app-logo">🏗️ Panel Galvi</div>
         <nav className="app-nav">
-          {NAV_ITEMS.filter(
-            (item) => tienePermiso(item.permiso) && (!item.soloEmail || usuario?.email === item.soloEmail),
-          ).map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) => `app-nav-link${isActive ? ' activo' : ''}`}
-            >
-              <span>{item.icono}</span> {item.label}
-            </NavLink>
-          ))}
+          {NAV_ITEMS.map((item) => {
+            if (item.grupo) {
+              const itemsVisibles = item.items.filter(puedeVer)
+              if (itemsVisibles.length === 0) return null
+              const tieneRutaActiva = itemsVisibles.some((sub) => location.pathname.startsWith(sub.to))
+              const abierto = grupoAbierto === item.grupo || tieneRutaActiva
+              return (
+                <div key={item.grupo} className="app-nav-grupo">
+                  <button
+                    type="button"
+                    className={`app-nav-link app-nav-grupo-boton${tieneRutaActiva ? ' activo' : ''}`}
+                    onClick={() => setGrupoAbierto((g) => (g === item.grupo ? null : item.grupo))}
+                  >
+                    <span>{item.icono}</span> {item.grupo}
+                    <span className={`app-nav-grupo-flecha${abierto ? ' app-nav-grupo-flecha-abierta' : ''}`}>▾</span>
+                  </button>
+                  {abierto && (
+                    <div className="app-nav-subitems">
+                      {itemsVisibles.map((sub) => (
+                        <NavLink
+                          key={sub.to}
+                          to={sub.to}
+                          className={({ isActive }) => `app-nav-link app-nav-sublink${isActive ? ' activo' : ''}`}
+                        >
+                          {sub.label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            }
+
+            if (!puedeVer(item)) return null
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) => `app-nav-link${isActive ? ' activo' : ''}`}
+              >
+                <span>{item.icono}</span> {item.label}
+              </NavLink>
+            )
+          })}
         </nav>
         <div className="app-sidebar-footer">
           <div className="app-usuario">

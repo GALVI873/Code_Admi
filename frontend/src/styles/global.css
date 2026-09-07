@@ -530,6 +530,38 @@ body {
 .app-nav-link:hover { background: rgba(255, 255, 255, .08); color: white; }
 .app-nav-link.activo { background: rgba(255, 255, 255, .15); color: white; }
 
+.app-nav-grupo { display: flex; flex-direction: column; }
+
+.app-nav-grupo-boton {
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.app-nav-grupo-flecha {
+  margin-left: auto;
+  font-size: 11px;
+  transition: transform .15s ease;
+}
+
+.app-nav-grupo-flecha-abierta { transform: rotate(180deg); }
+
+.app-nav-subitems {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 14px;
+  margin-top: 2px;
+}
+
+.app-nav-sublink {
+  font-size: 12.5px;
+  padding: 7px 12px;
+}
+
 .app-sidebar-footer {
   border-top: 1px solid rgba(255, 255, 255, .15);
   padding-top: 14px;
