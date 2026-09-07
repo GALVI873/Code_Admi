@@ -7,6 +7,7 @@ import {
   confirmarCampoObraAceptada,
   quitarConfirmacionObraAceptada,
   actualizarMaterialObraAceptada,
+  cambiarEstatusObraAceptada,
   planosObra,
   guardarPosicionPlano,
   quitarPosicionPlano,
@@ -25,13 +26,15 @@ import ComentariosObra from '../components/ComentariosObra.jsx'
 // filtrar por email acá también.
 const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista']
 
-// Estos son los estados que todavía necesitan que Alfredo haga algo —
-// "EN OBRA"/"FABRICACIÓN"/"EN BOROX" ya están en marcha, no reclaman
-// atención inmediata. Lista fija: la hoja "BD" (ver
-// extract_seguimiento_materiales.js) no tiene un vocabulario cerrado de
-// estados, así que puede haber obras con estados que no calcen acá — se
-// ajusta a medida que aparezcan casos reales.
-const ESTADOS_PENDIENTES = ['PEDIR MATERIAL', 'MEDIR']
+// Estatus de seguimiento de la obra (no confundir con los estatus de
+// Presupuestos en Estudio) — puesto siempre a mano por Alfredo/Álvaro
+// desde la lista, "Activo" por defecto en cuanto llega una obra nueva.
+const ESTATUS_ACEPTADA_OPCIONES = ['Activo', 'Repasos', 'Terminada']
+const CLASE_ESTATUS_ACEPTADA = {
+  Activo: 'select-estatus-en-valoracion',
+  Repasos: 'select-estatus-enviado',
+  Terminada: 'select-estatus-aceptado',
+}
 
 function formatoFecha(iso) {
   if (!iso) return null
@@ -105,15 +108,28 @@ function SelectorMultipleGenerico({ valores, seleccionados, onCambiar }) {
   )
 }
 
+function SelectEstatusObraAceptada({ presupuesto, onCambiar }) {
+  return (
+    <select
+      className={`select-inline select-estatus ${CLASE_ESTATUS_ACEPTADA[presupuesto.estatus] || ''}`}
+      value={presupuesto.estatus || 'Activo'}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onCambiar(presupuesto.obra, e.target.value)}
+    >
+      {ESTATUS_ACEPTADA_OPCIONES.map((op) => (
+        <option key={op} value={op}>{op}</option>
+      ))}
+    </select>
+  )
+}
+
 // Reemplaza la tarjeta ancha (TarjetaObraAceptada) en la lista principal —
 // a pedido de Alfredo: agrupada por Cliente (ver gruposPorCliente), cada
-// obra queda como una casilla chica y numerada en vez de una tarjeta
-// grande, para poder escanear muchos clientes/obras sin scroll infinito.
-// El indicador de mensajes sin leer va inline (no la insignia circular
-// absoluta de la tarjeta grande, no entra bien en una casilla chica y
-// apretada contra las de al lado).
-function ObraItemCompacto({ presupuesto, materiales, numero, onAbrir }) {
-  const pendientes = materiales.filter((m) => ESTADOS_PENDIENTES.includes(m.estado)).length
+// obra queda como un renglón chico y numerado, uno debajo del otro, en vez
+// de una tarjeta grande en grilla. El indicador de mensajes sin leer va
+// inline (no la insignia circular absoluta de la tarjeta grande, no entra
+// bien en un renglón angosto).
+function ObraItemCompacto({ presupuesto, numero, onAbrir, onCambiarEstatus }) {
   return (
     <div
       className="obra-item-compacto"
@@ -130,9 +146,7 @@ function ObraItemCompacto({ presupuesto, materiales, numero, onAbrir }) {
         <span className="obra-item-compacto-mensaje" title="Tiene mensajes nuevos en la conversación">💬</span>
       )}
       <span className="obra-item-compacto-proveedor">{presupuesto.proveedor || 'Sin proveedor'}</span>
-      {pendientes > 0 && (
-        <span className="badge badge-rechazado obra-item-compacto-badge">{pendientes} pdte.{pendientes > 1 ? 's' : ''}</span>
-      )}
+      <SelectEstatusObraAceptada presupuesto={presupuesto} onCambiar={onCambiarEstatus} />
     </div>
   )
 }
@@ -954,6 +968,17 @@ export default function ObrasAceptadasPage() {
     }
   }
 
+  async function handleCambiarEstatusObra(obra, estatus) {
+    const anteriores = filas
+    setFilas((fs) => fs.map((f) => (f.obra === obra ? { ...f, estatus } : f)))
+    try {
+      await cambiarEstatusObraAceptada(accessToken, obra, estatus)
+    } catch (err) {
+      setFilas(anteriores)
+      setError(err.message)
+    }
+  }
+
   // Se compara por referencia (=== m), no por contenido: puede haber dos
   // ítems con exactamente los mismos valores (ej. dos paños de vidrio
   // idénticos en la misma posición) — comparar por referencia asegura que
@@ -1087,9 +1112,9 @@ export default function ObrasAceptadasPage() {
               <ObraItemCompacto
                 key={p.id}
                 presupuesto={p}
-                materiales={materialesPorObra.get(p.obra) || []}
                 numero={i + 1}
                 onAbrir={(id) => navigate(`/obras-aceptadas/${id}`)}
+                onCambiarEstatus={handleCambiarEstatusObra}
               />
             ))}
           </div>

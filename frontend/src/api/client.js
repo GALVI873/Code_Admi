@@ -116,6 +116,14 @@ export function quitarConfirmacionObraAceptada(accessToken, obra, campo) {
   })
 }
 
+export function cambiarEstatusObraAceptada(accessToken, obra, estatus) {
+  return request('/obras_aceptadas.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ obra, estatus }),
+  })
+}
+
 export function planosObra(accessToken, obra) {
   return request(`/planos.php?obra=${encodeURIComponent(obra)}`, {
     headers: { Authorization: `Bearer ${accessToken}` },

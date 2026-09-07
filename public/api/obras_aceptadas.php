@@ -32,6 +32,13 @@ declare(strict_types=1);
 // uno de los confirmables (ver CAMPOS_CONFIRMABLES); cualquier otro se
 // rechaza. Con {obra, campo, eliminar:true} se deshace la confirmación
 // (vuelve el campo a sin confirmar, por si se tocó ✓ sin querer).
+// PATCH {obra, estatus}: cambia el estatus de seguimiento de la obra
+// (Activo/Repasos/Terminada, ver ESTATUS_ACEPTADA_VALIDOS) — puesto siempre
+// a mano desde la lista; vive en la propia columna obras_aceptadas.estatus,
+// no en obra_aceptada_confirmaciones, así que el UPDATE de la
+// sincronización de más abajo no lo toca y sobrevive a la próxima corrida
+// sin necesitar tabla aparte. Una obra nueva arranca en "Activo" por
+// defecto (ver migración idempotente más abajo).
 // POST: {accion:"listar"} lectura administrativa para el script de
 // escritura (protegido por SYNC_TOKEN, sin sesión). Upsert de una obra
 // puntual, usado por la sincronización con Drive (mismo token).
@@ -45,6 +52,12 @@ const CAMPOS_CONFIRMABLES = [
     'proveedor', 'color_carpinteria', 'correderas', 'abatibles', 'vidrio',
     'ral', 'persiana', 'color_persiana', 'modelo_lamas', 'motor_radio', 'motor_mecanico',
 ];
+
+// Estatus de seguimiento de la obra ya aceptada (no confunde con el
+// estatus de Presupuestos en Estudio, es un campo propio de esta tabla) —
+// se pone siempre a mano desde la lista, por defecto "Activo" en cuanto
+// una obra nueva llega acá.
+const ESTATUS_ACEPTADA_VALIDOS = ['Activo', 'Repasos', 'Terminada'];
 
 // Mismo hilo de comentarios que usa Presupuestos en Estudio
 // (comentarios_obra.php) — acá alimenta la pestaña "Notas" del detalle de
@@ -92,11 +105,15 @@ try {
     // (no se borran, esa columna nunca se elimina en SQLite sin recrear la
     // tabla) pero ya no las lee ni las escribe nada.
     $columnas = array_column($db->query('PRAGMA table_info(obras_aceptadas)')->fetchAll(), 'name');
-    foreach (['fecha_ppto', 'color_carpinteria', 'correderas', 'abatibles', 'color_persiana', 'modelo_lamas', 'motor_radio', 'motor_mecanico'] as $columna) {
+    foreach (['fecha_ppto', 'color_carpinteria', 'correderas', 'abatibles', 'color_persiana', 'modelo_lamas', 'motor_radio', 'motor_mecanico', 'estatus'] as $columna) {
         if (!in_array($columna, $columnas, true)) {
             $db->exec("ALTER TABLE obras_aceptadas ADD COLUMN $columna TEXT");
         }
     }
+    // Obras que ya existían antes de agregar esta columna (ALTER TABLE no
+    // puede poner un default distinto de NULL sobre filas existentes en
+    // SQLite) — se las deja en "Activo" igual que las nuevas, no en blanco.
+    $db->exec("UPDATE obras_aceptadas SET estatus = 'Activo' WHERE estatus IS NULL");
 
     $db->exec("
         CREATE TABLE IF NOT EXISTS obra_aceptada_confirmaciones (
@@ -173,6 +190,25 @@ try {
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
         $obra = trim((string) ($body['obra'] ?? ''));
+
+        // Estatus de seguimiento puesto a mano (Activo/Repasos/Terminada) —
+        // vive directo en obras_aceptadas (no en obra_aceptada_confirmaciones,
+        // eso es para los campos de la Ficha), la sincronización nunca lo
+        // toca en el UPDATE de más abajo así que un cambio hecho acá
+        // sobrevive a la próxima corrida sin necesitar tabla aparte.
+        if (array_key_exists('estatus', $body) && !array_key_exists('campo', $body)) {
+            if ($obra === '') {
+                Response::error('Falta "obra"', 422);
+            }
+            $estatus = trim((string) $body['estatus']);
+            if (!in_array($estatus, ESTATUS_ACEPTADA_VALIDOS, true)) {
+                Response::error('"estatus" debe ser uno de: ' . implode(', ', ESTATUS_ACEPTADA_VALIDOS), 422);
+            }
+            $db->prepare("UPDATE obras_aceptadas SET estatus = ?, actualizado_en = datetime('now') WHERE obra = ?")
+                ->execute([$estatus, $obra]);
+            Response::json(['ok' => true]);
+        }
+
         $campo = trim((string) ($body['campo'] ?? ''));
         if ($obra === '' || $campo === '') {
             Response::error('Faltan "obra" y/o "campo"', 422);
