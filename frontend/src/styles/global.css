@@ -1296,6 +1296,11 @@ select.celda-editable-material {
   font-size: 12.5px;
 }
 
+.input-fecha-limite-solo-lectura {
+  font-size: 12.5px;
+  color: #555;
+}
+
 .modal-detalle {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1795,6 +1800,19 @@ select.celda-editable-material {
 .badge-estatus-oferta-recibido {
   background: #e7f7ee;
   color: #1e8a52;
+}
+
+/* Versión de solo lectura de .badge-estatus-oferta-select-* (mismos
+   colores) — se usa cuando el usuario no tiene permiso para gestionar
+   ofertas (ver puedeGestionar en SeguimientoPage.jsx). */
+.badge-estatus-oferta-pendiente {
+  background: #fef5e9;
+  color: #a3620a;
+}
+
+.badge-estatus-oferta-no-recibido {
+  background: #fdedec;
+  color: var(--rojo);
 }
 
 .badge-estatus-oferta-select {

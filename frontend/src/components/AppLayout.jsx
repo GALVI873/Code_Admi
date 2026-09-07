@@ -11,20 +11,20 @@ import { useAuth, MOCK_AUTH } from '../context/AuthContext.jsx'
 // dos casos.
 const NAV_ITEMS = [
   { to: '/presupuestos-en-estudio', label: 'Presupuestos', icono: '🔍', permiso: 'presupuestos.ver_todos' },
-  // Espacio de trabajo personal de Geraldinne. Permiso propio
-  // (ver_seguimiento), no ver_todos — así no comparte puerta con
-  // Presupuestos (la vista de admin). El filtro por email es una segunda
-  // capa además del permiso, ya que hoy es la única persona con ese
-  // permiso, pero es exclusivamente su vista, no una capacidad pensada
-  // para compartir. Queda como ítem suelto (no entra en el grupo
-  // "Seguimiento" de abajo): es una vista completamente distinta de las
-  // de Alfredo/Álvaro, comparte nombre de ruta nada más.
+  // Vista de Geraldinne (Orden del día / General), pero también accesible
+  // para admin (Álvaro/Valentina) — antes era exclusiva de Geraldinne por
+  // email, ahora cualquiera con ver_todos O ver_seguimiento entra. Dentro
+  // de la página, los campos que son de trabajo operativo de ella (fecha
+  // límite de entrega, gestión de ofertas a proveedor) siguen siendo
+  // de solo lectura para quien no tenga ver_seguimiento específicamente —
+  // ver SeguimientoPage.jsx. Queda como ítem suelto (no entra en el grupo
+  // "Seguimiento" de abajo): es una vista completamente distinta de las de
+  // Alfredo/Álvaro, comparte nombre de ruta nada más.
   {
     to: '/seguimiento',
     label: 'Presupuesto',
     icono: '🧭',
-    permiso: 'presupuestos.ver_seguimiento',
-    soloEmail: 'presupuestos@galvi.es',
+    permisoAlguno: ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento'],
   },
   // Departamento "Seguimiento" (Alfredo/Álvaro) — antes tres ítems sueltos,
   // ahora agrupados en un desplegable. "Notas" es la vista consolidada de
@@ -66,7 +66,8 @@ export default function AppLayout() {
 
   function puedeVer(item) {
     return (
-      tienePermiso(item.permiso) &&
+      (!item.permiso || tienePermiso(item.permiso)) &&
+      (!item.permisoAlguno || item.permisoAlguno.some(tienePermiso)) &&
       (!item.soloEmail || usuario?.email === item.soloEmail) &&
       (!item.soloRol || usuario?.roles?.includes(item.soloRol))
     )

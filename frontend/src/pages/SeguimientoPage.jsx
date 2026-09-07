@@ -10,8 +10,12 @@ import {
 } from '../api/client.js'
 import ComentariosObra from '../components/ComentariosObra.jsx'
 
-// Espacio de trabajo personal de Geraldinne.
-const EMAIL_AUTORIZADO = 'presupuestos@galvi.es'
+// Espacio de trabajo de Geraldinne, también accesible para admin
+// (Álvaro/Valentina) — antes exclusiva de ella por email, ahora cualquiera
+// con ver_todos o ver_seguimiento entra (ver AppLayout.jsx). Los campos que
+// son trabajo operativo puntual de ella (fecha límite de entrega, gestión
+// de ofertas a proveedor) siguen siendo de solo lectura para quien no
+// tenga ver_seguimiento específicamente — ver puedeGestionarOfertas más abajo.
 const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Enviado', 'Alvarada', 'Aceptado', 'Descartado']
 // Vista "Orden del día": la agenda diaria de Geraldinne, TODAS las obras
 // todavía en trabajo activo de presupuesto (una vez Enviada ya no es algo
@@ -241,9 +245,9 @@ function FormularioSolicitudOferta({ onAgregar }) {
 // sincronización con Drive cuando encuentra de verdad el PDF. Lo único que
 // Geraldinne puede decidir a mano es si sigue "Pendiente" o si el proveedor
 // ya la rechazó / nunca contestó ("No recibido").
-function SelectEstatusOferta({ oferta, onCambiar }) {
-  if (oferta.estatus === 'Recibido') {
-    return <span className="badge-estatus-oferta badge-estatus-oferta-recibido">Recibido</span>
+function SelectEstatusOferta({ oferta, onCambiar, puedeGestionar }) {
+  if (oferta.estatus === 'Recibido' || !puedeGestionar) {
+    return <span className={`badge-estatus-oferta badge-estatus-oferta-${oferta.estatus === 'Recibido' ? 'recibido' : oferta.estatus === 'No recibido' ? 'no-recibido' : 'pendiente'}`}>{oferta.estatus}</span>
   }
   return (
     <select
@@ -258,28 +262,30 @@ function SelectEstatusOferta({ oferta, onCambiar }) {
   )
 }
 
-function FilaOferta({ oferta, onEliminar, onCambiarEstatus }) {
+function FilaOferta({ oferta, onEliminar, onCambiarEstatus, puedeGestionar }) {
   const recibido = oferta.estatus === 'Recibido'
   return (
     <tr>
-      <td><SelectEstatusOferta oferta={oferta} onCambiar={onCambiarEstatus} /></td>
+      <td><SelectEstatusOferta oferta={oferta} onCambiar={onCambiarEstatus} puedeGestionar={puedeGestionar} /></td>
       <td className="seguimiento-oferta-proveedor">{oferta.proveedor || 'Sin detectar'}</td>
       <td>{formatoFecha(oferta.fecha_solicitud) || '—'}</td>
       <td className="seguimiento-oferta-valor">{recibido ? (oferta.valor != null ? formatoMoneda(oferta.valor) : 'Sin detectar') : '—'}</td>
       <td>{recibido ? (formatoFecha(oferta.fecha_llegada) || '—') : '—'}</td>
       <td className="seguimiento-oferta-archivo" title={oferta.archivo || ''}>{recibido ? (oferta.archivo || '—') : '—'}</td>
       <td>
-        <button
-          type="button"
-          className="boton-icono boton-icono-eliminar"
-          title="Eliminar esta solicitud"
-          onClick={(e) => {
-            e.stopPropagation()
-            onEliminar(oferta.id)
-          }}
-        >
-          −
-        </button>
+        {puedeGestionar && (
+          <button
+            type="button"
+            className="boton-icono boton-icono-eliminar"
+            title="Eliminar esta solicitud"
+            onClick={(e) => {
+              e.stopPropagation()
+              onEliminar(oferta.id)
+            }}
+          >
+            −
+          </button>
+        )}
       </td>
     </tr>
   )
@@ -288,7 +294,11 @@ function FilaOferta({ oferta, onEliminar, onCambiarEstatus }) {
 // Una sola tabla para Pendiente/No recibido/Recibido (en vez de listas
 // separadas) con las abiertas primero — así se ve de un vistazo a quién se
 // le está esperando respuesta y a quién ya llegó, sin repetir encabezados.
-function ListaOfertas({ ofertas, onAgregar, onEliminar, onCambiarEstatus }) {
+// puedeGestionar: gestionar las solicitudes de valoración a proveedor sigue
+// siendo trabajo operativo de Geraldinne (permiso ver_seguimiento) — quien
+// entra a esta vista solo con ver_todos (Álvaro/Valentina) ve la tabla
+// igual, pero de solo lectura, sin el formulario ni las acciones.
+function ListaOfertas({ ofertas, onAgregar, onEliminar, onCambiarEstatus, puedeGestionar }) {
   const ordenadas = [...ofertas].sort((a, b) => {
     if (a.estatus === 'Recibido' && b.estatus !== 'Recibido') return 1
     if (a.estatus !== 'Recibido' && b.estatus === 'Recibido') return -1
@@ -297,7 +307,7 @@ function ListaOfertas({ ofertas, onAgregar, onEliminar, onCambiarEstatus }) {
 
   return (
     <div className="seguimiento-ofertas-contenido">
-      <FormularioSolicitudOferta onAgregar={onAgregar} />
+      {puedeGestionar && <FormularioSolicitudOferta onAgregar={onAgregar} />}
 
       {ordenadas.length === 0 ? (
         <p className="seguimiento-ofertas-vacio">Todavía no hay ninguna solicitud de valoración registrada para esta obra.</p>
@@ -317,7 +327,7 @@ function ListaOfertas({ ofertas, onAgregar, onEliminar, onCambiarEstatus }) {
             </thead>
             <tbody>
               {ordenadas.map((o) => (
-                <FilaOferta key={o.id} oferta={o} onEliminar={onEliminar} onCambiarEstatus={onCambiarEstatus} />
+                <FilaOferta key={o.id} oferta={o} onEliminar={onEliminar} onCambiarEstatus={onCambiarEstatus} puedeGestionar={puedeGestionar} />
               ))}
             </tbody>
           </table>
@@ -327,7 +337,7 @@ function ListaOfertas({ ofertas, onAgregar, onEliminar, onCambiarEstatus }) {
   )
 }
 
-function LineaTiempo({ presupuesto, ofertas, ofertasAbiertas, onToggleOfertas, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta }) {
+function LineaTiempo({ presupuesto, ofertas, ofertasAbiertas, onToggleOfertas, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta, puedeGestionarOfertas }) {
   const pasos = construirPasos(presupuesto)
 
   return (
@@ -354,7 +364,7 @@ function LineaTiempo({ presupuesto, ofertas, ofertasAbiertas, onToggleOfertas, o
       </ol>
       {ofertasAbiertas && (
         <div className="seguimiento-ofertas-panel">
-          <ListaOfertas ofertas={ofertas} onAgregar={onAgregarOferta} onEliminar={onEliminarOferta} onCambiarEstatus={onCambiarEstatusOferta} />
+          <ListaOfertas ofertas={ofertas} onAgregar={onAgregarOferta} onEliminar={onEliminarOferta} onCambiarEstatus={onCambiarEstatusOferta} puedeGestionar={puedeGestionarOfertas} />
         </div>
       )}
     </>
@@ -376,10 +386,14 @@ function SelectEstatus({ presupuesto, onCambio }) {
   )
 }
 
-// Fecha límite que Geraldinne le pone a la obra — a Álvaro no le sirve
-// (por eso Presupuestos en Estudio ni la muestra), es solo para que ella
-// organice su propio trabajo.
-function FechaLimiteEntrega({ presupuesto, onCambio }) {
+// Fecha límite que Geraldinne le pone a la obra para organizar su propio
+// trabajo — el backend solo deja editarla con el permiso ver_seguimiento,
+// así que acá se refleja lo mismo: Álvaro/Valentina (ver_todos, sin
+// ver_seguimiento) la ven pero no la editan.
+function FechaLimiteEntrega({ presupuesto, onCambio, puedeEditar }) {
+  if (!puedeEditar) {
+    return <span className="input-fecha-limite-solo-lectura">{formatoFecha(presupuesto.fecha_limite_entrega) || '—'}</span>
+  }
   return (
     <input
       type="date"
@@ -498,7 +512,7 @@ function TarjetaGrupoSeguimiento({ grupo, onAbrir, onCambio, puedeMarcarInteresa
   )
 }
 
-function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta, puedeMarcarInteresante, accessToken, usuarioEmail, onLeido }) {
+function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta, puedeMarcarInteresante, puedeGestionarOfertas, accessToken, usuarioEmail, onLeido }) {
   const [ofertasAbiertas, setOfertasAbiertas] = useState(false)
   const [pestanaActivaId, setPestanaActivaId] = useState(opciones[0]?.id)
   const [chatAbierto, setChatAbierto] = useState(false)
@@ -587,7 +601,7 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
           </div>
           <div className="modal-campo">
             <span>Fecha límite de entrega</span>
-            <FechaLimiteEntrega presupuesto={activo} onCambio={onCambio} />
+            <FechaLimiteEntrega presupuesto={activo} onCambio={onCambio} puedeEditar={puedeGestionarOfertas} />
           </div>
         </div>
 
@@ -599,6 +613,7 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
           onAgregarOferta={(proveedor, fechaSolicitud) => onAgregarOferta(activo.obra, proveedor, fechaSolicitud)}
           onEliminarOferta={onEliminarOferta}
           onCambiarEstatusOferta={onCambiarEstatusOferta}
+          puedeGestionarOfertas={puedeGestionarOfertas}
         />
 
         {!ofertasAbiertas && (
@@ -695,6 +710,12 @@ export default function SeguimientoPage() {
   // entrar a organizar el día.
   const [vista, setVista] = useState('orden_dia')
   const puedeMarcarInteresante = tienePermiso('presupuestos.marcar_interesante')
+  // Gestionar ofertas a proveedor y editar la fecha límite de entrega sigue
+  // siendo trabajo operativo puntual de Geraldinne — quien entra a esta
+  // vista solo con ver_todos (Álvaro/Valentina) la ve completa, pero de
+  // solo lectura en esos dos puntos (ver FechaLimiteEntrega/ListaOfertas).
+  const puedeGestionarOfertas = tienePermiso('presupuestos.ver_seguimiento')
+  const tieneAccesoPresupuesto = tienePermiso('presupuestos.ver_todos') || puedeGestionarOfertas
 
   useEffect(() => {
     presupuestosEnEstudio(accessToken)
@@ -944,7 +965,7 @@ export default function SeguimientoPage() {
     }
   }
 
-  if (usuario?.email !== EMAIL_AUTORIZADO) {
+  if (!tieneAccesoPresupuesto) {
     return (
       <div className="dashboard">
         <p className="dashboard-nota">No tienes acceso a este espacio de trabajo.</p>
@@ -1109,6 +1130,7 @@ export default function SeguimientoPage() {
           onEliminarOferta={handleEliminarOferta}
           onCambiarEstatusOferta={handleCambiarEstatusOferta}
           puedeMarcarInteresante={puedeMarcarInteresante}
+          puedeGestionarOfertas={puedeGestionarOfertas}
           accessToken={accessToken}
           usuarioEmail={usuario.email}
           onLeido={() => handleLeido(obraSeleccionadaBase)}
