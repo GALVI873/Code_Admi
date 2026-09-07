@@ -197,6 +197,16 @@ try {
     if (!in_array('fecha_limite_entrega', $columnas, true)) {
         $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN fecha_limite_entrega TEXT');
     }
+    // Traspaso de Drive (mover carpeta a "Seguimiento de obra" + crear
+    // MEDYSEG) al aceptar un presupuesto — ver
+    // traspasar_obras_aceptadas.js. NULL para lo que nunca fue Aceptado;
+    // "pendiente" apenas se marca Aceptado; "procesado" cuando el script lo
+    // termina. Ni la sincronización de Drive ni el UPDATE de más abajo lo
+    // tocan nunca — solo el PATCH de estatus (al entrar a Aceptado) y las
+    // acciones de traspasar_obras_aceptadas.js más abajo.
+    if (!in_array('traspaso_estado', $columnas, true)) {
+        $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN traspaso_estado TEXT');
+    }
     if (!in_array('precio_complementario', $columnas, true)) {
         $db->exec('ALTER TABLE presupuestos_en_estudio ADD COLUMN precio_complementario REAL');
     }
@@ -483,8 +493,21 @@ try {
             if (!in_array($estatus, ESTATUS_VALIDOS, true)) {
                 Response::error('"estatus" debe ser una de: ' . implode(', ', ESTATUS_VALIDOS), 422);
             }
-            $db->prepare("UPDATE presupuestos_en_estudio SET estatus = ?, actualizado_en = datetime('now') WHERE id = ?")
-                ->execute([$estatus, $id]);
+            // Entrar de verdad a "Aceptado" (no un simple re-guardado del
+            // mismo valor) dispara el traspaso de Drive — se marca
+            // "pendiente" para que traspasar_obras_aceptadas.js lo recoja en
+            // su próxima corrida. Si ya estaba Aceptado, no se toca (evita
+            // reabrir un traspaso ya "procesado" por guardar dos veces).
+            $stmtActual = $db->prepare('SELECT estatus FROM presupuestos_en_estudio WHERE id = ?');
+            $stmtActual->execute([$id]);
+            $estatusActual = $stmtActual->fetchColumn();
+            if ($estatus === 'Aceptado' && $estatusActual !== 'Aceptado') {
+                $db->prepare("UPDATE presupuestos_en_estudio SET estatus = ?, traspaso_estado = 'pendiente', actualizado_en = datetime('now') WHERE id = ?")
+                    ->execute([$estatus, $id]);
+            } else {
+                $db->prepare("UPDATE presupuestos_en_estudio SET estatus = ?, actualizado_en = datetime('now') WHERE id = ?")
+                    ->execute([$estatus, $id]);
+            }
         }
 
         if (array_key_exists('fecha_limite_entrega', $body)) {
@@ -514,6 +537,33 @@ try {
         if (($body['accion'] ?? '') === 'listar') {
             $stmt = $db->query('SELECT * FROM presupuestos_en_estudio');
             Response::json(['presupuestos' => $stmt->fetchAll()]);
+        }
+
+        // Usado por traspasar_obras_aceptadas.js (corre a mano en la
+        // máquina de Valentina) para saber qué obras recién "Aceptado"
+        // todavía no tuvieron su carpeta movida a "Seguimiento de obra".
+        if (($body['accion'] ?? '') === 'listar_pendientes_traspaso') {
+            $stmt = $db->query("
+                SELECT id, obra, categoria, contacto
+                FROM presupuestos_en_estudio
+                WHERE estatus = 'Aceptado' AND traspaso_estado = 'pendiente'
+            ");
+            Response::json(['presupuestos' => $stmt->fetchAll()]);
+        }
+
+        // El script llama esto por cada obra apenas termina de moverla y
+        // crear su MEDYSEG — "procesado" saca la obra de
+        // listar_pendientes_traspaso y (del lado de obras_aceptadas.php)
+        // la próxima sincronización normal de Alfredo ya la va a encontrar
+        // en su nueva carpeta y la va a marcar "es_nueva".
+        if (($body['accion'] ?? '') === 'marcar_traspaso_procesado') {
+            $obra = trim((string) ($body['obra'] ?? ''));
+            if ($obra === '') {
+                Response::error('Falta "obra"', 422);
+            }
+            $db->prepare("UPDATE presupuestos_en_estudio SET traspaso_estado = 'procesado', actualizado_en = datetime('now') WHERE obra = ?")
+                ->execute([$obra]);
+            Response::json(['ok' => true]);
         }
 
         // Empareja lo detectado en la carpeta "Valoración" de la obra contra

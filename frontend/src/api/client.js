@@ -132,6 +132,14 @@ export function cambiarEstatusObraAceptada(accessToken, obra, estatus) {
   })
 }
 
+export function marcarObraAceptadaVista(accessToken, obra) {
+  return request('/obras_aceptadas.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ obra, marcar_vista: true }),
+  })
+}
+
 export function planosObra(accessToken, obra) {
   return request(`/planos.php?obra=${encodeURIComponent(obra)}`, {
     headers: { Authorization: `Bearer ${accessToken}` },

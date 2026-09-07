@@ -8,6 +8,7 @@ import {
   quitarConfirmacionObraAceptada,
   actualizarMaterialObraAceptada,
   cambiarEstatusObraAceptada,
+  marcarObraAceptadaVista,
   planosObra,
   guardarPosicionPlano,
   quitarPosicionPlano,
@@ -154,6 +155,9 @@ function ObraItemCompacto({ presupuesto, numero, onAbrir, onCambiarEstatus }) {
     >
       <span className="obra-item-compacto-numero">{numero}.</span>
       <span className="obra-item-compacto-nombre" title={presupuesto.obra}>{presupuesto.obra}</span>
+      {Boolean(presupuesto.es_nueva) && (
+        <span className="badge-obra-nueva" title="Recién traspasada, todavía no la abriste">Nueva</span>
+      )}
       {presupuesto.tiene_mensajes_sin_leer && (
         <span className="obra-item-compacto-mensaje" title="Tiene mensajes nuevos en la conversación">💬</span>
       )}
@@ -796,7 +800,7 @@ const PESTANAS_DETALLE = ['Ficha', 'Seguimiento', 'Planos', 'Notas']
 // tildando. La pestaña muestra un punto cuando hay mensajes sin leer,
 // además de la insignia en la tarjeta de la lista (InsigniaMensajes, mismo
 // criterio que las otras vistas).
-function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar, onConfirmar, onQuitar, onCambiarMaterial, onLeido }) {
+function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar, onConfirmar, onQuitar, onCambiarMaterial, onLeido, onVista }) {
   const { accessToken, usuario } = useAuth()
   // La vista "Pendientes" enlaza directo a la pestaña Notas de una obra
   // (?pestana=Notas, ver PendientesObrasPage.jsx) para no obligar a un
@@ -807,6 +811,14 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar
 
   useEffect(() => {
     setPestana(searchParams.get('pestana') || 'Ficha')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presupuesto.id])
+
+  // Apaga la insignia "Nueva" apenas Alfredo entra al detalle — solo si
+  // todavía la tenía puesta, para no mandar un PATCH de más cada vez que
+  // reabre una obra que ya vio antes.
+  useEffect(() => {
+    if (presupuesto.es_nueva) onVista(presupuesto.obra)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presupuesto.id])
 
@@ -1038,6 +1050,14 @@ export default function ObrasAceptadasPage() {
     setFilas((fs) => fs.map((f) => (f.obra === obra ? { ...f, tiene_mensajes_sin_leer: false } : f)))
   }
 
+  // Apaga la insignia "Nueva" al entrar al detalle por primera vez — no
+  // hace falta esperar respuesta del PATCH para sacarla de la lista,
+  // Alfredo ya la está viendo en este mismo momento.
+  function handleVista(obra) {
+    setFilas((fs) => fs.map((f) => (f.obra === obra ? { ...f, es_nueva: 0 } : f)))
+    marcarObraAceptadaVista(accessToken, obra).catch(() => {})
+  }
+
   if (obraSeleccionadaId) {
     if (obraSeleccionada) {
       return (
@@ -1050,6 +1070,7 @@ export default function ObrasAceptadasPage() {
           onQuitar={handleQuitarConfirmacion}
           onCambiarMaterial={handleCambiarMaterial}
           onLeido={handleLeido}
+          onVista={handleVista}
         />
       )
     }

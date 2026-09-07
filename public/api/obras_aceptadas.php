@@ -39,6 +39,9 @@ declare(strict_types=1);
 // sincronización de más abajo no lo toca y sobrevive a la próxima corrida
 // sin necesitar tabla aparte. Una obra nueva arranca en "Activo" por
 // defecto (ver migración idempotente más abajo).
+// PATCH {obra, marcar_vista:true}: apaga la insignia "Nueva" (es_nueva) al
+// abrir el detalle por primera vez — ver traspasar_obras_aceptadas.js para
+// cómo se pone en 1.
 // POST: {accion:"listar"} lectura administrativa para el script de
 // escritura (protegido por SYNC_TOKEN, sin sesión). Upsert de una obra
 // puntual, usado por la sincronización con Drive (mismo token).
@@ -115,6 +118,18 @@ try {
     // SQLite) — se las deja en "Activo" igual que las nuevas, no en blanco.
     $db->exec("UPDATE obras_aceptadas SET estatus = 'Activo' WHERE estatus IS NULL");
 
+    // "Nueva" — insignia para que Alfredo note de un vistazo qué obra recién
+    // le llegó de traspasar_obras_aceptadas.js. Se pone en 1 SOLO en el
+    // INSERT de una obra que nunca había existido (ver más abajo, columna
+    // explícita con valor literal 1) — el ON CONFLICT DO UPDATE de la
+    // sincronización normal no la toca a propósito, mismo criterio que
+    // "estatus", así que sigue en 1 hasta que Alfredo la abre por primera
+    // vez (ver PATCH {obra, marcar_vista:true} más abajo). DEFAULT 0 en el
+    // ALTER para que las obras que ya existían no aparezcan como nuevas.
+    if (!in_array('es_nueva', $columnas, true)) {
+        $db->exec('ALTER TABLE obras_aceptadas ADD COLUMN es_nueva INTEGER NOT NULL DEFAULT 0');
+    }
+
     $db->exec("
         CREATE TABLE IF NOT EXISTS obra_aceptada_confirmaciones (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -190,6 +205,16 @@ try {
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
         $obra = trim((string) ($body['obra'] ?? ''));
+
+        // Apaga la insignia "Nueva" — se llama sola al abrir el detalle de
+        // la obra por primera vez (ver ObrasAceptadasPage.jsx).
+        if (($body['marcar_vista'] ?? false) === true) {
+            if ($obra === '') {
+                Response::error('Falta "obra"', 422);
+            }
+            $db->prepare("UPDATE obras_aceptadas SET es_nueva = 0 WHERE obra = ?")->execute([$obra]);
+            Response::json(['ok' => true]);
+        }
 
         // Estatus de seguimiento puesto a mano (Activo/Repasos/Terminada) —
         // vive directo en obras_aceptadas (no en obra_aceptada_confirmaciones,
@@ -279,8 +304,8 @@ try {
         // sincronización ni toca.
         $stmt = $db->prepare("
             INSERT INTO obras_aceptadas
-                (obra, categoria, contacto, cliente, no_ventanas, numero_ppto, fecha_ppto, proveedor, color_carpinteria, correderas, abatibles, vidrio, ral, persiana, color_persiana, modelo_lamas, motor_radio, motor_mecanico, actualizado_en)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                (obra, categoria, contacto, cliente, no_ventanas, numero_ppto, fecha_ppto, proveedor, color_carpinteria, correderas, abatibles, vidrio, ral, persiana, color_persiana, modelo_lamas, motor_radio, motor_mecanico, es_nueva, actualizado_en)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
             ON CONFLICT(obra) DO UPDATE SET
                 categoria = excluded.categoria,
                 contacto = excluded.contacto,

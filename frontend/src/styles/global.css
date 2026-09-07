@@ -214,6 +214,21 @@ body {
   flex: none;
 }
 
+/* Obra recién traspasada de Presupuestos, todavía sin abrir por Alfredo —
+   se apaga sola la primera vez que entra al detalle (ver
+   ObrasAceptadasPage.jsx, handleVista). */
+.badge-obra-nueva {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 10px;
+  background: #d5f5e3;
+  color: #1e8449;
+  white-space: nowrap;
+  flex: none;
+}
+
 .dashboard-ancho {
   max-width: none;
   padding-left: 36px;
