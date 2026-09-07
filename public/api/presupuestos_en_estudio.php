@@ -355,6 +355,16 @@ try {
             $leido = $lecturaPorObra[$base] ?? null;
             $p['tiene_mensajes_sin_leer'] = $ultimo !== null && ($leido === null || $ultimo > $leido);
             $p['orden_agenda'] = $ordenAgendaPorBase[$base] ?? null;
+            // Mientras la obra no tiene Ficha diligenciada, la hoja de
+            // cálculo todavía no trae un CLIENTE cargado a mano — en vez de
+            // mostrar "Sin cliente" se usa el contacto de la carpeta de
+            // Drive donde está guardada (mismo dato, mismo criterio que ya
+            // se usa para agrupar en Obras Aceptadas). En cuanto la Ficha
+            // se completa, "cliente" ya no viene vacío y esto deja de
+            // aplicar solo.
+            if (($p['cliente'] ?? '') === '' && !empty($p['contacto'])) {
+                $p['cliente'] = $p['contacto'];
+            }
         }
         unset($p);
 
