@@ -47,7 +47,7 @@ function formatoFecha(iso) {
 // presupuestos.ver_seguimiento); Álvaro lo ve pero no lo cambia.
 function SelectEstatusAdicional({ adicional, onCambio, puedeCambiar }) {
   if (!puedeCambiar) {
-    return <span className={`badge-estatus-oferta badge-estatus-oferta-${adicional.estatus === 'Enviado' ? 'recibido' : 'pendiente'}`}>{adicional.estatus}</span>
+    return <span className={`badge-estatus-adicional badge-estatus-adicional-${adicional.estatus === 'Enviado' ? 'enviado' : 'en-valoracion'}`}>{adicional.estatus}</span>
   }
   return (
     <select

@@ -200,7 +200,7 @@ function construirPasos(p) {
     },
     {
       clave: 'ficha',
-      etiqueta: 'Ficha diligenciada',
+      etiqueta: 'Ficha',
       hecho: fichaDiligenciada,
       fecha: null,
     },
@@ -749,7 +749,7 @@ const CLASE_ESTATUS_ADICIONAL = {
 // igual que en la pestaña Adicionales de Obra); Álvaro lo ve pero no lo cambia.
 function SelectEstatusAdicional({ adicional, onCambio, puedeCambiar }) {
   if (!puedeCambiar) {
-    return <span className={`badge-estatus-oferta badge-estatus-oferta-${adicional.estatus === 'Enviado' ? 'recibido' : 'pendiente'}`}>{adicional.estatus}</span>
+    return <span className={`badge-estatus-adicional badge-estatus-adicional-${adicional.estatus === 'Enviado' ? 'enviado' : 'en-valoracion'}`}>{adicional.estatus}</span>
   }
   return (
     <select
