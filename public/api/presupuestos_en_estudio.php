@@ -539,24 +539,6 @@ try {
             Response::json(['presupuestos' => $stmt->fetchAll()]);
         }
 
-        // TEMPORAL: simula el PATCH de sesión que marca "Aceptado" (para
-        // verificar traspaso_estado sin login real) — se quita en el
-        // próximo commit.
-        if (($body['accion'] ?? '') === 'debug_marcar_aceptado') {
-            $obra = trim((string) ($body['obra'] ?? ''));
-            $stmtActual = $db->prepare('SELECT id, estatus FROM presupuestos_en_estudio WHERE obra = ?');
-            $stmtActual->execute([$obra]);
-            $fila = $stmtActual->fetch();
-            if (!$fila) {
-                Response::error('obra no encontrada', 404);
-            }
-            if ($fila['estatus'] !== 'Aceptado') {
-                $db->prepare("UPDATE presupuestos_en_estudio SET estatus = 'Aceptado', traspaso_estado = 'pendiente', actualizado_en = datetime('now') WHERE id = ?")
-                    ->execute([$fila['id']]);
-            }
-            Response::json(['ok' => true]);
-        }
-
         // Usado por traspasar_obras_aceptadas.js (corre a mano en la
         // máquina de Valentina) para saber qué obras recién "Aceptado"
         // todavía no tuvieron su carpeta movida a "Seguimiento de obra".
