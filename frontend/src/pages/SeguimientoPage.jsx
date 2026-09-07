@@ -13,10 +13,11 @@ import ComentariosObra from '../components/ComentariosObra.jsx'
 // Espacio de trabajo personal de Geraldinne.
 const EMAIL_AUTORIZADO = 'presupuestos@galvi.es'
 const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Enviado', 'Alvarada', 'Aceptado', 'Descartado']
-// Vista "Orden del día": la agenda diaria de Geraldinne, solo las obras que
-// Álvaro marcó como prioridad Alta y que todavía están en trabajo activo de
-// presupuesto (una vez Enviada ya no es algo que ella tenga que "atacar" hoy).
-const ESTATUS_AGENDA = ['En Estudio', 'En Valoración', 'En Revisión']
+// Vista "Orden del día": la agenda diaria de Geraldinne, TODAS las obras
+// todavía en trabajo activo de presupuesto (una vez Enviada ya no es algo
+// que ella tenga que "atacar" hoy) — no solo las de prioridad Alta. La
+// prioridad Alta (la da Álvaro) decide el bloque de arriba, no si aparece o no.
+const ESTATUS_AGENDA = ['En Estudio', 'En Valoración', 'En Revisión', 'Alvarada']
 const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista']
 
 // Del Vademecum (Z:\DRIVE GALVI\Vademecum.xlsx, hoja "Proveedores") — solo
@@ -626,7 +627,7 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
 // Obras Aceptadas (lista vertical numerada), pero con flechas para mover el
 // orden a mano en vez de un badge de estatus fijo: acá el orden ES el dato,
 // no un detalle secundario.
-function ItemAgenda({ grupo, numero, total, onAbrir, onMover, onCambio }) {
+function ItemAgenda({ grupo, numero, deshabilitarArriba, deshabilitarAbajo, onAbrir, onMover, onCambio }) {
   const primero = grupo.opciones[0]
   return (
     <div
@@ -641,6 +642,7 @@ function ItemAgenda({ grupo, numero, total, onAbrir, onMover, onCambio }) {
       <span className="obra-item-compacto-numero">{numero}.</span>
       <span className="obra-item-compacto-nombre" title={grupo.base}>{grupo.base}</span>
       <InsigniaMensajes presupuesto={primero} />
+      {grupo.prioridadAlta && <span className="badge badge-rechazado">Alta</span>}
       <span className="obra-item-compacto-proveedor">{primero.cliente || 'Sin cliente'}</span>
       <SelectEstatus presupuesto={primero} onCambio={onCambio} />
       <div className="obra-item-agenda-flechas">
@@ -648,7 +650,7 @@ function ItemAgenda({ grupo, numero, total, onAbrir, onMover, onCambio }) {
           type="button"
           className="boton-icono boton-icono-chico boton-icono-mover"
           title="Subir"
-          disabled={numero === 1}
+          disabled={deshabilitarArriba}
           onClick={(e) => {
             e.stopPropagation()
             onMover(grupo.base, -1)
@@ -660,7 +662,7 @@ function ItemAgenda({ grupo, numero, total, onAbrir, onMover, onCambio }) {
           type="button"
           className="boton-icono boton-icono-chico boton-icono-mover"
           title="Bajar"
-          disabled={numero === total}
+          disabled={deshabilitarAbajo}
           onClick={(e) => {
             e.stopPropagation()
             onMover(grupo.base, 1)
@@ -712,14 +714,15 @@ export default function SeguimientoPage() {
 
   const proxADescartar = useMemo(() => filasVivas.filter(esProximoADescartar), [filasVivas])
 
-  // Vista "Orden del día": solo prioridad Alta (la da Álvaro) + estatus de
-  // trabajo activo, agrupadas por obra base igual que gruposObra, ordenadas
-  // por orden_agenda (posición que Geraldinne fue armando a mano con las
-  // flechas). Las que todavía no tienen posición asignada (obra recién
-  // marcada Alta) caen al final, ordenadas alfabéticamente entre ellas, para
-  // que Geraldinne las ubique donde corresponda.
+  // Vista "Orden del día": TODAS las obras en estatus de trabajo activo
+  // (ver ESTATUS_AGENDA), agrupadas por obra base igual que gruposObra. Las
+  // de prioridad Alta (la da Álvaro) van siempre como bloque arriba —
+  // dentro de cada bloque (Alta / el resto) el orden es el que Geraldinne
+  // fue armando a mano con las flechas (orden_agenda); las que todavía no
+  // tienen posición asignada caen al final de su bloque, alfabéticas entre
+  // ellas, para que ella las ubique donde corresponda.
   const gruposAgenda = useMemo(() => {
-    const relevantes = filasVivas.filter((p) => p.prioridad === 'Alta' && ESTATUS_AGENDA.includes(p.estatus))
+    const relevantes = filasVivas.filter((p) => ESTATUS_AGENDA.includes(p.estatus))
     const mapa = new Map()
     for (const p of relevantes) {
       const base = nombreBase(p.obra)
@@ -727,8 +730,14 @@ export default function SeguimientoPage() {
       mapa.get(base).push(p)
     }
     return Array.from(mapa.entries())
-      .map(([base, opciones]) => ({ base, opciones, orden: opciones[0]?.orden_agenda ?? null }))
+      .map(([base, opciones]) => ({
+        base,
+        opciones,
+        prioridadAlta: opciones.some((o) => o.prioridad === 'Alta'),
+        orden: opciones[0]?.orden_agenda ?? null,
+      }))
       .sort((a, b) => {
+        if (a.prioridadAlta !== b.prioridadAlta) return a.prioridadAlta ? -1 : 1
         if (a.orden != null && b.orden != null) return a.orden - b.orden
         if (a.orden != null) return -1
         if (b.orden != null) return 1
@@ -740,6 +749,10 @@ export default function SeguimientoPage() {
     const idx = gruposAgenda.findIndex((g) => g.base === base)
     const destino = idx + direccion
     if (idx === -1 || destino < 0 || destino >= gruposAgenda.length) return
+    // No se puede mezclar el bloque de prioridad Alta con el resto — el
+    // botón ya viene deshabilitado en ese borde (ver deshabilitarArriba/
+    // deshabilitarAbajo más abajo), esto es una segunda barrera por las dudas.
+    if (gruposAgenda[idx].prioridadAlta !== gruposAgenda[destino].prioridadAlta) return
 
     const reordenado = [...gruposAgenda]
     ;[reordenado[idx], reordenado[destino]] = [reordenado[destino], reordenado[idx]]
@@ -971,10 +984,10 @@ export default function SeguimientoPage() {
       {vista === 'orden_dia' && !cargando && !error && (
         <>
           <p className="dashboard-nota">
-            Obras marcadas como prioridad Alta por Álvaro, todavía en estudio/valoración/revisión — el orden es el que le vayas dando con las flechas.
+            Todas las obras en estudio, valoración, revisión o Alvarada — las de prioridad Alta (Álvaro) van siempre arriba; dentro de cada bloque el orden es el que le vayas dando con las flechas.
           </p>
           {gruposAgenda.length === 0 ? (
-            <p className="dashboard-nota">No hay ninguna obra de prioridad Alta en trabajo activo ahora mismo.</p>
+            <p className="dashboard-nota">No hay ninguna obra en trabajo activo ahora mismo.</p>
           ) : (
             <div className="obras-lista-compacta">
               {gruposAgenda.map((g, i) => (
@@ -982,7 +995,8 @@ export default function SeguimientoPage() {
                   key={g.base}
                   grupo={g}
                   numero={i + 1}
-                  total={gruposAgenda.length}
+                  deshabilitarArriba={i === 0 || gruposAgenda[i - 1].prioridadAlta !== g.prioridadAlta}
+                  deshabilitarAbajo={i === gruposAgenda.length - 1 || gruposAgenda[i + 1].prioridadAlta !== g.prioridadAlta}
                   onAbrir={setObraSeleccionadaBase}
                   onMover={handleMoverAgenda}
                   onCambio={handleCambio}
