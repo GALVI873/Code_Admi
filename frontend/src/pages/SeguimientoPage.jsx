@@ -9,6 +9,7 @@ import {
   guardarOrdenAgenda,
 } from '../api/client.js'
 import ComentariosObra from '../components/ComentariosObra.jsx'
+import AdicionalesDeObra from '../components/AdicionalesDeObra.jsx'
 
 // Espacio de trabajo de Geraldinne, también accesible para admin
 // (Álvaro/Valentina) — antes exclusiva de ella por email, ahora cualquiera
@@ -1045,8 +1046,19 @@ export default function SeguimientoPage() {
         >
           General
         </button>
+        <button
+          type="button"
+          className={`pestanas-vista-boton ${vista === 'adicionales' ? 'pestanas-vista-boton-activa' : ''}`}
+          onClick={() => setVista('adicionales')}
+        >
+          Adicionales de Obra
+        </button>
       </div>
 
+      {vista === 'adicionales' ? (
+        <AdicionalesDeObra />
+      ) : (
+        <>
       {cargando && <p className="dashboard-nota">Cargando…</p>}
       {error && <div className="auth-error">{error}</div>}
 
@@ -1185,6 +1197,8 @@ export default function SeguimientoPage() {
           usuarioEmail={usuario.email}
           onLeido={() => handleLeido(obraSeleccionadaBase)}
         />
+      )}
+        </>
       )}
     </div>
   )

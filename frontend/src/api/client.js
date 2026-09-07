@@ -205,3 +205,25 @@ export function eliminarConversacionObra(accessToken, obra) {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
 }
+
+export function adicionalesObra(accessToken) {
+  return request('/adicionales_obra.php', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
+export function agregarAdicionalObra(accessToken, { obra, fecha_solicitud, detalle, solicitado_por }) {
+  return request('/adicionales_obra.php', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ obra, fecha_solicitud, detalle, solicitado_por }),
+  })
+}
+
+export function eliminarAdicionalObra(accessToken, id) {
+  return request('/adicionales_obra.php', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ id }),
+  })
+}

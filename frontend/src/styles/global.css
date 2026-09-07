@@ -1795,6 +1795,112 @@ select.celda-editable-material {
   vertical-align: middle;
 }
 
+/* Mismo estilo que .tabla-ofertas, nombre propio para no mezclar conceptos
+   (ver AdicionalesDeObra.jsx). */
+.tabla-adicionales {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.tabla-adicionales th {
+  text-align: left;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: #7a8699;
+  padding: 0 10px 6px;
+  white-space: nowrap;
+}
+
+.tabla-adicionales td {
+  padding: 8px 10px;
+  border-top: 1px solid #e8ecf2;
+  vertical-align: top;
+}
+
+.adicionales-obra-col-obra {
+  font-weight: 700;
+  color: var(--azul);
+  white-space: nowrap;
+}
+
+.adicionales-obra-col-detalle {
+  white-space: pre-wrap;
+  min-width: 260px;
+}
+
+.adicionales-obra {
+  max-width: 1100px;
+}
+
+.adicionales-obra-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 14px 18px;
+  background: #f7f9fc;
+  border: 1px solid #e3e8f0;
+  border-radius: 10px;
+}
+
+.adicionales-obra-form .filtro-campo {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.adicionales-obra-form .input-filtro,
+.adicionales-obra-form .select-inline {
+  width: 190px;
+}
+
+.adicionales-obra-campo-detalle {
+  flex: 1 1 280px;
+}
+
+.adicionales-obra-campo-detalle textarea.input-filtro {
+  width: 100%;
+  resize: vertical;
+  min-height: 38px;
+  font-family: inherit;
+}
+
+.adicionales-obra-cliente-derivado {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--azul);
+  padding: 7px 0;
+}
+
+.adicionales-obra-boton-agregar {
+  border: none;
+  border-radius: 8px;
+  background: var(--azul-med);
+  color: white;
+  font-size: 13.5px;
+  font-weight: 700;
+  padding: 9px 20px;
+  cursor: pointer;
+  white-space: nowrap;
+  /* align-items del form es flex-start (ver .adicionales-obra-form) porque
+     el textarea de Detalle es más alto que el resto de los campos — este
+     margen compensa la falta de label arriba del botón para que quede a la
+     altura de los inputs, no pegado al borde superior del form. */
+  margin-top: 20px;
+}
+
+.adicionales-obra-boton-agregar:hover:not(:disabled) {
+  background: var(--azul);
+}
+
+.adicionales-obra-boton-agregar:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
 .badge-estatus-oferta {
   font-size: 10.5px;
   font-weight: 700;
