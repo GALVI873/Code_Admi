@@ -9,6 +9,7 @@ import {
   guardarOrdenAgenda,
   adicionalesObra,
   cambiarPrioridadAdicionalObra,
+  cambiarEstatusAdicionalObra,
 } from '../api/client.js'
 import ComentariosObra from '../components/ComentariosObra.jsx'
 import AdicionalesDeObra from '../components/AdicionalesDeObra.jsx'
@@ -736,13 +737,43 @@ function ItemAgenda({ grupo, numero, deshabilitarArriba, deshabilitarAbajo, onAb
   )
 }
 
-// Fila de un adicional de obra dentro de "Orden del día" — mismo look que
-// ItemAgenda pero sin flechas de orden manual (los adicionales no tienen
-// orden_agenda propio, van fijos al final de su bloque de prioridad) y con
-// la etiqueta "Adicional de Obra" para distinguirlos de una obra en
-// estudio normal. Clic lleva directo a la pestaña Adicionales de Obra, que
-// es donde se gestiona todo lo demás (detalle, solicitante, estatus).
-function ItemAgendaAdicional({ adicional, numero, onAbrir, onCambiarPrioridad, puedeCambiarPrioridad }) {
+const ESTATUS_ADICIONAL_OPCIONES = ['En Valoración', 'Enviado']
+// Mismas clases que ya usa el select de Estatus de Presupuesto — no hace
+// falta CSS nuevo.
+const CLASE_ESTATUS_ADICIONAL = {
+  'En Valoración': 'select-estatus-en-valoracion',
+  Enviado: 'select-estatus-enviado',
+}
+
+// Estatus de un adicional — Geraldinne lo gestiona (presupuestos.ver_seguimiento,
+// igual que en la pestaña Adicionales de Obra); Álvaro lo ve pero no lo cambia.
+function SelectEstatusAdicional({ adicional, onCambio, puedeCambiar }) {
+  if (!puedeCambiar) {
+    return <span className={`badge-estatus-oferta badge-estatus-oferta-${adicional.estatus === 'Enviado' ? 'recibido' : 'pendiente'}`}>{adicional.estatus}</span>
+  }
+  return (
+    <select
+      className={`select-inline select-estatus ${CLASE_ESTATUS_ADICIONAL[adicional.estatus] || ''}`}
+      value={adicional.estatus}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onCambio(adicional.id, e.target.value)}
+    >
+      {ESTATUS_ADICIONAL_OPCIONES.map((op) => (
+        <option key={op} value={op}>{op}</option>
+      ))}
+    </select>
+  )
+}
+
+// Fila de un adicional de obra dentro de "Orden del día" — mismo look e
+// info que ItemAgenda (fecha de solicitud, estatus, flechas de orden
+// manual) más la etiqueta "Adicional de Obra" para distinguirlo de una
+// obra en estudio normal. El orden manual comparte mecanismo con las obras
+// de siempre (tabla orden_agenda, clave "adicional:<id>") — se puede
+// intercalar libremente con ellas dentro del mismo bloque de prioridad.
+// Clic lleva a la pestaña Adicionales de Obra, que es donde se gestiona el
+// resto (detalle, solicitante).
+function ItemAgendaAdicional({ adicional, numero, deshabilitarArriba, deshabilitarAbajo, onAbrir, onMover, onCambiarPrioridad, onCambiarEstatus, puedeCambiarPrioridad, puedeCambiarEstatus }) {
   return (
     <div
       className="obra-item-compacto"
@@ -762,6 +793,38 @@ function ItemAgendaAdicional({ adicional, numero, onAbrir, onCambiarPrioridad, p
         puedeCambiar={puedeCambiarPrioridad}
       />
       <span className="obra-item-compacto-proveedor">{adicional.obra_cliente || 'Sin cliente'}</span>
+      {adicional.fecha_solicitud && (
+        <span className="obra-item-compacto-fecha-solicitud" title="Fecha de solicitud">
+          Solicitud {formatoFecha(adicional.fecha_solicitud)}
+        </span>
+      )}
+      <SelectEstatusAdicional adicional={adicional} onCambio={onCambiarEstatus} puedeCambiar={puedeCambiarEstatus} />
+      <div className="obra-item-agenda-flechas">
+        <button
+          type="button"
+          className="boton-icono boton-icono-chico boton-icono-mover"
+          title="Subir"
+          disabled={deshabilitarArriba}
+          onClick={(e) => {
+            e.stopPropagation()
+            onMover(-1)
+          }}
+        >
+          ▲
+        </button>
+        <button
+          type="button"
+          className="boton-icono boton-icono-chico boton-icono-mover"
+          title="Bajar"
+          disabled={deshabilitarAbajo}
+          onClick={(e) => {
+            e.stopPropagation()
+            onMover(1)
+          }}
+        >
+          ▼
+        </button>
+      </div>
     </div>
   )
 }
@@ -824,12 +887,17 @@ export default function SeguimientoPage() {
   const proxADescartar = useMemo(() => filasVivas.filter(esProximoADescartar), [filasVivas])
 
   // Vista "Orden del día": TODAS las obras en estatus de trabajo activo
-  // (ver ESTATUS_AGENDA), agrupadas por obra base igual que gruposObra. Las
-  // de prioridad Alta (la da Álvaro) van siempre como bloque arriba —
-  // dentro de cada bloque (Alta / el resto) el orden es el que Geraldinne
-  // fue armando a mano con las flechas (orden_agenda); las que todavía no
-  // tienen posición asignada caen al final de su bloque, alfabéticas entre
-  // ellas, para que ella las ubique donde corresponda.
+  // (ver ESTATUS_AGENDA), agrupadas por obra base igual que gruposObra, más
+  // los adicionales de obra que todavía no se marcaron "Enviado" (uno ya
+  // enviado sale de la lista, igual que un presupuesto enviado). Las de
+  // prioridad Alta (la da Álvaro) van siempre como bloque arriba — dentro
+  // de cada bloque el orden es el que Geraldinne/Álvaro fueron armando a
+  // mano con las flechas: obras y adicionales comparten el mismo mecanismo
+  // de orden manual (tabla orden_agenda; un adicional usa la clave
+  // "adicional:<id>" en vez del nombre de la obra), así que se pueden
+  // intercalar libremente entre sí — no tendría sentido que un adicional
+  // urgente quedara siempre al final solo por ser adicional. Las que
+  // todavía no tienen posición asignada caen al final de su bloque.
   const gruposAgenda = useMemo(() => {
     const relevantes = filasVivas.filter((p) => ESTATUS_AGENDA.includes(p.estatus))
     const mapa = new Map()
@@ -838,70 +906,80 @@ export default function SeguimientoPage() {
       if (!mapa.has(base)) mapa.set(base, [])
       mapa.get(base).push(p)
     }
-    return Array.from(mapa.entries())
-      .map(([base, opciones]) => ({
-        base,
-        opciones,
-        prioridadAlta: opciones.some((o) => o.prioridad === 'Alta'),
-        orden: opciones[0]?.orden_agenda ?? null,
-      }))
-      .sort((a, b) => {
-        if (a.prioridadAlta !== b.prioridadAlta) return a.prioridadAlta ? -1 : 1
-        if (a.orden != null && b.orden != null) return a.orden - b.orden
-        if (a.orden != null) return -1
-        if (b.orden != null) return 1
-        return a.base.localeCompare(b.base, 'es')
-      })
+    return Array.from(mapa.entries()).map(([base, opciones]) => ({
+      base,
+      opciones,
+      prioridadAlta: opciones.some((o) => o.prioridad === 'Alta'),
+      orden: opciones[0]?.orden_agenda ?? null,
+    }))
   }, [filasVivas])
 
-  async function handleMoverAgenda(base, direccion) {
-    const idx = gruposAgenda.findIndex((g) => g.base === base)
+  const adicionalesPendientes = useMemo(() => adicionales.filter((a) => a.estatus !== 'Enviado'), [adicionales])
+
+  // Combina obras + adicionales de un mismo nivel de prioridad en una sola
+  // lista ordenable — "clave" es lo que identifica la posición manual de
+  // cada fila ante orden_agenda (nombre base de obra, o "adicional:<id>").
+  function construirItemsAgenda(prioridadAlta) {
+    const deObras = gruposAgenda
+      .filter((g) => g.prioridadAlta === prioridadAlta)
+      .map((g) => ({ tipo: 'presupuesto', clave: g.base, etiqueta: g.base, orden: g.orden, grupo: g }))
+    const deAdicionales = adicionalesPendientes
+      .filter((a) => (a.prioridad === 'Alta') === prioridadAlta)
+      .map((a) => ({ tipo: 'adicional', clave: `adicional:${a.id}`, etiqueta: a.obra, orden: a.orden_agenda ?? null, adicional: a }))
+    return [...deObras, ...deAdicionales].sort((a, b) => {
+      if (a.orden != null && b.orden != null) return a.orden - b.orden
+      if (a.orden != null) return -1
+      if (b.orden != null) return 1
+      return a.etiqueta.localeCompare(b.etiqueta, 'es')
+    })
+  }
+  const itemsAgendaAlta = useMemo(() => construirItemsAgenda(true), [gruposAgenda, adicionalesPendientes])
+  const itemsAgendaNormal = useMemo(() => construirItemsAgenda(false), [gruposAgenda, adicionalesPendientes])
+
+  async function handleMoverItemAgenda(items, clave, direccion) {
+    const idx = items.findIndex((it) => it.clave === clave)
     const destino = idx + direccion
-    if (idx === -1 || destino < 0 || destino >= gruposAgenda.length) return
-    // No se puede mezclar el bloque de prioridad Alta con el resto — el
-    // botón ya viene deshabilitado en ese borde (ver deshabilitarArriba/
-    // deshabilitarAbajo más abajo), esto es una segunda barrera por las dudas.
-    if (gruposAgenda[idx].prioridadAlta !== gruposAgenda[destino].prioridadAlta) return
+    if (idx === -1 || destino < 0 || destino >= items.length) return
 
-    const reordenado = [...gruposAgenda]
+    const reordenado = [...items]
     ;[reordenado[idx], reordenado[destino]] = [reordenado[destino], reordenado[idx]]
-    const basesEnOrden = reordenado.map((g) => g.base)
+    const clavesEnOrden = reordenado.map((it) => it.clave)
 
-    const anteriores = filas
+    const anterioresFilas = filas
+    const anterioresAdicionales = adicionales
     setFilas((f) => f.map((p) => {
-      const i = basesEnOrden.indexOf(nombreBase(p.obra))
+      const i = clavesEnOrden.indexOf(nombreBase(p.obra))
       return i === -1 ? p : { ...p, orden_agenda: i }
     }))
+    setAdicionales((ads) => ads.map((a) => {
+      const i = clavesEnOrden.indexOf(`adicional:${a.id}`)
+      return i === -1 ? a : { ...a, orden_agenda: i }
+    }))
     try {
-      await guardarOrdenAgenda(accessToken, basesEnOrden)
+      await guardarOrdenAgenda(accessToken, clavesEnOrden)
     } catch (err) {
-      setFilas(anteriores)
+      setFilas(anterioresFilas)
+      setAdicionales(anterioresAdicionales)
       setError(err.message)
     }
   }
-
-  // Los adicionales de obra (cargados a mano desde la pestaña "Adicionales
-  // de Obra") también entran en "Orden del día", como bloque aparte al
-  // final de cada nivel de prioridad — no comparten el reordenamiento
-  // manual con las obras de siempre (no tienen orden_agenda propio), pero
-  // sí respetan el mismo criterio de "Alta va arriba". Uno ya "Enviado" sale
-  // de la lista, igual que un presupuesto ya enviado.
-  const adicionalesPendientes = useMemo(
-    () => adicionales
-      .filter((a) => a.estatus !== 'Enviado')
-      .sort((a, b) => (b.fecha_solicitud || b.creado_en || '').localeCompare(a.fecha_solicitud || a.creado_en || '')),
-    [adicionales],
-  )
-  const adicionalesAgendaAlta = useMemo(() => adicionalesPendientes.filter((a) => a.prioridad === 'Alta'), [adicionalesPendientes])
-  const adicionalesAgendaNormal = useMemo(() => adicionalesPendientes.filter((a) => a.prioridad !== 'Alta'), [adicionalesPendientes])
-  const gruposAgendaAlta = useMemo(() => gruposAgenda.filter((g) => g.prioridadAlta), [gruposAgenda])
-  const gruposAgendaNormal = useMemo(() => gruposAgenda.filter((g) => !g.prioridadAlta), [gruposAgenda])
 
   async function handleCambiarPrioridadAdicional(id, prioridad) {
     const anteriores = adicionales
     setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, prioridad } : a)))
     try {
       await cambiarPrioridadAdicionalObra(accessToken, id, prioridad)
+    } catch (err) {
+      setAdicionales(anteriores)
+      setError(err.message)
+    }
+  }
+
+  async function handleCambiarEstatusAdicional(id, estatus) {
+    const anteriores = adicionales
+    setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, estatus } : a)))
+    try {
+      await cambiarEstatusAdicionalObra(accessToken, id, estatus)
     } catch (err) {
       setAdicionales(anteriores)
       setError(err.message)
@@ -1134,55 +1212,67 @@ export default function SeguimientoPage() {
           <p className="dashboard-nota">
             Todas las obras en estudio, valoración, revisión o Alvarada — las de prioridad Alta (Álvaro) van siempre arriba; dentro de cada bloque el orden es el que le vayas dando con las flechas.
           </p>
-          {gruposAgenda.length === 0 && adicionalesPendientes.length === 0 ? (
+          {itemsAgendaAlta.length === 0 && itemsAgendaNormal.length === 0 ? (
             <p className="dashboard-nota">No hay ninguna obra en trabajo activo ahora mismo.</p>
           ) : (
             <div className="obras-lista-compacta">
-              {gruposAgendaAlta.map((g, i) => (
-                <ItemAgenda
-                  key={g.base}
-                  grupo={g}
-                  numero={i + 1}
-                  deshabilitarArriba={i === 0}
-                  deshabilitarAbajo={i === gruposAgendaAlta.length - 1}
-                  onAbrir={setObraSeleccionadaBase}
-                  onMover={handleMoverAgenda}
-                  onCambio={handleCambio}
-                  puedeCambiarPrioridad={puedeCambiarPrioridad}
-                />
+              {itemsAgendaAlta.map((item, i) => (
+                item.tipo === 'presupuesto' ? (
+                  <ItemAgenda
+                    key={item.clave}
+                    grupo={item.grupo}
+                    numero={i + 1}
+                    deshabilitarArriba={i === 0}
+                    deshabilitarAbajo={i === itemsAgendaAlta.length - 1}
+                    onAbrir={setObraSeleccionadaBase}
+                    onMover={(clave, dir) => handleMoverItemAgenda(itemsAgendaAlta, clave, dir)}
+                    onCambio={handleCambio}
+                    puedeCambiarPrioridad={puedeCambiarPrioridad}
+                  />
+                ) : (
+                  <ItemAgendaAdicional
+                    key={item.clave}
+                    adicional={item.adicional}
+                    numero={i + 1}
+                    deshabilitarArriba={i === 0}
+                    deshabilitarAbajo={i === itemsAgendaAlta.length - 1}
+                    onAbrir={() => setVista('adicionales')}
+                    onMover={(dir) => handleMoverItemAgenda(itemsAgendaAlta, item.clave, dir)}
+                    onCambiarPrioridad={handleCambiarPrioridadAdicional}
+                    onCambiarEstatus={handleCambiarEstatusAdicional}
+                    puedeCambiarPrioridad={puedeCambiarPrioridad}
+                    puedeCambiarEstatus={puedeGestionarOfertas}
+                  />
+                )
               ))}
-              {adicionalesAgendaAlta.map((a, i) => (
-                <ItemAgendaAdicional
-                  key={`adicional-${a.id}`}
-                  adicional={a}
-                  numero={gruposAgendaAlta.length + i + 1}
-                  onAbrir={() => setVista('adicionales')}
-                  onCambiarPrioridad={handleCambiarPrioridadAdicional}
-                  puedeCambiarPrioridad={puedeCambiarPrioridad}
-                />
-              ))}
-              {gruposAgendaNormal.map((g, i) => (
-                <ItemAgenda
-                  key={g.base}
-                  grupo={g}
-                  numero={gruposAgendaAlta.length + adicionalesAgendaAlta.length + i + 1}
-                  deshabilitarArriba={i === 0}
-                  deshabilitarAbajo={i === gruposAgendaNormal.length - 1}
-                  onAbrir={setObraSeleccionadaBase}
-                  onMover={handleMoverAgenda}
-                  onCambio={handleCambio}
-                  puedeCambiarPrioridad={puedeCambiarPrioridad}
-                />
-              ))}
-              {adicionalesAgendaNormal.map((a, i) => (
-                <ItemAgendaAdicional
-                  key={`adicional-${a.id}`}
-                  adicional={a}
-                  numero={gruposAgendaAlta.length + adicionalesAgendaAlta.length + gruposAgendaNormal.length + i + 1}
-                  onAbrir={() => setVista('adicionales')}
-                  onCambiarPrioridad={handleCambiarPrioridadAdicional}
-                  puedeCambiarPrioridad={puedeCambiarPrioridad}
-                />
+              {itemsAgendaNormal.map((item, i) => (
+                item.tipo === 'presupuesto' ? (
+                  <ItemAgenda
+                    key={item.clave}
+                    grupo={item.grupo}
+                    numero={itemsAgendaAlta.length + i + 1}
+                    deshabilitarArriba={i === 0}
+                    deshabilitarAbajo={i === itemsAgendaNormal.length - 1}
+                    onAbrir={setObraSeleccionadaBase}
+                    onMover={(clave, dir) => handleMoverItemAgenda(itemsAgendaNormal, clave, dir)}
+                    onCambio={handleCambio}
+                    puedeCambiarPrioridad={puedeCambiarPrioridad}
+                  />
+                ) : (
+                  <ItemAgendaAdicional
+                    key={item.clave}
+                    adicional={item.adicional}
+                    numero={itemsAgendaAlta.length + i + 1}
+                    deshabilitarArriba={i === 0}
+                    deshabilitarAbajo={i === itemsAgendaNormal.length - 1}
+                    onAbrir={() => setVista('adicionales')}
+                    onMover={(dir) => handleMoverItemAgenda(itemsAgendaNormal, item.clave, dir)}
+                    onCambiarPrioridad={handleCambiarPrioridadAdicional}
+                    onCambiarEstatus={handleCambiarEstatusAdicional}
+                    puedeCambiarPrioridad={puedeCambiarPrioridad}
+                    puedeCambiarEstatus={puedeGestionarOfertas}
+                  />
+                )
               ))}
             </div>
           )}

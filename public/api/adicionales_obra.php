@@ -9,12 +9,15 @@ declare(strict_types=1);
 // (JOIN por nombre de obra), así que si ese dato cambia ahí, se refleja acá
 // solo, sin quedar desactualizado.
 //
-// GET: lista los adicionales + la lista de obras aceptadas disponibles para
-// el desplegable "Nombre" (requiere sesión + presupuestos.ver_todos o
+// GET: lista los adicionales (con "orden_agenda", su posición manual en
+// Orden del día — ver más abajo) + la lista de obras aceptadas disponibles
+// para el desplegable "Nombre" (requiere sesión + presupuestos.ver_todos o
 // presupuestos.ver_seguimiento — misma audiencia que la página Presupuesto,
 // A PROPÓSITO no se exige obras.ver_aceptadas para no tener que abrirle a
 // Geraldinne la página completa de Obras Aceptadas solo para este
-// desplegable).
+// desplegable). El orden manual en sí se guarda con el mismo PATCH
+// {orden_agenda:[...]} de presupuestos_en_estudio.php (tabla orden_agenda
+// compartida, clave "adicional:<id>") — no tiene endpoint propio acá.
 // POST: crea un adicional {obra, fecha_solicitud, detalle, solicitado_por} —
 // arranca siempre en estatus "En Valoración" y prioridad "Normal".
 // PATCH: {id, estatus} cambia el estatus ("En Valoración"/"Enviado") — como
@@ -57,6 +60,20 @@ try {
         $db->exec("ALTER TABLE adicionales_obra ADD COLUMN prioridad TEXT NOT NULL DEFAULT 'Normal'");
     }
 
+    // Misma tabla que usa "Orden del día" para el orden manual de las obras
+    // de presupuesto (presupuestos_en_estudio.php) — un adicional comparte
+    // ese mecanismo con la clave "adicional:<id>" en vez de un nombre de
+    // obra, así puede mezclarse y reordenarse junto con las obras de
+    // siempre sin pisar ninguna clave real. Se crea acá también (idempotente)
+    // por si esta es la primera vez que corre cualquiera de las dos rutas.
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS orden_agenda (
+          obra_base TEXT PRIMARY KEY,
+          orden INTEGER NOT NULL,
+          actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    ");
+
     $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
     AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento']);
 
@@ -69,6 +86,15 @@ try {
             LEFT JOIN obras_aceptadas oa ON oa.obra = a.obra
             ORDER BY a.creado_en DESC
         ")->fetchAll();
+
+        $ordenPorClave = [];
+        foreach ($db->query("SELECT obra_base, orden FROM orden_agenda WHERE obra_base LIKE 'adicional:%'")->fetchAll() as $r) {
+            $ordenPorClave[$r['obra_base']] = (int) $r['orden'];
+        }
+        foreach ($adicionales as &$a) {
+            $a['orden_agenda'] = $ordenPorClave['adicional:' . $a['id']] ?? null;
+        }
+        unset($a);
 
         $obrasDisponibles = $db->query("
             SELECT obra, COALESCE(NULLIF(cliente, ''), contacto) AS cliente
