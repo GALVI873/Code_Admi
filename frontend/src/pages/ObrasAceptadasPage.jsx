@@ -105,23 +105,18 @@ function SelectorMultipleGenerico({ valores, seleccionados, onCambiar }) {
   )
 }
 
-// Mismo criterio que las otras vistas (PresupuestosEnEstudioPage/
-// SeguimientoPage): insignia en la esquina cuando hay mensajes sin leer en
-// la conversación de la obra (pestaña "Notas", ver ComentariosObra.jsx).
-function InsigniaMensajes({ presupuesto }) {
-  if (!presupuesto.tiene_mensajes_sin_leer) return null
-  return (
-    <span className="obra-card-insignia-mensajes" title="Tiene mensajes nuevos en la conversación">
-      💬
-    </span>
-  )
-}
-
-function TarjetaObraAceptada({ presupuesto, materiales, onAbrir }) {
+// Reemplaza la tarjeta ancha (TarjetaObraAceptada) en la lista principal —
+// a pedido de Alfredo: agrupada por Cliente (ver gruposPorCliente), cada
+// obra queda como una casilla chica y numerada en vez de una tarjeta
+// grande, para poder escanear muchos clientes/obras sin scroll infinito.
+// El indicador de mensajes sin leer va inline (no la insignia circular
+// absoluta de la tarjeta grande, no entra bien en una casilla chica y
+// apretada contra las de al lado).
+function ObraItemCompacto({ presupuesto, materiales, numero, onAbrir }) {
   const pendientes = materiales.filter((m) => ESTADOS_PENDIENTES.includes(m.estado)).length
   return (
     <div
-      className="obra-card"
+      className="obra-item-compacto"
       role="button"
       tabIndex={0}
       onClick={() => onAbrir(presupuesto.id)}
@@ -129,15 +124,15 @@ function TarjetaObraAceptada({ presupuesto, materiales, onAbrir }) {
         if (e.key === 'Enter' || e.key === ' ') onAbrir(presupuesto.id)
       }}
     >
-      <InsigniaMensajes presupuesto={presupuesto} />
-      <div className="obra-card-titulo" title={presupuesto.obra}>{presupuesto.obra}</div>
-      <div className="obra-card-cliente" title={presupuesto.cliente || ''}>{presupuesto.cliente || 'Sin cliente'}</div>
-      <div className="obra-card-meta">
-        <span className="badge badge-borrador">{presupuesto.proveedor || 'Sin proveedor'}</span>
-        {pendientes > 0 && (
-          <span className="badge badge-rechazado">{pendientes} pendiente{pendientes > 1 ? 's' : ''}</span>
-        )}
-      </div>
+      <span className="obra-item-compacto-numero">{numero}.</span>
+      <span className="obra-item-compacto-nombre" title={presupuesto.obra}>{presupuesto.obra}</span>
+      {presupuesto.tiene_mensajes_sin_leer && (
+        <span className="obra-item-compacto-mensaje" title="Tiene mensajes nuevos en la conversación">💬</span>
+      )}
+      <span className="obra-item-compacto-proveedor">{presupuesto.proveedor || 'Sin proveedor'}</span>
+      {pendientes > 0 && (
+        <span className="badge badge-rechazado obra-item-compacto-badge">{pendientes} pdte.{pendientes > 1 ? 's' : ''}</span>
+      )}
     </div>
   )
 }
@@ -908,6 +903,22 @@ export default function ObrasAceptadasPage() {
       .sort((a, b) => (a.obra || '').localeCompare(b.obra || '', 'es'))
   }, [aceptadas, busquedaObra, filtroCategoria, filtroContacto, soloConNotas])
 
+  // Agrupado por Cliente a pedido de Alfredo — antes era una sola grilla
+  // de tarjetas anchas, ahora cada cliente es un encabezado con sus obras
+  // en una lista compacta y numerada debajo, para poder escanear muchos
+  // clientes sin que cada obra ocupe tanto espacio.
+  const gruposPorCliente = useMemo(() => {
+    const mapa = new Map()
+    for (const p of filasFiltradas) {
+      const cliente = p.cliente || 'Sin cliente'
+      if (!mapa.has(cliente)) mapa.set(cliente, [])
+      mapa.get(cliente).push(p)
+    }
+    return Array.from(mapa.entries())
+      .sort(([a], [b]) => a.localeCompare(b, 'es'))
+      .map(([cliente, obras]) => ({ cliente, obras }))
+  }, [filasFiltradas])
+
   function handleCambioCategoria(valor) {
     setFiltroCategoria(valor)
     setFiltroContacto('Todos')
@@ -1065,18 +1076,25 @@ export default function ObrasAceptadasPage() {
         <p className="dashboard-nota">Ninguna obra coincide con los filtros aplicados.</p>
       )}
 
-      {!cargando && !error && filasFiltradas.length > 0 && (
-        <div className="obras-grid">
-          {filasFiltradas.map((p) => (
-            <TarjetaObraAceptada
-              key={p.id}
-              presupuesto={p}
-              materiales={materialesPorObra.get(p.obra) || []}
-              onAbrir={(id) => navigate(`/obras-aceptadas/${id}`)}
-            />
-          ))}
-        </div>
-      )}
+      {!cargando && !error && filasFiltradas.length > 0 && gruposPorCliente.map((grupo) => (
+        <section key={grupo.cliente} className="obras-seccion">
+          <h2 className="obras-seccion-titulo">
+            {grupo.cliente}
+            <span className="obras-seccion-contador">{grupo.obras.length}</span>
+          </h2>
+          <div className="obras-lista-compacta">
+            {grupo.obras.map((p, i) => (
+              <ObraItemCompacto
+                key={p.id}
+                presupuesto={p}
+                materiales={materialesPorObra.get(p.obra) || []}
+                numero={i + 1}
+                onAbrir={(id) => navigate(`/obras-aceptadas/${id}`)}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
     </div>
   )
 }
