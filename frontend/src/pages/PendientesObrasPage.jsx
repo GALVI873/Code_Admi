@@ -96,7 +96,7 @@ export default function PendientesObrasPage() {
                   className="notas-obra-item-cuerpo"
                   role="button"
                   tabIndex={0}
-                  onClick={() => navigate(`/obras-aceptadas/${n.obra_id}`)}
+                  onClick={() => navigate(`/obras-aceptadas/${n.obra_id}?pestana=Notas`)}
                 >
                   <p className="notas-obra-item-texto">{n.mensaje}</p>
                   <span className="notas-obra-item-meta">{n.autor_nombre} · {formatoFechaHora(n.creado_en)}</span>

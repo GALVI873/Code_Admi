@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import {
   obrasAceptadas,
@@ -798,10 +798,16 @@ const PESTANAS_DETALLE = ['Ficha', 'Seguimiento', 'Planos', 'Notas']
 // criterio que las otras vistas).
 function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar, onConfirmar, onQuitar, onCambiarMaterial, onLeido }) {
   const { accessToken, usuario } = useAuth()
-  const [pestana, setPestana] = useState('Ficha')
+  // La vista "Pendientes" enlaza directo a la pestaña Notas de una obra
+  // (?pestana=Notas, ver PendientesObrasPage.jsx) para no obligar a un
+  // click de más — se lee una sola vez al entrar/cambiar de obra, no se
+  // vuelve a mirar si después se cambia de pestaña a mano.
+  const [searchParams] = useSearchParams()
+  const [pestana, setPestana] = useState(() => searchParams.get('pestana') || 'Ficha')
 
   useEffect(() => {
-    setPestana('Ficha')
+    setPestana(searchParams.get('pestana') || 'Ficha')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presupuesto.id])
 
   return (
