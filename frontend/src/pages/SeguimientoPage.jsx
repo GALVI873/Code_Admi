@@ -487,6 +487,9 @@ function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio, puedeMarcarInteres
       <InsigniaMensajes presupuesto={presupuesto} />
       <div className="obra-card-titulo" title={presupuesto.obra}>{presupuesto.obra}</div>
       <div className="obra-card-cliente" title={presupuesto.cliente || ''}>{presupuesto.cliente || 'Sin cliente'}</div>
+      {presupuesto.fecha_creacion_carpeta && (
+        <div className="obra-card-fecha-solicitud">Solicitud {formatoFecha(presupuesto.fecha_creacion_carpeta)}</div>
+      )}
       {presupuesto.fecha_ultimo_envio && (
         <div className="obra-card-fecha-envio">Enviado {formatoFecha(presupuesto.fecha_ultimo_envio)}</div>
       )}
@@ -532,6 +535,9 @@ function TarjetaGrupoSeguimiento({ grupo, onAbrir, onCambio, puedeMarcarInteresa
       <InsigniaMensajes presupuesto={opciones[0]} />
       <div className="obra-card-titulo" title={base}>{base}</div>
       <div className="obra-card-cliente" title={opciones[0].cliente || ''}>{opciones[0].cliente || 'Sin cliente'}</div>
+      {opciones[0].fecha_creacion_carpeta && (
+        <div className="obra-card-fecha-solicitud">Solicitud {formatoFecha(opciones[0].fecha_creacion_carpeta)}</div>
+      )}
       <div className="seguimiento-opciones-chips">
         {opciones.map((o) => (
           <span key={o.id} className={`seguimiento-chip-opcion ${CLASE_ESTATUS[o.estatus] || ''}`}>
@@ -691,6 +697,11 @@ function ItemAgenda({ grupo, numero, deshabilitarArriba, deshabilitarAbajo, onAb
       <InsigniaMensajes presupuesto={primero} />
       <SelectPrioridad presupuesto={primero} onCambio={onCambio} puedeCambiar={puedeCambiarPrioridad} />
       <span className="obra-item-compacto-proveedor">{primero.cliente || 'Sin cliente'}</span>
+      {primero.fecha_creacion_carpeta && (
+        <span className="obra-item-compacto-fecha-solicitud" title="Fecha de solicitud">
+          Solicitud {formatoFecha(primero.fecha_creacion_carpeta)}
+        </span>
+      )}
       <SelectEstatus presupuesto={primero} onCambio={onCambio} />
       <div className="obra-item-agenda-flechas">
         <button
