@@ -1851,9 +1851,13 @@ select.celda-editable-material {
 
 /* Mismo padding/tamaño de letra en todos los campos del form (el .select
    base trae menos padding que el .input-filtro base) para que todas las
-   casillas queden exactamente del mismo alto que "Nombre". */
+   casillas queden exactamente del mismo alto que "Nombre". "flex: none"
+   pisa el "flex: 0 1 130px" de .input-filtro (pensado para filas
+   horizontales) — acá cada .filtro-campo es flex-direction:column, así que
+   ese "130px" terminaba fijando el ALTO en vez del ancho. */
 .adicionales-obra-form .input-filtro,
 .adicionales-obra-form .select-inline {
+  flex: none;
   width: 190px;
   padding: 4px 8px;
   font-size: 12.5px;
@@ -1871,12 +1875,6 @@ select.celda-editable-material {
 
 .adicionales-obra-campo-detalle .input-filtro {
   width: 100%;
-}
-
-.adicionales-obra-campo-detalle textarea.input-filtro {
-  resize: vertical;
-  min-height: 38px;
-  font-family: inherit;
 }
 
 .adicionales-obra-cliente-derivado {
