@@ -125,7 +125,13 @@ async function subirObra(info, campos, confirmables) {
       obra: info.nombre,
       categoria: info.categoria,
       contacto: info.contacto,
-      cliente: campos.cliente,
+      // Estas son las obras más viejas (las primeras que se aceptaron) —
+      // varias nunca tuvieron el campo "CLIENTE" de la Ficha diligenciado.
+      // Si está vacío, se usa el contacto (la carpeta en la que vive la
+      // obra en Drive — el arquitecto/constructora/etc.) como reemplazo:
+      // ya es un dato real y específico, mejor que dejarla sin cliente
+      // (agrupa "Sin cliente" en la lista de Obras Aceptadas).
+      cliente: campos.cliente || info.contacto,
       no_ventanas: campos.no_ventanas,
       numero_ppto: campos.numero_ppto,
       fecha_ppto: confirmables.fecha_ppto,
