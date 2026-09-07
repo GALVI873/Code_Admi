@@ -1854,12 +1854,20 @@ select.celda-editable-material {
   width: 190px;
 }
 
-.adicionales-obra-campo-detalle {
-  flex: 1 1 280px;
+/* Detalle y Solicitante quedan del mismo ancho que Nombre (obra) — antes
+   Detalle se estiraba (flex-grow) a ocupar todo el resto de la fila, que
+   quedaba desproporcionado con el resto de los campos. */
+.adicionales-obra-campo-detalle,
+.adicionales-obra-campo-solicitante {
+  flex: none;
+}
+
+.adicionales-obra-campo-detalle .input-filtro,
+.adicionales-obra-campo-solicitante .input-filtro {
+  width: 190px;
 }
 
 .adicionales-obra-campo-detalle textarea.input-filtro {
-  width: 100%;
   resize: vertical;
   min-height: 38px;
   font-family: inherit;

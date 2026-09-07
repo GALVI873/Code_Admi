@@ -1,11 +1,40 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { adicionalesObra, agregarAdicionalObra, eliminarAdicionalObra } from '../api/client.js'
+import { adicionalesObra, agregarAdicionalObra, cambiarEstatusAdicionalObra, eliminarAdicionalObra } from '../api/client.js'
+
+const ESTATUS_ADICIONAL_OPCIONES = ['En Valoración', 'Enviado']
+// Mismas clases que ya usa el select de Estatus en Orden del día/General —
+// no hace falta CSS nuevo.
+const CLASE_ESTATUS_ADICIONAL = {
+  'En Valoración': 'select-estatus-en-valoracion',
+  Enviado: 'select-estatus-enviado',
+}
 
 function formatoFecha(iso) {
   if (!iso) return null
   const [anio, mes, dia] = iso.split('-')
   return `${dia}/${mes}/${anio}`
+}
+
+// Un adicional arranca siempre "En Valoración" (recién cargado, todavía sin
+// mandar) — pasar a "Enviado" es una decisión manual, igual que el resto de
+// los campos de esta vista es trabajo operativo de Geraldinne (requiere
+// presupuestos.ver_seguimiento); Álvaro lo ve pero no lo cambia.
+function SelectEstatusAdicional({ adicional, onCambio, puedeCambiar }) {
+  if (!puedeCambiar) {
+    return <span className={`badge-estatus-oferta badge-estatus-oferta-${adicional.estatus === 'Enviado' ? 'recibido' : 'pendiente'}`}>{adicional.estatus}</span>
+  }
+  return (
+    <select
+      className={`select-inline select-estatus ${CLASE_ESTATUS_ADICIONAL[adicional.estatus] || ''}`}
+      value={adicional.estatus}
+      onChange={(e) => onCambio(adicional.id, e.target.value)}
+    >
+      {ESTATUS_ADICIONAL_OPCIONES.map((op) => (
+        <option key={op} value={op}>{op}</option>
+      ))}
+    </select>
+  )
 }
 
 // Adicionales de obra: trabajo extra que un cliente pide sobre una obra ya
@@ -15,7 +44,8 @@ function formatoFecha(iso) {
 // "Cliente" se completa solo (siempre el mismo que tiene esa obra aceptada,
 // no se puede escribir a mano) — el resto son campos de texto libre.
 export default function AdicionalesDeObra() {
-  const { accessToken } = useAuth()
+  const { accessToken, tienePermiso } = useAuth()
+  const puedeCambiarEstatus = tienePermiso('presupuestos.ver_seguimiento')
   const [adicionales, setAdicionales] = useState([])
   const [obrasDisponibles, setObrasDisponibles] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -66,6 +96,18 @@ export default function AdicionalesDeObra() {
     }
   }
 
+  async function handleCambiarEstatus(id, estatus) {
+    if (!puedeCambiarEstatus) return
+    const anteriores = adicionales
+    setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, estatus } : a)))
+    try {
+      await cambiarEstatusAdicionalObra(accessToken, id, estatus)
+    } catch (err) {
+      setAdicionales(anteriores)
+      setError(err.message)
+    }
+  }
+
   async function handleEliminar(id) {
     if (!window.confirm('¿Eliminar este adicional? No se puede deshacer.')) return
     const anteriores = adicionales
@@ -109,8 +151,8 @@ export default function AdicionalesDeObra() {
             onChange={(e) => setFechaSolicitud(e.target.value)}
           />
         </div>
-        <div className="filtro-campo">
-          <label htmlFor="adicional-solicitado-por">Quién lo solicitó</label>
+        <div className="filtro-campo adicionales-obra-campo-solicitante">
+          <label htmlFor="adicional-solicitado-por">Solicitante</label>
           <input
             id="adicional-solicitado-por"
             type="text"
@@ -154,9 +196,10 @@ export default function AdicionalesDeObra() {
               <tr>
                 <th>Obra</th>
                 <th>Cliente</th>
+                <th>Estatus</th>
                 <th>Fecha solicitud</th>
                 <th>Detalle</th>
-                <th>Solicitado por</th>
+                <th>Solicitante</th>
                 <th></th>
               </tr>
             </thead>
@@ -165,6 +208,7 @@ export default function AdicionalesDeObra() {
                 <tr key={a.id}>
                   <td className="adicionales-obra-col-obra">{a.obra}</td>
                   <td>{a.obra_cliente || 'Sin cliente'}</td>
+                  <td><SelectEstatusAdicional adicional={a} onCambio={handleCambiarEstatus} puedeCambiar={puedeCambiarEstatus} /></td>
                   <td>{formatoFecha(a.fecha_solicitud) || '—'}</td>
                   <td className="adicionales-obra-col-detalle">{a.detalle}</td>
                   <td>{a.solicitado_por || '—'}</td>

@@ -220,6 +220,14 @@ export function agregarAdicionalObra(accessToken, { obra, fecha_solicitud, detal
   })
 }
 
+export function cambiarEstatusAdicionalObra(accessToken, id, estatus) {
+  return request('/adicionales_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ id, estatus }),
+  })
+}
+
 export function eliminarAdicionalObra(accessToken, id) {
   return request('/adicionales_obra.php', {
     method: 'DELETE',
