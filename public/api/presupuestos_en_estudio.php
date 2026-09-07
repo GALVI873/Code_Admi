@@ -364,6 +364,14 @@ try {
             // aplicar solo.
             if (($p['cliente'] ?? '') === '' && !empty($p['contacto'])) {
                 $p['cliente'] = $p['contacto'];
+            } elseif (($p['cliente'] ?? '') === '' && ($p['categoria'] ?? '') === 'Particular') {
+                // Particulares no tienen carpeta de contacto propia (cuelgan
+                // directo de la categoría, ver sync_all.js) — a propósito no
+                // se abre una carpeta por cada cliente particular, es
+                // demasiado extenso para el volumen de obras de este tipo.
+                // Mientras no haya Ficha con el nombre real, se muestra
+                // "Particular" sin más en vez de "Sin cliente".
+                $p['cliente'] = 'Particular';
             }
         }
         unset($p);
