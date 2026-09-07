@@ -10,16 +10,22 @@ import { useAuth, MOCK_AUTH } from '../context/AuthContext.jsx'
 // construya — el filtro por permiso ya queda listo para cualquiera de los
 // dos casos.
 const NAV_ITEMS = [
-  { to: '/presupuestos-en-estudio', label: 'Presupuestos', icono: '🔍', permiso: 'presupuestos.ver_todos' },
-  // Vista de Geraldinne (Orden del día / General), pero también accesible
-  // para admin (Álvaro/Valentina) — antes era exclusiva de Geraldinne por
-  // email, ahora cualquiera con ver_todos O ver_seguimiento entra. Dentro
-  // de la página, los campos que son de trabajo operativo de ella (fecha
-  // límite de entrega, gestión de ofertas a proveedor) siguen siendo
-  // de solo lectura para quien no tenga ver_seguimiento específicamente —
-  // ver SeguimientoPage.jsx. Queda como ítem suelto (no entra en el grupo
-  // "Seguimiento" de abajo): es una vista completamente distinta de las de
-  // Alfredo/Álvaro, comparte nombre de ruta nada más.
+  // Antes había una segunda entrada "Presupuestos" (plural) apuntando a
+  // /presupuestos-en-estudio, la vista original de admin — cuando se le dio
+  // acceso a Álvaro a esta página (Orden del día / General, antes exclusiva
+  // de Geraldinne) terminaron conviviendo dos ítems casi idénticos en su
+  // menú ("Presupuestos" / "Presupuesto") y generaba confusión sobre cuál
+  // era cuál. Se sacó esa entrada del menú a pedido de Álvaro — la página
+  // /presupuestos-en-estudio sigue existiendo en el código por si hace
+  // falta recuperarla, pero ya no es alcanzable desde la navegación (el
+  // control de prioridad Alta que solo vivía ahí ahora también está acá,
+  // ver SeguimientoPage.jsx). Es una vista completa en sí misma (Orden del
+  // día / General), pensada originalmente para Geraldinne pero ahora
+  // también accesible para admin — cualquiera con ver_todos O
+  // ver_seguimiento entra. Dentro de la página, los campos que son de
+  // trabajo operativo de ella (fecha límite de entrega, gestión de ofertas
+  // a proveedor) siguen siendo de solo lectura para quien no tenga
+  // ver_seguimiento específicamente — ver SeguimientoPage.jsx.
   {
     to: '/seguimiento',
     label: 'Presupuesto',

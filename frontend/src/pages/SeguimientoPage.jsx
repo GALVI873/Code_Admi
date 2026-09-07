@@ -66,6 +66,11 @@ const CLASE_ESTATUS = {
   Descartado: 'select-estatus-descartado',
 }
 
+const CLASE_PRIORIDAD = {
+  Alta: 'select-prioridad-alta',
+  Normal: 'select-prioridad-normal',
+}
+
 // "Enviado" puesto a mano sin que exista un PDF en la carpeta Enviados de
 // la obra es un estado inconsistente — igual que en Presupuestos en
 // Estudio, se avisa pero no se bloquea.
@@ -119,10 +124,36 @@ function InsigniaAlerta() {
 // Geraldinne no puede cambiar la prioridad (eso es de Álvaro/Valentina,
 // permiso presupuestos.gestionar_prioridad) — acá es solo lectura, y solo se
 // muestra cuando es "Alta" para no llenar cada tarjeta con una insignia
-// "Normal" que no aporta nada.
+// "Normal" que no aporta nada. Se usa en el resumen de un GRUPO de opciones
+// (prioridadAlta = alguna de ellas), donde no hay una sola fila a la que
+// aplicarle el select de abajo.
 function InsigniaPrioridad({ presupuesto }) {
   if (presupuesto.prioridad !== 'Alta') return null
   return <span className="badge badge-rechazado">Alta</span>
+}
+
+// Control editable de prioridad, igual al de Presupuestos en Estudio (misma
+// fuente de verdad, presupuestos.gestionar_prioridad — solo admin). Antes
+// esta vista solo tenía la insignia de solo lectura porque era exclusiva de
+// Geraldinne; ahora que admin también entra acá, puede marcar/desmarcar
+// prioridad Alta directamente desde esta página sin tener que ir a
+// Presupuestos en Estudio.
+function SelectPrioridad({ presupuesto, onCambio, puedeCambiar }) {
+  if (!puedeCambiar) {
+    if (presupuesto.prioridad !== 'Alta') return null
+    return <span className="badge badge-rechazado">Alta</span>
+  }
+  return (
+    <select
+      className={`select-inline select-prioridad ${CLASE_PRIORIDAD[presupuesto.prioridad] || ''}`}
+      value={presupuesto.prioridad}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onCambio(presupuesto.id, { prioridad: e.target.value })}
+    >
+      <option value="Normal">Normal</option>
+      <option value="Alta">Alta</option>
+    </select>
+  )
 }
 
 function formatoFecha(iso) {
@@ -439,7 +470,7 @@ function InsigniaMensajes({ presupuesto }) {
   )
 }
 
-function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio, puedeMarcarInteresante }) {
+function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio, puedeMarcarInteresante, puedeCambiarPrioridad }) {
   const alerta = faltaEnvio(presupuesto)
   return (
     <div
@@ -461,7 +492,7 @@ function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio, puedeMarcarInteres
       )}
       <div className="obra-card-meta">
         <SelectEstatus presupuesto={presupuesto} onCambio={onCambio} />
-        <InsigniaPrioridad presupuesto={presupuesto} />
+        <SelectPrioridad presupuesto={presupuesto} onCambio={onCambio} puedeCambiar={puedeCambiarPrioridad} />
       </div>
     </div>
   )
@@ -472,7 +503,7 @@ function TarjetaSeguimiento({ presupuesto, onAbrir, onCambio, puedeMarcarInteres
 // común y sin cambios visuales) pero cuando hay más de una, en vez de un
 // único select de Estatus muestra una insignia por opción — cada una con su
 // propio color de estatus — porque acá no hay un solo estatus que mostrar.
-function TarjetaGrupoSeguimiento({ grupo, onAbrir, onCambio, puedeMarcarInteresante }) {
+function TarjetaGrupoSeguimiento({ grupo, onAbrir, onCambio, puedeMarcarInteresante, puedeCambiarPrioridad }) {
   const { base, opciones } = grupo
   if (opciones.length === 1) {
     return (
@@ -481,6 +512,7 @@ function TarjetaGrupoSeguimiento({ grupo, onAbrir, onCambio, puedeMarcarInteresa
         onAbrir={onAbrir}
         onCambio={onCambio}
         puedeMarcarInteresante={puedeMarcarInteresante}
+        puedeCambiarPrioridad={puedeCambiarPrioridad}
       />
     )
   }
@@ -512,7 +544,7 @@ function TarjetaGrupoSeguimiento({ grupo, onAbrir, onCambio, puedeMarcarInteresa
   )
 }
 
-function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta, puedeMarcarInteresante, puedeGestionarOfertas, accessToken, usuarioEmail, onLeido }) {
+function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta, puedeMarcarInteresante, puedeCambiarPrioridad, puedeGestionarOfertas, accessToken, usuarioEmail, onLeido }) {
   const [ofertasAbiertas, setOfertasAbiertas] = useState(false)
   const [pestanaActivaId, setPestanaActivaId] = useState(opciones[0]?.id)
   const [chatAbierto, setChatAbierto] = useState(false)
@@ -547,7 +579,7 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
             <p>{activo.cliente || 'Sin cliente'}</p>
           </div>
           <div className="modal-header-acciones">
-            <InsigniaPrioridad presupuesto={activo} />
+            <SelectPrioridad presupuesto={activo} onCambio={onCambio} puedeCambiar={puedeCambiarPrioridad} />
             <BotonInteresante presupuesto={activo} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
             <button
               type="button"
@@ -642,7 +674,7 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
 // Obras Aceptadas (lista vertical numerada), pero con flechas para mover el
 // orden a mano en vez de un badge de estatus fijo: acá el orden ES el dato,
 // no un detalle secundario.
-function ItemAgenda({ grupo, numero, deshabilitarArriba, deshabilitarAbajo, onAbrir, onMover, onCambio }) {
+function ItemAgenda({ grupo, numero, deshabilitarArriba, deshabilitarAbajo, onAbrir, onMover, onCambio, puedeCambiarPrioridad }) {
   const primero = grupo.opciones[0]
   return (
     <div
@@ -657,7 +689,7 @@ function ItemAgenda({ grupo, numero, deshabilitarArriba, deshabilitarAbajo, onAb
       <span className="obra-item-compacto-numero">{numero}.</span>
       <span className="obra-item-compacto-nombre" title={grupo.base}>{grupo.base}</span>
       <InsigniaMensajes presupuesto={primero} />
-      {grupo.prioridadAlta && <span className="badge badge-rechazado">Alta</span>}
+      <SelectPrioridad presupuesto={primero} onCambio={onCambio} puedeCambiar={puedeCambiarPrioridad} />
       <span className="obra-item-compacto-proveedor">{primero.cliente || 'Sin cliente'}</span>
       <SelectEstatus presupuesto={primero} onCambio={onCambio} />
       <div className="obra-item-agenda-flechas">
@@ -710,6 +742,11 @@ export default function SeguimientoPage() {
   // entrar a organizar el día.
   const [vista, setVista] = useState('orden_dia')
   const puedeMarcarInteresante = tienePermiso('presupuestos.marcar_interesante')
+  // Marcar prioridad Alta sigue siendo exclusivo de admin (Álvaro/Valentina)
+  // — antes esta vista solo tenía la insignia de solo lectura porque era
+  // exclusiva de Geraldinne; ahora que admin entra acá también, puede
+  // editarla directo sin ir a Presupuestos en Estudio.
+  const puedeCambiarPrioridad = tienePermiso('presupuestos.gestionar_prioridad')
   // Gestionar ofertas a proveedor y editar la fecha límite de entrega sigue
   // siendo trabajo operativo puntual de Geraldinne — quien entra a esta
   // vista solo con ver_todos (Álvaro/Valentina) la ve completa, pero de
@@ -1021,6 +1058,7 @@ export default function SeguimientoPage() {
                   onAbrir={setObraSeleccionadaBase}
                   onMover={handleMoverAgenda}
                   onCambio={handleCambio}
+                  puedeCambiarPrioridad={puedeCambiarPrioridad}
                 />
               ))}
             </div>
@@ -1113,7 +1151,7 @@ export default function SeguimientoPage() {
           )}
           <div className="obras-grid">
             {grupo.items.map((g) => (
-              <TarjetaGrupoSeguimiento key={g.base} grupo={g} onAbrir={setObraSeleccionadaBase} onCambio={handleCambio} puedeMarcarInteresante={puedeMarcarInteresante} />
+              <TarjetaGrupoSeguimiento key={g.base} grupo={g} onAbrir={setObraSeleccionadaBase} onCambio={handleCambio} puedeMarcarInteresante={puedeMarcarInteresante} puedeCambiarPrioridad={puedeCambiarPrioridad} />
             ))}
           </div>
         </section>
@@ -1130,6 +1168,7 @@ export default function SeguimientoPage() {
           onEliminarOferta={handleEliminarOferta}
           onCambiarEstatusOferta={handleCambiarEstatusOferta}
           puedeMarcarInteresante={puedeMarcarInteresante}
+          puedeCambiarPrioridad={puedeCambiarPrioridad}
           puedeGestionarOfertas={puedeGestionarOfertas}
           accessToken={accessToken}
           usuarioEmail={usuario.email}
