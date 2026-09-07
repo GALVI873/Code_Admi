@@ -228,6 +228,14 @@ export function cambiarEstatusAdicionalObra(accessToken, id, estatus) {
   })
 }
 
+export function cambiarPrioridadAdicionalObra(accessToken, id, prioridad) {
+  return request('/adicionales_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ id, prioridad }),
+  })
+}
+
 export function eliminarAdicionalObra(accessToken, id) {
   return request('/adicionales_obra.php', {
     method: 'DELETE',

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { adicionalesObra, agregarAdicionalObra, cambiarEstatusAdicionalObra, eliminarAdicionalObra } from '../api/client.js'
+import { adicionalesObra, agregarAdicionalObra, cambiarEstatusAdicionalObra, cambiarPrioridadAdicionalObra, eliminarAdicionalObra } from '../api/client.js'
 
 const ESTATUS_ADICIONAL_OPCIONES = ['En Valoración', 'Enviado']
 // Mismas clases que ya usa el select de Estatus en Orden del día/General —
@@ -8,6 +8,31 @@ const ESTATUS_ADICIONAL_OPCIONES = ['En Valoración', 'Enviado']
 const CLASE_ESTATUS_ADICIONAL = {
   'En Valoración': 'select-estatus-en-valoracion',
   Enviado: 'select-estatus-enviado',
+}
+const CLASE_PRIORIDAD_ADICIONAL = {
+  Alta: 'select-prioridad-alta',
+  Normal: 'select-prioridad-normal',
+}
+
+// Marcar prioridad Alta es exclusivo de Álvaro/Valentina (permiso
+// presupuestos.gestionar_prioridad, mismo control que en Presupuesto) — un
+// adicional Alta aparece en el bloque de arriba de "Orden del día", junto
+// con las obras prioritarias de siempre.
+function SelectPrioridadAdicional({ adicional, onCambio, puedeCambiar }) {
+  if (!puedeCambiar) {
+    if (adicional.prioridad !== 'Alta') return null
+    return <span className="badge badge-rechazado">Alta</span>
+  }
+  return (
+    <select
+      className={`select-inline select-prioridad ${CLASE_PRIORIDAD_ADICIONAL[adicional.prioridad] || ''}`}
+      value={adicional.prioridad}
+      onChange={(e) => onCambio(adicional.id, e.target.value)}
+    >
+      <option value="Normal">Normal</option>
+      <option value="Alta">Alta</option>
+    </select>
+  )
 }
 
 function formatoFecha(iso) {
@@ -46,6 +71,7 @@ function SelectEstatusAdicional({ adicional, onCambio, puedeCambiar }) {
 export default function AdicionalesDeObra() {
   const { accessToken, tienePermiso } = useAuth()
   const puedeCambiarEstatus = tienePermiso('presupuestos.ver_seguimiento')
+  const puedeCambiarPrioridad = tienePermiso('presupuestos.gestionar_prioridad')
   const [adicionales, setAdicionales] = useState([])
   const [obrasDisponibles, setObrasDisponibles] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -102,6 +128,18 @@ export default function AdicionalesDeObra() {
     setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, estatus } : a)))
     try {
       await cambiarEstatusAdicionalObra(accessToken, id, estatus)
+    } catch (err) {
+      setAdicionales(anteriores)
+      setError(err.message)
+    }
+  }
+
+  async function handleCambiarPrioridad(id, prioridad) {
+    if (!puedeCambiarPrioridad) return
+    const anteriores = adicionales
+    setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, prioridad } : a)))
+    try {
+      await cambiarPrioridadAdicionalObra(accessToken, id, prioridad)
     } catch (err) {
       setAdicionales(anteriores)
       setError(err.message)
@@ -197,6 +235,7 @@ export default function AdicionalesDeObra() {
                 <th>Obra</th>
                 <th>Cliente</th>
                 <th>Estatus</th>
+                <th>Prioridad</th>
                 <th>Fecha solicitud</th>
                 <th>Detalle</th>
                 <th>Solicitante</th>
@@ -209,6 +248,7 @@ export default function AdicionalesDeObra() {
                   <td className="adicionales-obra-col-obra">{a.obra}</td>
                   <td>{a.obra_cliente || 'Sin cliente'}</td>
                   <td><SelectEstatusAdicional adicional={a} onCambio={handleCambiarEstatus} puedeCambiar={puedeCambiarEstatus} /></td>
+                  <td><SelectPrioridadAdicional adicional={a} onCambio={handleCambiarPrioridad} puedeCambiar={puedeCambiarPrioridad} /></td>
                   <td>{formatoFecha(a.fecha_solicitud) || '—'}</td>
                   <td className="adicionales-obra-col-detalle">{a.detalle}</td>
                   <td>{a.solicitado_por || '—'}</td>

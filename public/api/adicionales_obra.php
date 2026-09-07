@@ -16,13 +16,18 @@ declare(strict_types=1);
 // Geraldinne la página completa de Obras Aceptadas solo para este
 // desplegable).
 // POST: crea un adicional {obra, fecha_solicitud, detalle, solicitado_por} —
-// arranca siempre en estatus "En Valoración".
+// arranca siempre en estatus "En Valoración" y prioridad "Normal".
 // PATCH: {id, estatus} cambia el estatus ("En Valoración"/"Enviado") — como
 // el resto de los campos, es Geraldinne quien lo hace a mano (requiere
-// presupuestos.ver_seguimiento, no alcanza con ver_todos).
+// presupuestos.ver_seguimiento, no alcanza con ver_todos). {id, prioridad}
+// cambia la prioridad ("Alta"/"Normal") — esa es exclusiva de Álvaro/
+// Valentina (requiere presupuestos.gestionar_prioridad), mismo criterio que
+// la prioridad de Presupuesto: decide si el adicional aparece en el bloque
+// de arriba de "Orden del día".
 // DELETE: {id} borra un adicional puntual (por si se cargó mal).
 
 const ESTATUS_ADICIONAL_VALIDOS = ['En Valoración', 'Enviado'];
+const PRIORIDAD_ADICIONAL_VALIDOS = ['Alta', 'Normal'];
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
 
@@ -34,6 +39,7 @@ try {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           obra TEXT NOT NULL,
           estatus TEXT NOT NULL DEFAULT 'En Valoración',
+          prioridad TEXT NOT NULL DEFAULT 'Normal',
           fecha_solicitud TEXT,
           detalle TEXT NOT NULL,
           solicitado_por TEXT,
@@ -46,6 +52,9 @@ try {
     $columnasAdicionales = array_column($db->query('PRAGMA table_info(adicionales_obra)')->fetchAll(), 'name');
     if (!in_array('estatus', $columnasAdicionales, true)) {
         $db->exec("ALTER TABLE adicionales_obra ADD COLUMN estatus TEXT NOT NULL DEFAULT 'En Valoración'");
+    }
+    if (!in_array('prioridad', $columnasAdicionales, true)) {
+        $db->exec("ALTER TABLE adicionales_obra ADD COLUMN prioridad TEXT NOT NULL DEFAULT 'Normal'");
     }
 
     $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
@@ -116,19 +125,32 @@ try {
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'PATCH') {
-        AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_seguimiento');
-
         $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
         $id = (int) ($body['id'] ?? 0);
-        $estatus = trim((string) ($body['estatus'] ?? ''));
         if ($id <= 0) {
             Response::error('Falta "id"', 422);
         }
-        if (!in_array($estatus, ESTATUS_ADICIONAL_VALIDOS, true)) {
-            Response::error('"estatus" debe ser una de: ' . implode(', ', ESTATUS_ADICIONAL_VALIDOS), 422);
+
+        if (array_key_exists('estatus', $body)) {
+            AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_seguimiento');
+            $estatus = trim((string) $body['estatus']);
+            if (!in_array($estatus, ESTATUS_ADICIONAL_VALIDOS, true)) {
+                Response::error('"estatus" debe ser una de: ' . implode(', ', ESTATUS_ADICIONAL_VALIDOS), 422);
+            }
+            $db->prepare("UPDATE adicionales_obra SET estatus = ?, actualizado_en = datetime('now') WHERE id = ?")
+                ->execute([$estatus, $id]);
         }
-        $db->prepare("UPDATE adicionales_obra SET estatus = ?, actualizado_en = datetime('now') WHERE id = ?")
-            ->execute([$estatus, $id]);
+
+        if (array_key_exists('prioridad', $body)) {
+            AuthMiddleware::requierePermiso($usuario, 'presupuestos.gestionar_prioridad');
+            $prioridad = trim((string) $body['prioridad']);
+            if (!in_array($prioridad, PRIORIDAD_ADICIONAL_VALIDOS, true)) {
+                Response::error('"prioridad" debe ser una de: ' . implode(', ', PRIORIDAD_ADICIONAL_VALIDOS), 422);
+            }
+            $db->prepare("UPDATE adicionales_obra SET prioridad = ?, actualizado_en = datetime('now') WHERE id = ?")
+                ->execute([$prioridad, $id]);
+        }
+
         Response::json(['ok' => true]);
     }
 

@@ -198,6 +198,22 @@ body {
 .badge-aceptado { background: #d5f5e3; color: #1e8449; }
 .badge-rechazado { background: #fdedec; color: var(--rojo); }
 
+/* Etiqueta de tipo (no de estatus ni prioridad) — color propio para no
+   confundirse con ninguno de los badges de arriba. Marca en "Orden del
+   día" las filas que en realidad son adicionales de obra, no obras en
+   estudio. */
+.badge-adicional-obra {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 10px;
+  background: #e0f7fa;
+  color: #00838f;
+  white-space: nowrap;
+  flex: none;
+}
+
 .dashboard-ancho {
   max-width: none;
   padding-left: 36px;
