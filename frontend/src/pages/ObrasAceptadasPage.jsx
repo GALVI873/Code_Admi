@@ -12,7 +12,7 @@ import {
   guardarPosicionPlano,
   quitarPosicionPlano,
 } from '../api/client.js'
-import ComentariosObra from '../components/ComentariosObra.jsx'
+import NotasObraAceptada from '../components/NotasObraAceptada.jsx'
 
 // Espacio de trabajo de Gestión de Obras — la lista de obras que
 // Geraldinne ya movió a "Aceptadas". Según la entrevista de Fase 1, desde
@@ -790,13 +790,12 @@ const PESTANAS_DETALLE = ['Ficha', 'Seguimiento', 'Planos', 'Notas']
 // modal encima de la lista. Tiene su propia URL (/obras-aceptadas/:id) para
 // poder volver a abrirla o pasarla por link.
 //
-// "Notas" reusa ComentariosObra.jsx (mismo hilo que ya usan Álvaro y
-// Geraldinne en Presupuestos en Estudio/Presupuesto) en su variante "tab" —
-// a pedido de Álvaro: lo que saca de una reunión o visita a obra, para que
-// Alfredo lo vea sin que se lo tengan que repetir a mano. La pestaña
-// muestra un punto cuando hay mensajes sin leer, además de la insignia en
-// la tarjeta de la lista (InsigniaMensajes, mismo criterio que las otras
-// vistas).
+// "Notas" (NotasObraAceptada.jsx) — a pedido de Álvaro: lo que saca de una
+// reunión o visita a obra, en forma de lista de pendientes (no chat como
+// en Presupuestos en Estudio/Presupuesto) para que Alfredo los vaya
+// tildando. La pestaña muestra un punto cuando hay mensajes sin leer,
+// además de la insignia en la tarjeta de la lista (InsigniaMensajes, mismo
+// criterio que las otras vistas).
 function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar, onConfirmar, onQuitar, onCambiarMaterial, onLeido }) {
   const { accessToken, usuario } = useAuth()
   const [pestana, setPestana] = useState('Ficha')
@@ -842,12 +841,11 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar
       )}
       {pestana === 'Planos' && <PlanosObra obra={presupuesto.obra} materiales={materiales} />}
       {pestana === 'Notas' && (
-        <ComentariosObra
+        <NotasObraAceptada
           obra={presupuesto.obra}
           accessToken={accessToken}
-          usuarioEmail={usuario?.email}
+          usuario={usuario}
           onLeido={() => onLeido(presupuesto.obra)}
-          variante="tab"
         />
       )}
     </div>

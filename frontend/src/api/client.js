@@ -173,3 +173,27 @@ export function agregarComentarioObra(accessToken, obra, mensaje) {
     body: JSON.stringify({ obra, mensaje }),
   })
 }
+
+export function marcarComentarioHecho(accessToken, id, hecho) {
+  return request('/comentarios_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ id, hecho }),
+  })
+}
+
+export function pendientesObrasAceptadas(accessToken) {
+  return request('/comentarios_obra.php?pendientes=1', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
+// TEMPORAL — botón de prueba para vaciar una conversación (solo admin, ver
+// comentarios_obra.php). Sacar cuando ya no haga falta reiniciar
+// conversaciones de prueba.
+export function eliminarConversacionObra(accessToken, obra) {
+  return request(`/comentarios_obra.php?obra=${encodeURIComponent(obra)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}

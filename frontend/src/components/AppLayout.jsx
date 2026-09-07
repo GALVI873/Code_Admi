@@ -28,6 +28,15 @@ const NAV_ITEMS = [
     icono: '🧱',
     permiso: 'obras.ver_aceptadas',
   },
+  // Control general de pendientes de Alfredo (ver PendientesObrasPage.jsx)
+  // — junta las notas de todas las obras aceptadas en un solo lugar, mismo
+  // permiso que Obras Aceptadas (misma audiencia: Alfredo y Álvaro).
+  {
+    to: '/pendientes',
+    label: 'Pendientes',
+    icono: '✅',
+    permiso: 'obras.ver_aceptadas',
+  },
   // A diferencia de las anteriores, esta SÍ es compartida a propósito: la
   // entrevista de Fase 1 confirma que tanto Alfredo como Álvaro la
   // necesitan (pedidos de material y transporte/montaje) — solo permiso,
