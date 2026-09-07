@@ -361,6 +361,87 @@ body {
   color: white;
 }
 
+/* Filtro de selección múltiple por obra (página Pendientes) — un botón
+   que abre un panel de checkboxes en vez de un <select multiple> nativo,
+   más cómodo con muchas obras a la vez. */
+.filtro-obras {
+  position: relative;
+}
+
+.filtro-obras-boton {
+  border: 1px solid #d8dde3;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 13px;
+  background: white;
+  cursor: pointer;
+  min-width: 200px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.filtro-obras-flecha {
+  font-size: 10px;
+  color: #888;
+}
+
+.filtro-obras-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  background: white;
+  border: 1px solid #d8dde3;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .12);
+  min-width: 260px;
+  max-width: 340px;
+  padding: 8px;
+}
+
+.filtro-obras-acciones {
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #eee;
+}
+
+.filtro-obras-acciones button {
+  border: none;
+  background: none;
+  color: var(--azul-med);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.filtro-obras-lista {
+  list-style: none;
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.filtro-obras-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border-radius: 5px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.filtro-obras-item:hover {
+  background: #f4f6f9;
+}
+
 .dashboard-nota {
   margin-top: 14px;
   font-size: 12px;

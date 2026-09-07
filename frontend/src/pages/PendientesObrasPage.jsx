@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { pendientesObrasAceptadas, marcarComentarioHecho } from '../api/client.js'
@@ -21,6 +21,64 @@ function formatoFechaHora(iso) {
   return `${dia}/${mes}/${fecha.getFullYear()} ${horas}:${minutos}`
 }
 
+// Filtro de obra por selección múltiple — un botón que abre un panel de
+// checkboxes (una obra puede tener muchas notas, y con muchas obras
+// activas a la vez conviene poder mirar solo un subconjunto). Ninguna
+// seleccionada = sin filtro, se ven todas.
+function FiltroObrasMultiple({ obrasDisponibles, seleccionadas, onCambiar }) {
+  const [abierto, setAbierto] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    function alClickAfuera(e) {
+      if (ref.current && !ref.current.contains(e.target)) setAbierto(false)
+    }
+    document.addEventListener('mousedown', alClickAfuera)
+    return () => document.removeEventListener('mousedown', alClickAfuera)
+  }, [])
+
+  function alternar(obra) {
+    const yaEsta = seleccionadas.includes(obra)
+    onCambiar(yaEsta ? seleccionadas.filter((o) => o !== obra) : [...seleccionadas, obra])
+  }
+
+  const etiqueta =
+    seleccionadas.length === 0
+      ? 'Todas las obras'
+      : seleccionadas.length === 1
+        ? seleccionadas[0]
+        : `${seleccionadas.length} obras seleccionadas`
+
+  return (
+    <div className="filtro-obras" ref={ref}>
+      <button type="button" className="filtro-obras-boton" onClick={() => setAbierto((a) => !a)}>
+        {etiqueta} <span className="filtro-obras-flecha">▾</span>
+      </button>
+      {abierto && (
+        <div className="filtro-obras-panel">
+          <div className="filtro-obras-acciones">
+            <button type="button" onClick={() => onCambiar([])}>Ver todas</button>
+          </div>
+          <ul className="filtro-obras-lista">
+            {obrasDisponibles.map((obra) => (
+              <li key={obra}>
+                <label className="filtro-obras-item">
+                  <input
+                    type="checkbox"
+                    checked={seleccionadas.includes(obra)}
+                    onChange={() => alternar(obra)}
+                  />
+                  {obra}
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function PendientesObrasPage() {
   const { accessToken, usuario } = useAuth()
   const navigate = useNavigate()
@@ -29,6 +87,7 @@ export default function PendientesObrasPage() {
   const [pendientes, setPendientes] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
+  const [obrasFiltradas, setObrasFiltradas] = useState([])
 
   useEffect(() => {
     pendientesObrasAceptadas(accessToken)
@@ -37,16 +96,21 @@ export default function PendientesObrasPage() {
       .finally(() => setCargando(false))
   }, [accessToken])
 
+  const obrasDisponibles = useMemo(() => {
+    return Array.from(new Set(pendientes.map((p) => p.obra))).sort((a, b) => a.localeCompare(b, 'es'))
+  }, [pendientes])
+
   const gruposPorObra = useMemo(() => {
+    const visibles = obrasFiltradas.length === 0 ? pendientes : pendientes.filter((p) => obrasFiltradas.includes(p.obra))
     const mapa = new Map()
-    for (const p of pendientes) {
+    for (const p of visibles) {
       if (!mapa.has(p.obra)) mapa.set(p.obra, [])
       mapa.get(p.obra).push(p)
     }
     return Array.from(mapa.entries())
       .sort(([a], [b]) => a.localeCompare(b, 'es'))
       .map(([obra, items]) => ({ obra, items }))
-  }, [pendientes])
+  }, [pendientes, obrasFiltradas])
 
   async function handleMarcarHecho(nota) {
     if (!puedeMarcarHecho) return
@@ -69,10 +133,26 @@ export default function PendientesObrasPage() {
         </div>
       </header>
 
+      {!cargando && !error && pendientes.length > 0 && (
+        <div className="filtro-tabla">
+          <div className="filtro-campo">
+            <label>Obra</label>
+            <FiltroObrasMultiple
+              obrasDisponibles={obrasDisponibles}
+              seleccionadas={obrasFiltradas}
+              onCambiar={setObrasFiltradas}
+            />
+          </div>
+        </div>
+      )}
+
       {cargando && <p className="dashboard-nota">Cargando…</p>}
       {error && <div className="auth-error">{error}</div>}
       {!cargando && !error && pendientes.length === 0 && (
         <p className="dashboard-nota">No hay pendientes — está todo al día.</p>
+      )}
+      {!cargando && !error && pendientes.length > 0 && gruposPorObra.length === 0 && (
+        <p className="dashboard-nota">Ninguna obra seleccionada tiene pendientes.</p>
       )}
 
       {!cargando && !error && gruposPorObra.map((grupo) => (
