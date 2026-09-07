@@ -1281,6 +1281,20 @@ select.celda-editable-material {
   text-decoration: line-through;
 }
 
+.notas-obra-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.notas-obra-textarea {
+  flex: 1;
+  resize: vertical;
+  min-height: 44px;
+  font-family: inherit;
+  line-height: 1.4;
+}
+
 .chat-obra-encabezado {
   display: flex;
   align-items: center;

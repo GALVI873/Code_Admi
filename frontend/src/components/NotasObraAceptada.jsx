@@ -60,20 +60,40 @@ export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [obraBase, accessToken])
 
+  // Una línea = un pendiente aparte: si Álvaro escribe varias tareas de
+  // una sentada (una por renglón), cada una sale como su propio casillero
+  // en vez de quedar todo mezclado en un solo ítem que Alfredo no puede
+  // tildar por partes. Se mandan en orden, una petición por línea (no hay
+  // endpoint de "varias de una" — el volumen típico, unas pocas líneas por
+  // nota, no lo justifica).
   async function enviar(e) {
     e.preventDefault()
-    const texto = mensaje.trim()
-    if (!texto || enviando) return
+    const lineas = mensaje.split('\n').map((l) => l.trim()).filter(Boolean)
+    if (lineas.length === 0 || enviando) return
     setEnviando(true)
     setError('')
     try {
-      const data = await agregarComentarioObra(accessToken, obraBase, texto)
-      setNotas((prev) => [...prev, data.comentario])
+      const nuevas = []
+      for (const linea of lineas) {
+        const data = await agregarComentarioObra(accessToken, obraBase, linea)
+        nuevas.push(data.comentario)
+      }
+      setNotas((prev) => [...prev, ...nuevas])
       setMensaje('')
     } catch (err) {
       setError(err.message)
     } finally {
       setEnviando(false)
+    }
+  }
+
+  // Enter solo agrega un renglón nuevo (comportamiento normal de un
+  // textarea) — para enviar sin tocar el botón, Ctrl+Enter (o Cmd+Enter en
+  // Mac).
+  function handleKeyDown(e) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault()
+      enviar(e)
     }
   }
 
@@ -140,13 +160,14 @@ export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido 
       </ul>
 
       {error && <div className="auth-error">{error}</div>}
-      <form className="chat-obra-form" onSubmit={enviar}>
-        <input
-          type="text"
-          className="input-filtro"
-          placeholder="Agregar una nota…"
+      <form className="notas-obra-form" onSubmit={enviar}>
+        <textarea
+          className="input-filtro notas-obra-textarea"
+          placeholder={'Agregar una o más notas… una tarea por línea\n(Ctrl+Enter para agregar)'}
+          rows={2}
           value={mensaje}
           onChange={(e) => setMensaje(e.target.value)}
+          onKeyDown={handleKeyDown}
         />
         <button type="submit" className="btn-secundario" disabled={enviando || !mensaje.trim()}>
           Agregar
