@@ -48,6 +48,14 @@ export function actualizarPresupuestoEnEstudio(accessToken, id, cambios) {
   })
 }
 
+export function guardarOrdenAgenda(accessToken, ordenBasesObra) {
+  return request('/presupuestos_en_estudio.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ orden_agenda: ordenBasesObra }),
+  })
+}
+
 export function agregarSolicitudOferta(accessToken, obra, proveedor, fechaSolicitud) {
   return request('/presupuestos_en_estudio.php', {
     method: 'PATCH',

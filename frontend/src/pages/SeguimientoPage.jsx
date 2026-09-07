@@ -6,12 +6,17 @@ import {
   agregarSolicitudOferta,
   eliminarOferta,
   cambiarEstatusOferta,
+  guardarOrdenAgenda,
 } from '../api/client.js'
 import ComentariosObra from '../components/ComentariosObra.jsx'
 
 // Espacio de trabajo personal de Geraldinne.
 const EMAIL_AUTORIZADO = 'presupuestos@galvi.es'
 const ESTATUS_OPCIONES = ['En Estudio', 'En Valoración', 'En Revisión', 'Enviado', 'Alvarada', 'Aceptado', 'Descartado']
+// Vista "Orden del día": la agenda diaria de Geraldinne, solo las obras que
+// Álvaro marcó como prioridad Alta y que todavía están en trabajo activo de
+// presupuesto (una vez Enviada ya no es algo que ella tenga que "atacar" hoy).
+const ESTATUS_AGENDA = ['En Estudio', 'En Valoración', 'En Revisión']
 const CATEGORIAS_CLIENTE = ['Arquitecto', 'Constructor', 'Particular', 'Proveedor', 'Reformista']
 
 // Del Vademecum (Z:\DRIVE GALVI\Vademecum.xlsx, hoja "Proveedores") — solo
@@ -617,6 +622,57 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
   )
 }
 
+// Fila de la vista "Orden del día" — mismo look que ObraItemCompacto de
+// Obras Aceptadas (lista vertical numerada), pero con flechas para mover el
+// orden a mano en vez de un badge de estatus fijo: acá el orden ES el dato,
+// no un detalle secundario.
+function ItemAgenda({ grupo, numero, total, onAbrir, onMover, onCambio }) {
+  const primero = grupo.opciones[0]
+  return (
+    <div
+      className="obra-item-compacto"
+      role="button"
+      tabIndex={0}
+      onClick={() => onAbrir(grupo.base)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onAbrir(grupo.base)
+      }}
+    >
+      <span className="obra-item-compacto-numero">{numero}.</span>
+      <span className="obra-item-compacto-nombre" title={grupo.base}>{grupo.base}</span>
+      <InsigniaMensajes presupuesto={primero} />
+      <span className="obra-item-compacto-proveedor">{primero.cliente || 'Sin cliente'}</span>
+      <SelectEstatus presupuesto={primero} onCambio={onCambio} />
+      <div className="obra-item-agenda-flechas">
+        <button
+          type="button"
+          className="boton-icono boton-icono-chico boton-icono-mover"
+          title="Subir"
+          disabled={numero === 1}
+          onClick={(e) => {
+            e.stopPropagation()
+            onMover(grupo.base, -1)
+          }}
+        >
+          ▲
+        </button>
+        <button
+          type="button"
+          className="boton-icono boton-icono-chico boton-icono-mover"
+          title="Bajar"
+          disabled={numero === total}
+          onClick={(e) => {
+            e.stopPropagation()
+            onMover(grupo.base, 1)
+          }}
+        >
+          ▼
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function SeguimientoPage() {
   const { usuario, accessToken, tienePermiso } = useAuth()
   const [filas, setFilas] = useState([])
@@ -632,6 +688,10 @@ export default function SeguimientoPage() {
   // independiente que pisa a filtroEstatus mientras está activo.
   const [soloProxDescartar, setSoloProxDescartar] = useState(false)
   const [obraSeleccionadaBase, setObraSeleccionadaBase] = useState(null)
+  // "Orden del día" es la agenda de trabajo diaria de Geraldinne — arranca
+  // ahí en vez de en "General" porque es lo primero que necesita mirar al
+  // entrar a organizar el día.
+  const [vista, setVista] = useState('orden_dia')
   const puedeMarcarInteresante = tienePermiso('presupuestos.marcar_interesante')
 
   useEffect(() => {
@@ -651,6 +711,52 @@ export default function SeguimientoPage() {
   const filasVivas = filas
 
   const proxADescartar = useMemo(() => filasVivas.filter(esProximoADescartar), [filasVivas])
+
+  // Vista "Orden del día": solo prioridad Alta (la da Álvaro) + estatus de
+  // trabajo activo, agrupadas por obra base igual que gruposObra, ordenadas
+  // por orden_agenda (posición que Geraldinne fue armando a mano con las
+  // flechas). Las que todavía no tienen posición asignada (obra recién
+  // marcada Alta) caen al final, ordenadas alfabéticamente entre ellas, para
+  // que Geraldinne las ubique donde corresponda.
+  const gruposAgenda = useMemo(() => {
+    const relevantes = filasVivas.filter((p) => p.prioridad === 'Alta' && ESTATUS_AGENDA.includes(p.estatus))
+    const mapa = new Map()
+    for (const p of relevantes) {
+      const base = nombreBase(p.obra)
+      if (!mapa.has(base)) mapa.set(base, [])
+      mapa.get(base).push(p)
+    }
+    return Array.from(mapa.entries())
+      .map(([base, opciones]) => ({ base, opciones, orden: opciones[0]?.orden_agenda ?? null }))
+      .sort((a, b) => {
+        if (a.orden != null && b.orden != null) return a.orden - b.orden
+        if (a.orden != null) return -1
+        if (b.orden != null) return 1
+        return a.base.localeCompare(b.base, 'es')
+      })
+  }, [filasVivas])
+
+  async function handleMoverAgenda(base, direccion) {
+    const idx = gruposAgenda.findIndex((g) => g.base === base)
+    const destino = idx + direccion
+    if (idx === -1 || destino < 0 || destino >= gruposAgenda.length) return
+
+    const reordenado = [...gruposAgenda]
+    ;[reordenado[idx], reordenado[destino]] = [reordenado[destino], reordenado[idx]]
+    const basesEnOrden = reordenado.map((g) => g.base)
+
+    const anteriores = filas
+    setFilas((f) => f.map((p) => {
+      const i = basesEnOrden.indexOf(nombreBase(p.obra))
+      return i === -1 ? p : { ...p, orden_agenda: i }
+    }))
+    try {
+      await guardarOrdenAgenda(accessToken, basesEnOrden)
+    } catch (err) {
+      setFilas(anteriores)
+      setError(err.message)
+    }
+  }
 
   function handleToggleProxDescartar() {
     setSoloProxDescartar((v) => !v)
@@ -842,7 +948,52 @@ export default function SeguimientoPage() {
         </div>
       </header>
 
-      {!cargando && !error && filas.length > 0 && (
+      <div className="pestanas-vista">
+        <button
+          type="button"
+          className={`pestanas-vista-boton ${vista === 'orden_dia' ? 'pestanas-vista-boton-activa' : ''}`}
+          onClick={() => setVista('orden_dia')}
+        >
+          Orden del día
+        </button>
+        <button
+          type="button"
+          className={`pestanas-vista-boton ${vista === 'general' ? 'pestanas-vista-boton-activa' : ''}`}
+          onClick={() => setVista('general')}
+        >
+          General
+        </button>
+      </div>
+
+      {cargando && <p className="dashboard-nota">Cargando…</p>}
+      {error && <div className="auth-error">{error}</div>}
+
+      {vista === 'orden_dia' && !cargando && !error && (
+        <>
+          <p className="dashboard-nota">
+            Obras marcadas como prioridad Alta por Álvaro, todavía en estudio/valoración/revisión — el orden es el que le vayas dando con las flechas.
+          </p>
+          {gruposAgenda.length === 0 ? (
+            <p className="dashboard-nota">No hay ninguna obra de prioridad Alta en trabajo activo ahora mismo.</p>
+          ) : (
+            <div className="obras-lista-compacta">
+              {gruposAgenda.map((g, i) => (
+                <ItemAgenda
+                  key={g.base}
+                  grupo={g}
+                  numero={i + 1}
+                  total={gruposAgenda.length}
+                  onAbrir={setObraSeleccionadaBase}
+                  onMover={handleMoverAgenda}
+                  onCambio={handleCambio}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {vista === 'general' && !cargando && !error && filas.length > 0 && (
         <div className="filtro-tabla">
           <div className="filtro-campo">
             <label htmlFor="filtro-obra">Obra</label>
@@ -913,13 +1064,11 @@ export default function SeguimientoPage() {
         </div>
       )}
 
-      {cargando && <p className="dashboard-nota">Cargando…</p>}
-      {error && <div className="auth-error">{error}</div>}
-      {!cargando && !error && gruposObra.length === 0 && (
+      {vista === 'general' && !cargando && !error && gruposObra.length === 0 && (
         <p className="dashboard-nota">Ninguna obra coincide con los filtros aplicados.</p>
       )}
 
-      {!cargando && !error && gruposObra.length > 0 && gruposVisibles.map((grupo) => (
+      {vista === 'general' && !cargando && !error && gruposObra.length > 0 && gruposVisibles.map((grupo) => (
         <section key={grupo.estatus} className="obras-seccion">
           {filtroEstatus === 'Todos' && !soloProxDescartar && (
             <h2 className={`obras-seccion-titulo ${CLASE_ESTATUS[grupo.estatus] || ''}`}>

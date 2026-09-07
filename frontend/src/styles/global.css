@@ -442,6 +442,50 @@ body {
   background: #f4f6f9;
 }
 
+/* Selector de vista "Orden del día" / "General" (página Presupuesto) */
+.pestanas-vista {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.pestanas-vista-boton {
+  border: 1px solid #d8dde3;
+  background: white;
+  color: #555;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pestanas-vista-boton:hover {
+  background: #f4f6f9;
+}
+
+.pestanas-vista-boton-activa {
+  background: var(--azul-med);
+  border-color: var(--azul-med);
+  color: white;
+}
+
+.obra-item-agenda-flechas {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 6px;
+}
+
+.boton-icono-mover {
+  background: #eef1f5;
+  color: #555;
+}
+
+.boton-icono-mover:hover:not(:disabled) {
+  background: #e1e6ec;
+}
+
 .dashboard-nota {
   margin-top: 14px;
   font-size: 12px;

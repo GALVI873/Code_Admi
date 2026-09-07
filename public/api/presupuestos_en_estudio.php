@@ -133,6 +133,20 @@ try {
         )
     ");
 
+    // Orden manual de la vista "Orden del día" (agenda diaria de Geraldinne)
+    // — clave es el nombre BASE de la obra (mismo criterio que
+    // nombreBaseObra(), así que una obra con varias opciones ["— Opción A/B"]
+    // se mueve como una sola fila) en vez del id de presupuestos_en_estudio,
+    // porque esa fila puede cambiar (nueva versión, nueva opción) sin que
+    // deba perderse la posición que Geraldinne ya le dio.
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS orden_agenda (
+          obra_base TEXT PRIMARY KEY,
+          orden INTEGER NOT NULL,
+          actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    ");
+
     // Migraciones idempotentes: si la tabla ya existía de antes sin estas
     // columnas (producción), se agregan sin tocar los datos existentes.
     $columnas = array_column($db->query('PRAGMA table_info(presupuestos_en_estudio)')->fetchAll(), 'name');
@@ -317,11 +331,16 @@ try {
         foreach ($stmtLectura->fetchAll() as $r) {
             $lecturaPorObra[$r['obra']] = $r['ultima_lectura'];
         }
+        $ordenAgendaPorBase = [];
+        foreach ($db->query('SELECT obra_base, orden FROM orden_agenda')->fetchAll() as $r) {
+            $ordenAgendaPorBase[$r['obra_base']] = (int) $r['orden'];
+        }
         foreach ($presupuestos as &$p) {
             $base = nombreBaseObra($p['obra']);
             $ultimo = $ultimoMensajePorObra[$base] ?? null;
             $leido = $lecturaPorObra[$base] ?? null;
             $p['tiene_mensajes_sin_leer'] = $ultimo !== null && ($leido === null || $ultimo > $leido);
+            $p['orden_agenda'] = $ordenAgendaPorBase[$base] ?? null;
         }
         unset($p);
 
@@ -381,6 +400,26 @@ try {
             }
             $db->prepare("UPDATE ofertas_proveedor SET estatus = ?, actualizado_en = datetime('now') WHERE id = ? AND estatus != 'Recibido'")
                 ->execute([$estatusOferta, $ofertaId]);
+            Response::json(['ok' => true]);
+        }
+
+        // Reordenar la vista "Orden del día": no edita una fila puntual, va
+        // por una lista completa de nombres base en el orden final deseado
+        // (el frontend recalcula el array entero al mover una fila con las
+        // flechas y lo manda de una sola vez) en vez de "id" — mismo criterio
+        // que agregar_solicitud_oferta más arriba.
+        if (array_key_exists('orden_agenda', $body) && is_array($body['orden_agenda'])) {
+            AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento']);
+            $stmt = $db->prepare("
+                INSERT INTO orden_agenda (obra_base, orden, actualizado_en)
+                VALUES (?, ?, datetime('now'))
+                ON CONFLICT(obra_base) DO UPDATE SET orden = excluded.orden, actualizado_en = excluded.actualizado_en
+            ");
+            foreach ($body['orden_agenda'] as $i => $obraBase) {
+                $obraBase = trim((string) $obraBase);
+                if ($obraBase === '') continue;
+                $stmt->execute([$obraBase, $i]);
+            }
             Response::json(['ok' => true]);
         }
 
