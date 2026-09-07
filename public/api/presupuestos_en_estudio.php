@@ -42,29 +42,31 @@ $config = require __DIR__ . '/../../backend/bootstrap.php';
 // existe la carpeta, la hoja de cálculo todavía no tiene valores). En cuanto
 // esa hoja tiene un total real pasa sola a "En Valoración" — también
 // automático. "Enviado" es automático en cuanto la sincronización encuentra
-// un PDF en la carpeta Enviados de la obra, pero SOLO si venía de "En
-// Estudio" o "En Valoración" (ver ESTATUS_AUTO_ENVIO) — se llamó "Pdt
-// Aprobación" hasta que se renombró por confuso (sonaba a que faltaba
-// aprobar algo, no a que ya se envió).
-// "En Revisión" y "Alvarada" son fases que se ponen siempre a mano — la
-// sincronización nunca las asigna NI las pisa, ni siquiera si encuentra un
-// PDF de envío nuevo: si Geraldinne mandó a mano una obra a "En Revisión"
-// es porque decidió reabrirla a pesar de un envío previo, y un sync
-// posterior no debe deshacerle esa decisión (bug reportado: quedaba
-// "Enviado" otra vez solo por correr la sincronización). El UPDATE de más
-// abajo solo tiene transiciones automáticas explícitas hacia "En
-// Valoración" y "Enviado", cualquier otro valor puesto a mano se conserva
-// tal cual. Descartado/Aceptado son decisiones finales manuales.
+// un PDF de envío en Drive — se llamó "Pdt Aprobación" hasta que se
+// renombró por confuso (sonaba a que faltaba aprobar algo, no a que ya se
+// envió).
+// "En Revisión" y "Alvarada" son fases que se ponen siempre a mano, pero
+// desde cualquiera de las dos SÍ se puede llegar a "Enviado" solo — si
+// Geraldinne reabre una obra a revisión, ajusta el presupuesto y manda un
+// PDF nuevo, esa obra pasó de verdad a estar enviada. Lo que NO debe pasar
+// (bug reportado) es que la obra se marque "Enviado" solo porque el sync
+// vuelve a correr y vuelve a encontrar el MISMO PDF de siempre — por eso la
+// transición compara fecha_ultimo_envio: solo dispara si la fecha que trae
+// la sincronización es más nueva que la que ya había guardada (un envío
+// realmente nuevo), no ante cualquier detección repetida (ver el UPDATE más
+// abajo). El UPDATE solo tiene transiciones automáticas explícitas hacia
+// "En Valoración" y "Enviado", cualquier otro valor puesto a mano se
+// conserva tal cual. Descartado/Aceptado son decisiones finales manuales,
+// nunca entran en ESTATUS_AUTO_ENVIO.
 const ESTATUS_VALIDOS = ['En Estudio', 'En Valoración', 'En Revisión', 'Enviado', 'Alvarada', 'Aceptado', 'Descartado'];
 // Usado para la reconciliación de DELETE (qué estatus siguen "vivos" y se
-// pueden borrar si la obra desaparece de Drive) — más amplio a propósito,
-// "En Revisión" sigue siendo un estatus activo aunque ya no dispare la
-// transición automática a "Enviado" (ver ESTATUS_AUTO_ENVIO más abajo).
+// pueden borrar si la obra desaparece de Drive).
 const ESTATUS_PRE_ENVIO = ['En Estudio', 'En Valoración', 'En Revisión'];
-// Estatus desde los que la sincronización SÍ puede auto-avanzar a "Enviado"
-// al detectar un PDF nuevo. "En Revisión" queda deliberadamente afuera —
-// ver el comentario de arriba.
-const ESTATUS_AUTO_ENVIO = ['En Estudio', 'En Valoración'];
+// Estatus desde los que la sincronización puede auto-avanzar a "Enviado" —
+// cualquiera que no sea ya una decisión final. Ver el comentario de arriba:
+// la protección real contra el bug no es esta lista, es la comparación de
+// fecha_ultimo_envio en el UPDATE.
+const ESTATUS_AUTO_ENVIO = ['En Estudio', 'En Valoración', 'En Revisión', 'Alvarada'];
 
 // Sin tildes/mayúsculas ni signos, para poder comparar "Villar" con
 // "Aluminios Villar, SL." o "ALUMINIOS VILLAR" sin depender de que el
@@ -618,15 +620,16 @@ try {
         //   1. "En Estudio" -> "En Valoración" en cuanto la hoja de cálculo
         //      tiene un total real (ver extract_fields.js) — antes de eso
         //      solo existe la carpeta, sin nada que valorar todavía.
-        //   2. "En Estudio" o "En Valoración" -> "Enviado" en cuanto la
-        //      sincronización encuentra un envío nuevo (ESTATUS_AUTO_ENVIO).
-        // "En Revisión" y "Alvarada" son fases que se ponen siempre a mano —
-        // nunca las asigna la sincronización, así que tampoco hay transición
-        // automática NI HACIA ni DESDE ellas: un envío detectado por la
-        // sincronización no las pisa (ver comentario junto a
-        // ESTATUS_AUTO_ENVIO al principio del archivo). Descartado, Aceptado
-        // o un Enviado ya existente tampoco se pisan nunca. En el INSERT sí
-        // se usa el valor por defecto para una obra nueva.
+        //   2. Cualquier fase no decidida ("En Estudio", "En Valoración", "En
+        //      Revisión" o "Alvarada") -> "Enviado" cuando la sincronización
+        //      encuentra un envío REALMENTE nuevo — se compara
+        //      fecha_ultimo_envio contra la que ya había guardada, así que
+        //      volver a correr el sync y encontrar el mismo PDF de siempre
+        //      no dispara nada (bug reportado: antes cualquier detección,
+        //      nueva o repetida, pisaba "En Revisión"/"Alvarada" a
+        //      "Enviado"). Descartado, Aceptado o un Enviado ya existente
+        //      nunca se pisan. En el INSERT sí se usa el valor por defecto
+        //      para una obra nueva.
         $estatusAutoEnvio = "'" . implode("','", ESTATUS_AUTO_ENVIO) . "'";
         $stmt = $db->prepare("
             INSERT INTO presupuestos_en_estudio
@@ -635,7 +638,9 @@ try {
             ON CONFLICT(obra) DO UPDATE SET
                 cliente = excluded.cliente,
                 estatus = CASE
-                    WHEN presupuestos_en_estudio.estatus IN ($estatusAutoEnvio) AND excluded.estatus = 'Enviado'
+                    WHEN presupuestos_en_estudio.estatus IN ($estatusAutoEnvio)
+                         AND excluded.estatus = 'Enviado'
+                         AND (presupuestos_en_estudio.fecha_ultimo_envio IS NULL OR excluded.fecha_ultimo_envio > presupuestos_en_estudio.fecha_ultimo_envio)
                         THEN 'Enviado'
                     WHEN presupuestos_en_estudio.estatus = 'En Estudio' AND excluded.estatus = 'En Valoración'
                         THEN 'En Valoración'
