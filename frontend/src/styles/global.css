@@ -1849,22 +1849,28 @@ select.celda-editable-material {
   gap: 4px;
 }
 
+/* Mismo padding/tamaño de letra en todos los campos del form (el .select
+   base trae menos padding que el .input-filtro base) para que todas las
+   casillas queden exactamente del mismo alto que "Nombre". */
 .adicionales-obra-form .input-filtro,
 .adicionales-obra-form .select-inline {
   width: 190px;
+  padding: 4px 8px;
+  font-size: 12.5px;
 }
 
-/* Detalle y Solicitante quedan del mismo ancho que Nombre (obra) — antes
-   Detalle se estiraba (flex-grow) a ocupar todo el resto de la fila, que
-   quedaba desproporcionado con el resto de los campos. */
-.adicionales-obra-campo-detalle,
 .adicionales-obra-campo-solicitante {
   flex: none;
 }
 
-.adicionales-obra-campo-detalle .input-filtro,
-.adicionales-obra-campo-solicitante .input-filtro {
-  width: 190px;
+/* Detalle es el único que ocupa el ancho que sobra de la fila (hasta el
+   borde de la pantalla) — el resto de los campos se queda en su tamaño fijo. */
+.adicionales-obra-campo-detalle {
+  flex: 1 1 260px;
+}
+
+.adicionales-obra-campo-detalle .input-filtro {
+  width: 100%;
 }
 
 .adicionales-obra-campo-detalle textarea.input-filtro {

@@ -164,10 +164,10 @@ export default function AdicionalesDeObra() {
         </div>
         <div className="filtro-campo adicionales-obra-campo-detalle">
           <label htmlFor="adicional-detalle">Detalle</label>
-          <textarea
+          <input
             id="adicional-detalle"
+            type="text"
             className="input-filtro"
-            rows={2}
             placeholder="Descripción del adicional…"
             value={detalle}
             onChange={(e) => setDetalle(e.target.value)}
