@@ -2318,53 +2318,53 @@ select.celda-editable-material {
 /* Pestaña "Estatus" — informe rápido de ventanas por estatus, por
    categoría de material (Carpintería/Vidrio, luego Extras). */
 .estatus-total-obra {
-  font-size: 15px;
-  margin-bottom: 16px;
+  font-size: 19px;
+  margin-bottom: 22px;
 }
 
 .estatus-total-obra strong {
-  font-size: 22px;
+  font-size: 32px;
   color: var(--azul);
 }
 
 .estatus-tarjetas {
   display: flex;
   flex-wrap: wrap;
-  gap: 18px;
+  gap: 24px;
 }
 
 .estatus-tarjeta {
-  flex: 1 1 320px;
+  flex: 1 1 460px;
   background: white;
   border: 1px solid #e3e8f0;
-  border-radius: 10px;
+  border-radius: 12px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
-  padding: 16px 20px;
+  padding: 24px 28px;
 }
 
 .estatus-tarjeta h3 {
-  margin: 0 0 12px;
-  font-size: 15px;
+  margin: 0 0 18px;
+  font-size: 21px;
   color: var(--azul);
 }
 
 .estatus-sin-datos {
   color: #7a8699;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .estatus-tarjeta-cuerpo {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 32px;
   flex-wrap: wrap;
 }
 
 .estatus-donut {
   position: relative;
-  width: 120px;
-  height: 120px;
-  min-width: 120px;
+  width: 190px;
+  height: 190px;
+  min-width: 190px;
   border-radius: 50%;
 }
 
@@ -2374,7 +2374,7 @@ select.celda-editable-material {
 
 .estatus-donut-centro {
   position: absolute;
-  inset: 18px;
+  inset: 30px;
   background: white;
   border-radius: 50%;
   display: flex;
@@ -2385,12 +2385,12 @@ select.celda-editable-material {
 }
 
 .estatus-donut-centro strong {
-  font-size: 20px;
+  font-size: 32px;
   color: var(--texto);
 }
 
 .estatus-donut-centro span {
-  font-size: 10px;
+  font-size: 13px;
   color: #7a8699;
   text-transform: uppercase;
   letter-spacing: .03em;
@@ -2400,23 +2400,23 @@ select.celda-editable-material {
   list-style: none;
   margin: 0;
   padding: 0;
-  flex: 1 1 140px;
+  flex: 1 1 200px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
 }
 
 .estatus-leyenda li {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: 10px;
+  font-size: 17px;
 }
 
 .estatus-leyenda-punto {
-  width: 10px;
-  height: 10px;
-  min-width: 10px;
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
   border-radius: 50%;
 }
 
@@ -2429,9 +2429,11 @@ select.celda-editable-material {
   font-weight: 600;
   color: var(--azul);
   white-space: nowrap;
+  font-size: 17px;
 }
 
 .estatus-leyenda-cantidad small {
   font-weight: 400;
   color: #7a8699;
+  font-size: 14px;
 }
