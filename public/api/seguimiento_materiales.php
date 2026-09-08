@@ -163,6 +163,13 @@ try {
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? $_POST;
 
+        // TEMPORAL: ver qué valores de Estado existen de verdad, por
+        // material (se quita en el próximo commit).
+        if (($body['accion'] ?? '') === 'debug_valores_estado') {
+            $filas = $db->query("SELECT material, estado, COUNT(*) AS cuenta FROM seguimiento_materiales WHERE estado IS NOT NULL AND estado != '' GROUP BY material, estado ORDER BY material, cuenta DESC")->fetchAll();
+            Response::json(['filas' => $filas]);
+        }
+
         if (($body['accion'] ?? '') === 'reemplazar_materiales') {
             $obra = trim((string) ($body['obra'] ?? ''));
             $materiales = $body['materiales'] ?? null;
