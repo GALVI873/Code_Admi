@@ -345,6 +345,39 @@ body {
   white-space: nowrap;
 }
 
+/* Alternar cuadrícula/lista en Presupuesto > General — exclusivo de admin. */
+.filtro-vista-general {
+  display: flex;
+  gap: 2px;
+  border: 1px solid #d8dde3;
+  border-radius: 8px;
+  padding: 2px;
+  background: white;
+}
+
+.filtro-vista-general-boton {
+  border: none;
+  background: none;
+  border-radius: 6px;
+  width: 28px;
+  height: 26px;
+  font-size: 14px;
+  color: #8a93a3;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filtro-vista-general-boton:hover {
+  background: #f4f6f9;
+}
+
+.filtro-vista-general-boton-activa {
+  background: var(--azul-med);
+  color: white;
+}
+
 .filtro-prox-descartar {
   border: 1px solid #f0b8ab;
   border-radius: 20px;
@@ -834,6 +867,31 @@ body {
 .obra-item-compacto-mensaje {
   font-size: 12px;
   flex: none;
+}
+
+.obra-item-compacto-alerta {
+  font-size: 13px;
+  color: var(--rojo);
+  flex: none;
+}
+
+.obra-item-compacto-interesante {
+  border: none;
+  background: none;
+  color: #c7ccd4;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  flex: none;
+  padding: 0;
+}
+
+.obra-item-compacto-interesante:hover {
+  color: var(--naranja);
+}
+
+.obra-item-compacto-interesante-activo {
+  color: var(--naranja);
 }
 
 .obra-item-compacto-proveedor {

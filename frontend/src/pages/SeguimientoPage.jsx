@@ -462,6 +462,26 @@ function BotonInteresante({ presupuesto, onCambio, puedeMarcar }) {
   )
 }
 
+// Misma estrella que BotonInteresante, sin position:absolute — para filas
+// de lista (.obra-item-compacto no es position:relative, ver
+// InsigniaMensajesLista más abajo con el mismo razonamiento).
+function BotonInteresanteCompacto({ presupuesto, onCambio, puedeMarcar }) {
+  if (!puedeMarcar) return null
+  return (
+    <button
+      type="button"
+      className={`obra-item-compacto-interesante ${presupuesto.interesante ? 'obra-item-compacto-interesante-activo' : ''}`}
+      title={presupuesto.interesante ? 'Quitar de alto interés' : 'Marcar como alto interés'}
+      onClick={(e) => {
+        e.stopPropagation()
+        onCambio(presupuesto.id, { interesante: !presupuesto.interesante })
+      }}
+    >
+      {presupuesto.interesante ? '★' : '☆'}
+    </button>
+  )
+}
+
 // Insignia de "hay mensajes sin leer" en la conversación de la obra — con
 // tantas obras en la lista, sin esto no hay forma de notar que llegó un
 // mensaje nuevo sin abrir cada ficha una por una.
@@ -471,6 +491,19 @@ function InsigniaMensajes({ presupuesto }) {
     <span className="obra-card-insignia-mensajes" title="Tiene mensajes nuevos en la conversación">
       💬
     </span>
+  )
+}
+
+// Misma insignia que InsigniaMensajes, pero para filas de lista en vez de
+// tarjeta — InsigniaMensajes usa position:absolute pensado para la esquina
+// de una .obra-card (position:relative); dentro de una fila .obra-item-
+// compacto (sin position:relative) terminaría flotando en cualquier lado
+// de la página. Mismo criterio que .obra-item-compacto-mensaje en
+// ObrasAceptadasPage.jsx.
+function InsigniaMensajesLista({ presupuesto }) {
+  if (!presupuesto.tiene_mensajes_sin_leer) return null
+  return (
+    <span className="obra-item-compacto-mensaje" title="Tiene mensajes nuevos en la conversación">💬</span>
   )
 }
 
@@ -550,6 +583,82 @@ function TarjetaGrupoSeguimiento({ grupo, onAbrir, onCambio, puedeMarcarInteresa
         ))}
       </div>
       {grupo.prioridadAlta && <span className="badge badge-rechazado">Alta</span>}
+    </div>
+  )
+}
+
+// Modo lista de la vista General — mismo dato que la tarjeta, en fila
+// compacta en vez de tarjeta (ver ItemAgenda, mismo estilo). Exclusivo de
+// admin (botón para elegir modo solo visible con ver_todos, ver más abajo
+// en el render) — Geraldinne sigue viendo siempre cuadrícula.
+function ItemGeneralCompacto({ presupuesto, numero, onAbrir, onCambio, puedeMarcarInteresante, puedeCambiarPrioridad }) {
+  const alerta = faltaEnvio(presupuesto)
+  return (
+    <div
+      className="obra-item-compacto"
+      role="button"
+      tabIndex={0}
+      onClick={() => onAbrir(nombreBase(presupuesto.obra))}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onAbrir(nombreBase(presupuesto.obra))
+      }}
+    >
+      <span className="obra-item-compacto-numero">{numero}.</span>
+      {alerta && <span className="obra-item-compacto-alerta" title="Estatus Enviado sin ningún PDF de envío registrado en Drive">⚠</span>}
+      <span className="obra-item-compacto-nombre" title={presupuesto.obra}>{presupuesto.obra}</span>
+      <InsigniaMensajesLista presupuesto={presupuesto} />
+      <BotonInteresanteCompacto presupuesto={presupuesto} onCambio={onCambio} puedeMarcar={puedeMarcarInteresante} />
+      <SelectPrioridad presupuesto={presupuesto} onCambio={onCambio} puedeCambiar={puedeCambiarPrioridad} />
+      <span className="obra-item-compacto-proveedor">{presupuesto.cliente || 'Sin cliente'}</span>
+      {presupuesto.fecha_creacion_carpeta && (
+        <span className="obra-item-compacto-fecha-solicitud" title="Fecha de solicitud">
+          Solicitud {formatoFecha(presupuesto.fecha_creacion_carpeta)}
+        </span>
+      )}
+      <SelectEstatus presupuesto={presupuesto} onCambio={onCambio} />
+    </div>
+  )
+}
+
+function ItemGrupoGeneralCompacto({ grupo, numero, onAbrir, onCambio, puedeMarcarInteresante, puedeCambiarPrioridad }) {
+  const { base, opciones } = grupo
+  if (opciones.length === 1) {
+    return (
+      <ItemGeneralCompacto
+        presupuesto={opciones[0]}
+        numero={numero}
+        onAbrir={onAbrir}
+        onCambio={onCambio}
+        puedeMarcarInteresante={puedeMarcarInteresante}
+        puedeCambiarPrioridad={puedeCambiarPrioridad}
+      />
+    )
+  }
+
+  const alerta = opciones.some(faltaEnvio)
+  return (
+    <div
+      className="obra-item-compacto"
+      role="button"
+      tabIndex={0}
+      onClick={() => onAbrir(base)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onAbrir(base)
+      }}
+    >
+      <span className="obra-item-compacto-numero">{numero}.</span>
+      {alerta && <span className="obra-item-compacto-alerta" title="Estatus Enviado sin ningún PDF de envío registrado en Drive">⚠</span>}
+      <span className="obra-item-compacto-nombre" title={base}>{base}</span>
+      <InsigniaMensajesLista presupuesto={opciones[0]} />
+      {grupo.prioridadAlta && <span className="badge badge-rechazado">Alta</span>}
+      <span className="obra-item-compacto-proveedor">{opciones[0].cliente || 'Sin cliente'}</span>
+      <div className="seguimiento-opciones-chips">
+        {opciones.map((o) => (
+          <span key={o.id} className={`seguimiento-chip-opcion ${CLASE_ESTATUS[o.estatus] || ''}`}>
+            {etiquetaOpcion(o.obra) || o.obra}
+          </span>
+        ))}
+      </div>
     </div>
   )
 }
@@ -698,7 +807,7 @@ function ItemAgenda({ grupo, numero, deshabilitarArriba, deshabilitarAbajo, onAb
     >
       <span className="obra-item-compacto-numero">{numero}.</span>
       <span className="obra-item-compacto-nombre" title={grupo.base}>{grupo.base}</span>
-      <InsigniaMensajes presupuesto={primero} />
+      <InsigniaMensajesLista presupuesto={primero} />
       <SelectPrioridad presupuesto={primero} onCambio={onCambio} puedeCambiar={puedeCambiarPrioridad} />
       <span className="obra-item-compacto-proveedor">{primero.cliente || 'Sin cliente'}</span>
       {primero.fecha_creacion_carpeta && (
@@ -849,6 +958,11 @@ export default function SeguimientoPage() {
   // ahí en vez de en "General" porque es lo primero que necesita mirar al
   // entrar a organizar el día.
   const [vista, setVista] = useState('orden_dia')
+  // Cuadrícula (tarjetas, de siempre) o lista compacta — exclusivo de admin
+  // (el botón para elegir solo se muestra con ver_todos, ver render más
+  // abajo); Geraldinne sigue viendo siempre cuadrícula, sin el botón.
+  const [vistaGeneral, setVistaGeneral] = useState('cuadricula')
+  const puedeElegirVistaGeneral = tienePermiso('presupuestos.ver_todos')
   const puedeMarcarInteresante = tienePermiso('presupuestos.marcar_interesante')
   // Marcar prioridad Alta sigue siendo exclusivo de admin (Álvaro/Valentina)
   // — antes esta vista solo tenía la insignia de solo lectura porque era
@@ -1344,6 +1458,26 @@ export default function SeguimientoPage() {
               ⚠ {proxADescartar.length} próx. a descartar
             </button>
           )}
+          {puedeElegirVistaGeneral && (
+            <div className="filtro-vista-general">
+              <button
+                type="button"
+                className={`filtro-vista-general-boton ${vistaGeneral === 'cuadricula' ? 'filtro-vista-general-boton-activa' : ''}`}
+                title="Ver como cuadrícula"
+                onClick={() => setVistaGeneral('cuadricula')}
+              >
+                ▦
+              </button>
+              <button
+                type="button"
+                className={`filtro-vista-general-boton ${vistaGeneral === 'lista' ? 'filtro-vista-general-boton-activa' : ''}`}
+                title="Ver como lista"
+                onClick={() => setVistaGeneral('lista')}
+              >
+                ☰
+              </button>
+            </div>
+          )}
           <span className="filtro-contador">
             {gruposObra.length} de {totalGruposSegunEstatus}
           </span>
@@ -1362,11 +1496,19 @@ export default function SeguimientoPage() {
               <span className="obras-seccion-contador">{grupo.items.length}</span>
             </h2>
           )}
-          <div className="obras-grid">
-            {grupo.items.map((g) => (
-              <TarjetaGrupoSeguimiento key={g.base} grupo={g} onAbrir={setObraSeleccionadaBase} onCambio={handleCambio} puedeMarcarInteresante={puedeMarcarInteresante} puedeCambiarPrioridad={puedeCambiarPrioridad} />
-            ))}
-          </div>
+          {puedeElegirVistaGeneral && vistaGeneral === 'lista' ? (
+            <div className="obras-lista-compacta">
+              {grupo.items.map((g, i) => (
+                <ItemGrupoGeneralCompacto key={g.base} grupo={g} numero={i + 1} onAbrir={setObraSeleccionadaBase} onCambio={handleCambio} puedeMarcarInteresante={puedeMarcarInteresante} puedeCambiarPrioridad={puedeCambiarPrioridad} />
+              ))}
+            </div>
+          ) : (
+            <div className="obras-grid">
+              {grupo.items.map((g) => (
+                <TarjetaGrupoSeguimiento key={g.base} grupo={g} onAbrir={setObraSeleccionadaBase} onCambio={handleCambio} puedeMarcarInteresante={puedeMarcarInteresante} puedeCambiarPrioridad={puedeCambiarPrioridad} />
+              ))}
+            </div>
+          )}
         </section>
       ))}
 
