@@ -296,11 +296,13 @@ function FilaMaterial({ m, estadosDisponibles, onCambiar }) {
   )
 }
 
-// Columnas con filtro estilo Excel en el encabezado — Tipo queda aparte
-// (controla qué cajas se muestran, ver SeguimientoPorPosicion) porque ya es
-// el agrupador visual, no tiene sentido filtrarlo desde adentro de su
-// propia caja.
-const COLUMNAS_FILTRABLES = [
+// Todas las columnas de la tabla, cada una con su función de valor para
+// mostrar/agrupar/filtrar. "Tipo" ya no es un caso aparte fijo — es una
+// más de la lista, elegible como agrupador igual que cualquier otra (ver
+// selector "Agrupar por" en SeguimientoPorPosicion, a pedido de Alfredo/
+// Álvaro: antes solo se podía agrupar por Tipo).
+const CAMPOS_MATERIAL = [
+  { campo: 'tipo', etiqueta: 'Tipo', valor: (m) => m.tipo || '(sin tipo)' },
   { campo: 'posicion', etiqueta: 'Posición', valor: (m) => m.posicion || '—' },
   { campo: 'material', etiqueta: 'Material', valor: (m) => m.material || '—' },
   { campo: 'descripcion', etiqueta: 'Descripción', valor: (m) => m.descripcion || '—' },
@@ -311,30 +313,42 @@ const COLUMNAS_FILTRABLES = [
   { campo: 'fecha_estimada', etiqueta: 'Fecha Estimada', valor: (m) => formatoFecha(m.fecha_estimada) || '—' },
   { campo: 'comentario', etiqueta: 'Comentario', valor: (m) => m.comentario || '—' },
 ]
+// Agrupar por Descripción/Fecha/Comentario no suele tener sentido (texto
+// casi siempre distinto fila a fila) — se deja igual la posibilidad, a
+// pedido explícito de "por cualquier otra celda", pero el desplegable
+// ofrece primero las que sí son categorías reales.
+const CAMPOS_AGRUPABLES_SUGERIDOS = ['tipo', 'posicion', 'material', 'estado', 'proveedor'];
 
-function agruparPorTipo(materiales) {
-  const porTipo = new Map()
+function agruparPorCampo(materiales, campoInfo) {
+  const mapa = new Map()
   for (const m of materiales) {
-    const tipo = m.tipo || '(sin tipo)'
-    if (!porTipo.has(tipo)) porTipo.set(tipo, [])
-    porTipo.get(tipo).push(m)
+    const clave = campoInfo.valor(m)
+    if (!mapa.has(clave)) mapa.set(clave, [])
+    mapa.get(clave).push(m)
   }
-  return [...porTipo.entries()]
+  return [...mapa.entries()]
     .sort(([a], [b]) => a.localeCompare(b, 'es', { numeric: true }))
-    .map(([tipo, items]) => ({ tipo, items }))
+    .map(([clave, items]) => ({ clave, items }))
 }
 
 function pasaFiltros(m, filtros) {
-  return COLUMNAS_FILTRABLES.every(({ campo, valor }) => {
+  return CAMPOS_MATERIAL.every(({ campo, valor }) => {
     const seleccionados = filtros[campo]
     return seleccionados.size === 0 || seleccionados.has(valor(m))
   })
 }
 
 function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
-  const [tiposSeleccionados, setTiposSeleccionados] = useState(() => new Set())
+  // Qué campo arma las cajas — elegible por Alfredo/Álvaro (antes fijo en
+  // "tipo"). El filtro de valores del campo elegido (arriba, como "Agrupar
+  // por") reusa el mismo mecanismo que los filtros de columna de la
+  // tabla — es, en los hechos, el filtro de esa columna, solo que se
+  // muestra afuera en vez de en su propio encabezado, mismo motivo de
+  // siempre: no tiene sentido filtrar una caja desde adentro de su propia
+  // caja.
+  const [campoAgrupador, setCampoAgrupador] = useState('tipo')
   const [filtros, setFiltros] = useState(() =>
-    Object.fromEntries(COLUMNAS_FILTRABLES.map(({ campo }) => [campo, new Set()])),
+    Object.fromEntries(CAMPOS_MATERIAL.map(({ campo }) => [campo, new Set()])),
   )
 
   const estadosDisponibles = useMemo(
@@ -342,14 +356,10 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
     [materiales],
   )
 
-  const tiposDisponibles = useMemo(
-    () => [...new Set(materiales.map((m) => m.tipo || '(sin tipo)'))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true })),
-    [materiales],
-  )
-
-  const materialesDisponibles = useMemo(
-    () => [...new Set(materiales.map((m) => m.material).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es')),
-    [materiales],
+  const infoAgrupador = CAMPOS_MATERIAL.find((c) => c.campo === campoAgrupador)
+  const valoresAgrupador = useMemo(
+    () => [...new Set(materiales.map(infoAgrupador.valor))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true })),
+    [materiales, infoAgrupador],
   )
 
   const materialesFiltrados = useMemo(
@@ -357,10 +367,10 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
     [materiales, filtros],
   )
 
-  const grupos = useMemo(() => {
-    const todos = agruparPorTipo(materialesFiltrados)
-    return tiposSeleccionados.size === 0 ? todos : todos.filter((g) => tiposSeleccionados.has(g.tipo))
-  }, [materialesFiltrados, tiposSeleccionados])
+  const grupos = useMemo(
+    () => agruparPorCampo(materialesFiltrados, infoAgrupador),
+    [materialesFiltrados, infoAgrupador],
+  )
 
   if (materiales.length === 0) {
     return <p className="seguimiento-ofertas-vacio">Todavía no hay seguimiento de material cargado para esta obra.</p>
@@ -370,23 +380,50 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
     setFiltros((f) => ({ ...f, [campo]: valores }))
   }
 
+  function cambiarCampoAgrupador(campo) {
+    setCampoAgrupador(campo)
+    // Los valores seleccionados eran de OTRO campo — no tiene sentido
+    // arrastrarlos al cambiar de agrupador, quedarían filtrando por algo
+    // que ya no se ve en ningún lado.
+    setFiltros((f) => ({ ...f, [campoAgrupador]: new Set() }))
+  }
+
+  // La tabla (FilaMaterial) siempre tiene las mismas 9 celdas fijas —
+  // "Tipo" es la única que nunca fue columna ahí (por eso queda afuera
+  // siempre, no solo cuando se agrupa por Tipo). Cuando se agrupa por
+  // cualquier otro campo, esa columna se ve dos veces (en el título de
+  // cada caja y en su propia celda) — redundante pero no un error; sacarla
+  // de la tabla rompería la alineación con las filas, que siempre traen
+  // esa celda.
+  const columnasEnTabla = CAMPOS_MATERIAL.filter((c) => c.campo !== 'tipo')
+
   return (
     <div className="posiciones-seguimiento">
       <div className="filtro-tabla">
         <div className="filtro-campo">
-          <label>Tipo</label>
-          <SelectorMultipleGenerico
-            valores={tiposDisponibles}
-            seleccionados={tiposSeleccionados}
-            onCambiar={setTiposSeleccionados}
-          />
+          <label htmlFor="seguimiento-agrupar-por">Agrupar por</label>
+          <select
+            id="seguimiento-agrupar-por"
+            className="select-inline"
+            value={campoAgrupador}
+            onChange={(e) => cambiarCampoAgrupador(e.target.value)}
+          >
+            {CAMPOS_AGRUPABLES_SUGERIDOS.map((campo) => (
+              <option key={campo} value={campo}>{CAMPOS_MATERIAL.find((c) => c.campo === campo).etiqueta}</option>
+            ))}
+            <optgroup label="Otras columnas">
+              {CAMPOS_MATERIAL.filter((c) => !CAMPOS_AGRUPABLES_SUGERIDOS.includes(c.campo)).map(({ campo, etiqueta }) => (
+                <option key={campo} value={campo}>{etiqueta}</option>
+              ))}
+            </optgroup>
+          </select>
         </div>
         <div className="filtro-campo">
-          <label>Material</label>
+          <label>{infoAgrupador.etiqueta}</label>
           <SelectorMultipleGenerico
-            valores={materialesDisponibles}
-            seleccionados={filtros.material}
-            onCambiar={(valores) => cambiarFiltroColumna('material', valores)}
+            valores={valoresAgrupador}
+            seleccionados={filtros[campoAgrupador]}
+            onCambiar={(valores) => cambiarFiltroColumna(campoAgrupador, valores)}
           />
         </div>
         <div className="filtro-campo">
@@ -407,13 +444,13 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
       )}
 
       {grupos.map((grupo) => (
-        <div key={grupo.tipo} className="tipo-caja">
-          <div className="tipo-titulo">Tipo {grupo.tipo} <span className="obras-seccion-contador">{grupo.items.length}</span></div>
+        <div key={grupo.clave} className="tipo-caja">
+          <div className="tipo-titulo">{infoAgrupador.etiqueta} {grupo.clave} <span className="obras-seccion-contador">{grupo.items.length}</span></div>
           <div className="tabla-scroll">
             <table className="tabla-ofertas">
               <thead>
                 <tr>
-                  {COLUMNAS_FILTRABLES.map(({ campo, etiqueta, valor }) => (
+                  {columnasEnTabla.map(({ campo, etiqueta, valor }) => (
                     <th key={campo}>
                       <FiltroColumna
                         etiqueta={etiqueta}
