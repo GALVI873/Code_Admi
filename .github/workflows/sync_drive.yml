@@ -49,6 +49,16 @@ jobs:
         run: node sync_all.js
         continue-on-error: true
 
+      # Antes de sincronizar Obras Aceptadas: mueve la carpeta de cualquier
+      # obra recién marcada "Aceptado" desde el panel — así, si hubo un
+      # traspaso, la sincronización de abajo ya la encuentra en su carpeta
+      # nueva en esta misma corrida. --aplicar (a diferencia de correrlo a
+      # mano, que por defecto solo simula) porque acá sí queremos que se
+      # ejecute solo, sin que nadie lo revise antes.
+      - name: Traspasar obras recién aceptadas
+        run: node traspasar_obras_aceptadas.js --aplicar
+        continue-on-error: true
+
       - name: Sincronizar Obras Aceptadas
         run: node sync_obras_aceptadas.js
         continue-on-error: true
