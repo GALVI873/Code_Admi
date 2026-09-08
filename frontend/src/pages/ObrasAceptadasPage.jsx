@@ -676,22 +676,35 @@ function posicionBaseDe(posicion) {
   return punto === -1 ? posicion : posicion.slice(0, punto)
 }
 
-// El color de cada marca del plano sale del Estado del ítem de Vidrio de
-// esa posición (no de Carpintería) — tolerante a variantes del texto libre
-// que viene del Excel ("EN FABRICACION" sin tilde, etc.), por eso busca la
-// palabra suelta en vez de comparar exacto.
-function posicionesPorEstadoVidrio(materiales) {
+// El color de cada marca del plano sale del Estado del material elegido en
+// esa posición — Carpintería (naranja) o Vidrio (azul), elegible desde el
+// selector de la pestaña Planos (antes fijo en Vidrio). Tolerante a
+// variantes del texto libre que viene del Excel ("EN FABRICACION" sin
+// tilde, etc.), por eso busca la palabra suelta en vez de comparar exacto.
+// "Medir" va aparte de los otros dos: es rojo sin importar qué material se
+// esté mirando (valores reales confirmados en producción: "EN OBRA",
+// "MEDIR", "FABRICACIÓN", más otros como "PEDIR MATERIAL"/"EN PROVEEDOR"
+// que quedan sin resaltar a propósito, no los pidieron).
+const PATRON_MATERIAL_PLANO = {
+  carpinteria: /carpinter/i,
+  vidrio: /vidrio/i,
+}
+
+function posicionesPorEstadoMaterial(materiales, material) {
+  const patron = PATRON_MATERIAL_PLANO[material]
   const enObra = new Set()
   const enFabricacion = new Set()
+  const medir = new Set()
   for (const m of materiales) {
-    if (!/vidrio/i.test(m.material || '')) continue
+    if (!patron.test(m.material || '')) continue
     const base = posicionBaseDe(m.posicion)
     if (!base) continue
     const estado = (m.estado || '').toUpperCase()
-    if (estado.includes('OBRA')) enObra.add(base)
+    if (estado.includes('MEDIR')) medir.add(base)
+    else if (estado.includes('OBRA')) enObra.add(base)
     else if (estado.includes('FABRICA')) enFabricacion.add(base)
   }
-  return { enObra, enFabricacion }
+  return { enObra, enFabricacion, medir }
 }
 
 // Los planos son un escaneo con la numeración de posición escrita a mano
@@ -700,13 +713,16 @@ function posicionesPorEstadoVidrio(materiales) {
 // mano desde acá (modo "Calibrar posiciones": elegir la posición, click en
 // el plano) y queda guardada para las próximas veces. El color se recalcula
 // solo con lo que ya está cargado en `materiales` — no hace falta releer
-// nada cuando Alfredo cambia el Estado del Vidrio de una posición en la
-// pestaña Seguimiento, por eso se ve reflejado al toque.
+// nada cuando Alfredo cambia el Estado de una posición en la pestaña
+// Seguimiento, por eso se ve reflejado al toque.
 function PlanosObra({ obra, materiales }) {
   const { accessToken } = useAuth()
   const [paginas, setPaginas] = useState([])
   const [posiciones, setPosiciones] = useState([])
   const [paginaActiva, setPaginaActiva] = useState(1)
+  // Qué material colorea las marcas — Carpintería (naranja) o Vidrio
+  // (azul), a elección de Alfredo/Álvaro.
+  const [materialPlano, setMaterialPlano] = useState('carpinteria')
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [modoCalibrar, setModoCalibrar] = useState(false)
@@ -757,7 +773,10 @@ function PlanosObra({ obra, materiales }) {
     return map
   }, [materiales])
 
-  const { enObra, enFabricacion } = useMemo(() => posicionesPorEstadoVidrio(materiales), [materiales])
+  const { enObra, enFabricacion, medir } = useMemo(
+    () => posicionesPorEstadoMaterial(materiales, materialPlano),
+    [materiales, materialPlano],
+  )
   const posicionesCalibradas = useMemo(() => new Set(posiciones.map((p) => p.posicion_base)), [posiciones])
   const posicionesSinCalibrar = posicionesBase.filter((p) => !posicionesCalibradas.has(p))
   const paginaImagen = paginas.find((p) => p.pagina === paginaActiva)
@@ -809,6 +828,22 @@ function PlanosObra({ obra, materiales }) {
             </button>
           ))}
         </div>
+        <div className="planos-material-toggle">
+          <button
+            type="button"
+            className={`planos-material-boton planos-material-boton-carpinteria ${materialPlano === 'carpinteria' ? 'planos-material-boton-activo' : ''}`}
+            onClick={() => setMaterialPlano('carpinteria')}
+          >
+            Carpintería
+          </button>
+          <button
+            type="button"
+            className={`planos-material-boton planos-material-boton-vidrio ${materialPlano === 'vidrio' ? 'planos-material-boton-activo' : ''}`}
+            onClick={() => setMaterialPlano('vidrio')}
+          >
+            Vidrio
+          </button>
+        </div>
         <label className="planos-calibrar-toggle">
           <input
             type="checkbox"
@@ -820,6 +855,12 @@ function PlanosObra({ obra, materiales }) {
           />
           Calibrar posiciones
         </label>
+      </div>
+
+      <div className="planos-leyenda">
+        <span className={`planos-leyenda-item planos-leyenda-${materialPlano}-en-obra`}>En obra</span>
+        <span className={`planos-leyenda-item planos-leyenda-${materialPlano}-en-fabricacion`}>En fabricación</span>
+        <span className="planos-leyenda-item planos-leyenda-medir">A medir</span>
       </div>
 
       {modoCalibrar && (
@@ -854,10 +895,21 @@ function PlanosObra({ obra, materiales }) {
         >
           <img src={paginaImagen.imagen_base64} alt={`Plano página ${paginaActiva}`} draggable={false} />
           {posicionesDeEstaPagina.map((p) => {
-            const enObraAqui = enObra.has(p.posicion_base)
-            const enFabricacionAqui = !enObraAqui && enFabricacion.has(p.posicion_base)
+            // "Medir" pisa a los otros dos si por algún motivo coincidieran
+            // (no debería pasar, son valores de Estado mutuamente
+            // excluyentes) — es la que más urge que salte a la vista.
+            const medirAqui = medir.has(p.posicion_base)
+            const enObraAqui = !medirAqui && enObra.has(p.posicion_base)
+            const enFabricacionAqui = !medirAqui && !enObraAqui && enFabricacion.has(p.posicion_base)
             const tipo = tipoPorPosicionBase.get(p.posicion_base)
-            const estadoTexto = enObraAqui ? ' — EN OBRA' : enFabricacionAqui ? ' — FABRICACIÓN' : ''
+            const estadoTexto = medirAqui ? ' — A MEDIR' : enObraAqui ? ' — EN OBRA' : enFabricacionAqui ? ' — FABRICACIÓN' : ''
+            const claseEstado = medirAqui
+              ? 'planos-marca-medir'
+              : enObraAqui
+                ? `planos-marca-${materialPlano}-en-obra`
+                : enFabricacionAqui
+                  ? `planos-marca-${materialPlano}-en-fabricacion`
+                  : ''
             return (
               <span
                 key={p.posicion_base}
@@ -870,9 +922,7 @@ function PlanosObra({ obra, materiales }) {
                   handleQuitarMarca(p.posicion_base)
                 }}
               >
-                <span
-                  className={`planos-marca ${enObraAqui ? 'planos-marca-en-obra' : ''} ${enFabricacionAqui ? 'planos-marca-en-fabricacion' : ''}`}
-                />
+                <span className={`planos-marca ${claseEstado}`} />
                 <span className="planos-marca-etiqueta">{tipo ? `${tipo} · ${p.posicion_base}` : p.posicion_base}</span>
               </span>
             )
