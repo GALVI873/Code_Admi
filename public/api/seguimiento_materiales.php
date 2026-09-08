@@ -163,18 +163,6 @@ try {
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? $_POST;
 
-        // TEMPORAL: verificar sin sesión de usuario si extra_campos está
-        // llegando de verdad para una obra puntual (se quita en el próximo
-        // commit).
-        if (($body['accion'] ?? '') === 'debug_ver_extra') {
-            $obra = trim((string) ($body['obra'] ?? ''));
-            $stmt = $db->prepare('SELECT obra, posicion, tipo, material, extra_campos, actualizado_en FROM seguimiento_materiales WHERE obra = ? LIMIT 3');
-            $stmt->execute([$obra]);
-            $total = $db->prepare('SELECT COUNT(*) FROM seguimiento_materiales WHERE obra = ?');
-            $total->execute([$obra]);
-            Response::json(['muestra' => $stmt->fetchAll(), 'total' => (int) $total->fetchColumn()]);
-        }
-
         if (($body['accion'] ?? '') === 'reemplazar_materiales') {
             $obra = trim((string) ($body['obra'] ?? ''));
             $materiales = $body['materiales'] ?? null;
