@@ -2197,6 +2197,7 @@ select.celda-editable-material {
 .planos-leyenda-vidrio-en-obra::before { background: #15448f; }
 .planos-leyenda-vidrio-en-fabricacion::before { background: #7fb0f0; }
 .planos-leyenda-medir::before { background: var(--rojo); }
+.planos-leyenda-completo::before { background: #2db260; }
 
 .planos-calibrar-panel {
   background: #eaf0fb;
@@ -2290,6 +2291,15 @@ select.celda-editable-material {
   background: rgba(192, 57, 43, .55);
   border-color: var(--rojo);
   box-shadow: 0 0 0 4px rgba(192, 57, 43, .25);
+}
+
+/* Verde: Carpintería Y Vidrio en obra a la vez en esa posición — pisa a
+   cualquier otro color, sin importar qué material esté eligiendo Alfredo/
+   Álvaro en el selector. */
+.planos-marca-completo {
+  background: rgba(45, 178, 96, .55);
+  border-color: #2db260;
+  box-shadow: 0 0 0 4px rgba(45, 178, 96, .25);
 }
 
 .planos-marca-etiqueta {

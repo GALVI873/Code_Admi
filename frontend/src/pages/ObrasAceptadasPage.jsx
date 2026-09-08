@@ -707,6 +707,24 @@ function posicionesPorEstadoMaterial(materiales, material) {
   return { enObra, enFabricacion, medir }
 }
 
+// Verde cuando la posición está "En obra" en LOS DOS materiales a la vez
+// (Carpintería y Vidrio) — la ventana quedó completa, sin importar cuál de
+// los dos esté eligiendo Alfredo/Álvaro en el selector. Pisa a cualquier
+// otro color (incluido "A medir": si ya están las dos en obra, no tiene
+// sentido seguir mostrando rojo).
+function posicionesConAmbosEnObra(materiales) {
+  const enObraCarpinteria = new Set()
+  const enObraVidrio = new Set()
+  for (const m of materiales) {
+    const base = posicionBaseDe(m.posicion)
+    if (!base) continue
+    if (!(m.estado || '').toUpperCase().includes('OBRA')) continue
+    if (PATRON_MATERIAL_PLANO.carpinteria.test(m.material || '')) enObraCarpinteria.add(base)
+    else if (PATRON_MATERIAL_PLANO.vidrio.test(m.material || '')) enObraVidrio.add(base)
+  }
+  return new Set([...enObraCarpinteria].filter((base) => enObraVidrio.has(base)))
+}
+
 // Los planos son un escaneo con la numeración de posición escrita a mano
 // (no hay texto embebido en el PDF, ver sync_planos.js) — no hay forma de
 // calcular sola la coordenada de cada una, así que se calibra una vez a
@@ -777,6 +795,7 @@ function PlanosObra({ obra, materiales }) {
     () => posicionesPorEstadoMaterial(materiales, materialPlano),
     [materiales, materialPlano],
   )
+  const completo = useMemo(() => posicionesConAmbosEnObra(materiales), [materiales])
   const posicionesCalibradas = useMemo(() => new Set(posiciones.map((p) => p.posicion_base)), [posiciones])
   const posicionesSinCalibrar = posicionesBase.filter((p) => !posicionesCalibradas.has(p))
   const paginaImagen = paginas.find((p) => p.pagina === paginaActiva)
@@ -861,6 +880,7 @@ function PlanosObra({ obra, materiales }) {
         <span className={`planos-leyenda-item planos-leyenda-${materialPlano}-en-obra`}>En obra</span>
         <span className={`planos-leyenda-item planos-leyenda-${materialPlano}-en-fabricacion`}>En fabricación</span>
         <span className="planos-leyenda-item planos-leyenda-medir">A medir</span>
+        <span className="planos-leyenda-item planos-leyenda-completo">Completo (los dos en obra)</span>
       </div>
 
       {modoCalibrar && (
@@ -898,18 +918,29 @@ function PlanosObra({ obra, materiales }) {
             // "Medir" pisa a los otros dos si por algún motivo coincidieran
             // (no debería pasar, son valores de Estado mutuamente
             // excluyentes) — es la que más urge que salte a la vista.
-            const medirAqui = medir.has(p.posicion_base)
-            const enObraAqui = !medirAqui && enObra.has(p.posicion_base)
-            const enFabricacionAqui = !medirAqui && !enObraAqui && enFabricacion.has(p.posicion_base)
+            const completoAqui = completo.has(p.posicion_base)
+            const medirAqui = !completoAqui && medir.has(p.posicion_base)
+            const enObraAqui = !completoAqui && !medirAqui && enObra.has(p.posicion_base)
+            const enFabricacionAqui = !completoAqui && !medirAqui && !enObraAqui && enFabricacion.has(p.posicion_base)
             const tipo = tipoPorPosicionBase.get(p.posicion_base)
-            const estadoTexto = medirAqui ? ' — A MEDIR' : enObraAqui ? ' — EN OBRA' : enFabricacionAqui ? ' — FABRICACIÓN' : ''
-            const claseEstado = medirAqui
-              ? 'planos-marca-medir'
-              : enObraAqui
-                ? `planos-marca-${materialPlano}-en-obra`
-                : enFabricacionAqui
-                  ? `planos-marca-${materialPlano}-en-fabricacion`
-                  : ''
+            const estadoTexto = completoAqui
+              ? ' — COMPLETO (Carpintería y Vidrio en obra)'
+              : medirAqui
+                ? ' — A MEDIR'
+                : enObraAqui
+                  ? ' — EN OBRA'
+                  : enFabricacionAqui
+                    ? ' — FABRICACIÓN'
+                    : ''
+            const claseEstado = completoAqui
+              ? 'planos-marca-completo'
+              : medirAqui
+                ? 'planos-marca-medir'
+                : enObraAqui
+                  ? `planos-marca-${materialPlano}-en-obra`
+                  : enFabricacionAqui
+                    ? `planos-marca-${materialPlano}-en-fabricacion`
+                    : ''
             return (
               <span
                 key={p.posicion_base}
