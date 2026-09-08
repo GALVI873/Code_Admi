@@ -266,7 +266,7 @@ function FiltroColumna({ etiqueta, valores, seleccionados, onCambiar }) {
   )
 }
 
-function FilaMaterial({ m, estadosDisponibles, onCambiar }) {
+function FilaMaterial({ m, estadosDisponibles, onCambiar, camposExtra }) {
   return (
     <tr>
       <td>{m.posicion || '—'}</td>
@@ -292,6 +292,12 @@ function FilaMaterial({ m, estadosDisponibles, onCambiar }) {
           onGuardar={(v) => onCambiar(m, 'comentario', v)}
         />
       </td>
+      {/* Columnas propias del proyecto (extra_campos) — de solo lectura,
+          igual que Posición/Material/etc., no son cosas que Alfredo edite
+          desde el panel. */}
+      {camposExtra.map(({ campo, valor }) => (
+        <td key={campo}>{valor(m)}</td>
+      ))}
     </tr>
   )
 }
@@ -331,11 +337,50 @@ function agruparPorCampo(materiales, campoInfo) {
     .map(([clave, items]) => ({ clave, items }))
 }
 
-function pasaFiltros(m, filtros) {
-  return CAMPOS_MATERIAL.every(({ campo, valor }) => {
-    const seleccionados = filtros[campo]
+function pasaFiltros(m, filtros, campos) {
+  return campos.every(({ campo, valor }) => {
+    const seleccionados = filtros[campo] || EMPTY_SET
     return seleccionados.size === 0 || seleccionados.has(valor(m))
   })
+}
+
+const EMPTY_SET = new Set()
+
+// Columnas propias del proyecto (extra_campos, ver
+// extract_seguimiento_materiales.js) — de la A hasta "Ancho Proy." del
+// Excel de ESTA obra puntual, distintas entre un edificio y una vivienda
+// de particular. Se descubren leyendo qué claves realmente trae el JSON de
+// cada fila (no hay una lista fija posible, cada obra puede traer otras) y
+// se ofrecen como agrupador/filtro adicional a Tipo/Posición/Material/
+// Estado/Proveedor.
+function camposExtraDeMateriales(materiales) {
+  const nombres = new Set()
+  for (const m of materiales) {
+    if (m.extra_campos) {
+      let extra
+      try {
+        extra = JSON.parse(m.extra_campos)
+      } catch {
+        continue
+      }
+      Object.keys(extra).forEach((n) => nombres.add(n))
+    }
+  }
+  return [...nombres]
+    .sort((a, b) => a.localeCompare(b, 'es', { numeric: true }))
+    .map((nombre) => ({
+      campo: `extra:${nombre}`,
+      etiqueta: nombre,
+      valor: (m) => {
+        if (!m.extra_campos) return '—'
+        try {
+          const extra = JSON.parse(m.extra_campos)
+          return extra[nombre] || '—'
+        } catch {
+          return '—'
+        }
+      },
+    }))
 }
 
 function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
@@ -347,24 +392,28 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
   // siempre: no tiene sentido filtrar una caja desde adentro de su propia
   // caja.
   const [campoAgrupador, setCampoAgrupador] = useState('tipo')
-  const [filtros, setFiltros] = useState(() =>
-    Object.fromEntries(CAMPOS_MATERIAL.map(({ campo }) => [campo, new Set()])),
-  )
+  const [filtros, setFiltros] = useState({})
+
+  // Se recalculan por obra (materiales cambia al abrir otra obra) — no se
+  // puede armar una lista fija de antemano, cada obra puede traer columnas
+  // de proyecto distintas.
+  const camposExtra = useMemo(() => camposExtraDeMateriales(materiales), [materiales])
+  const camposTodos = useMemo(() => [...CAMPOS_MATERIAL, ...camposExtra], [camposExtra])
 
   const estadosDisponibles = useMemo(
     () => [...new Set(materiales.map((m) => m.estado).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es')),
     [materiales],
   )
 
-  const infoAgrupador = CAMPOS_MATERIAL.find((c) => c.campo === campoAgrupador)
+  const infoAgrupador = camposTodos.find((c) => c.campo === campoAgrupador) || camposTodos[0]
   const valoresAgrupador = useMemo(
     () => [...new Set(materiales.map(infoAgrupador.valor))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true })),
     [materiales, infoAgrupador],
   )
 
   const materialesFiltrados = useMemo(
-    () => materiales.filter((m) => pasaFiltros(m, filtros)),
-    [materiales, filtros],
+    () => materiales.filter((m) => pasaFiltros(m, filtros, camposTodos)),
+    [materiales, filtros, camposTodos],
   )
 
   const grupos = useMemo(
@@ -388,14 +437,14 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
     setFiltros((f) => ({ ...f, [campoAgrupador]: new Set() }))
   }
 
-  // La tabla (FilaMaterial) siempre tiene las mismas 9 celdas fijas —
-  // "Tipo" es la única que nunca fue columna ahí (por eso queda afuera
-  // siempre, no solo cuando se agrupa por Tipo). Cuando se agrupa por
-  // cualquier otro campo, esa columna se ve dos veces (en el título de
-  // cada caja y en su propia celda) — redundante pero no un error; sacarla
-  // de la tabla rompería la alineación con las filas, que siempre traen
-  // esa celda.
-  const columnasEnTabla = CAMPOS_MATERIAL.filter((c) => c.campo !== 'tipo')
+  // La tabla (FilaMaterial) siempre tiene las mismas 9 celdas fijas más las
+  // columnas extra de esta obra al final — "Tipo" es la única que nunca es
+  // columna (por eso queda afuera siempre, no solo cuando se agrupa por
+  // Tipo). Cuando se agrupa por cualquier otro campo, esa columna se ve dos
+  // veces (en el título de cada caja y en su propia celda) — redundante
+  // pero no un error; sacarla de la tabla rompería la alineación con las
+  // filas, que siempre traen esa celda.
+  const columnasEnTabla = camposTodos.filter((c) => c.campo !== 'tipo')
 
   return (
     <div className="posiciones-seguimiento">
@@ -416,13 +465,20 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
                 <option key={campo} value={campo}>{etiqueta}</option>
               ))}
             </optgroup>
+            {camposExtra.length > 0 && (
+              <optgroup label="Columnas de esta obra">
+                {camposExtra.map(({ campo, etiqueta }) => (
+                  <option key={campo} value={campo}>{etiqueta}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </div>
         <div className="filtro-campo">
           <label>{infoAgrupador.etiqueta}</label>
           <SelectorMultipleGenerico
             valores={valoresAgrupador}
-            seleccionados={filtros[campoAgrupador]}
+            seleccionados={filtros[campoAgrupador] || EMPTY_SET}
             onCambiar={(valores) => cambiarFiltroColumna(campoAgrupador, valores)}
           />
         </div>
@@ -430,7 +486,7 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
           <label>Estado</label>
           <SelectorMultipleGenerico
             valores={estadosDisponibles}
-            seleccionados={filtros.estado}
+            seleccionados={filtros.estado || EMPTY_SET}
             onCambiar={(valores) => cambiarFiltroColumna('estado', valores)}
           />
         </div>
@@ -455,7 +511,7 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
                       <FiltroColumna
                         etiqueta={etiqueta}
                         valores={[...new Set(materiales.map(valor))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }))}
-                        seleccionados={filtros[campo]}
+                        seleccionados={filtros[campo] || EMPTY_SET}
                         onCambiar={(valores2) => cambiarFiltroColumna(campo, valores2)}
                       />
                     </th>
@@ -469,6 +525,7 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
                     m={m}
                     estadosDisponibles={estadosDisponibles}
                     onCambiar={onCambiarMaterial}
+                    camposExtra={camposExtra}
                   />
                 ))}
               </tbody>

@@ -12,6 +12,17 @@
 // (Precerco/Carpintería/Persiana/Vidrio...) de esa posición. A diferencia
 // de "SEG", acá no hace falta arrastrar Posición/Tipo entre filas: vienen
 // repetidos en cada fila, no en una sola por grupo.
+//
+// "extra": cada obra puede tener sus propias columnas de datos del
+// proyecto (un edificio no trackea lo mismo que una vivienda de
+// particular) — a diferencia de Posición/Tipo/Material/Estado/Proveedor
+// (siempre las mismas, en cualquier obra), TODO lo que haya en el
+// encabezado desde la columna A hasta la columna "Ancho Proy." (inclusive)
+// se guarda tal cual, con el nombre de columna real del Excel como clave,
+// para que el panel pueda ofrecer agrupar/filtrar por lo que sea que esta
+// obra puntual tenga ahí — sin necesitar tocar este script obra por obra.
+// Si "Ancho Proy." no aparece en el encabezado, se deja "extra" vacío en
+// vez de adivinar hasta dónde llegar (mejor nada que un corte mal hecho).
 const XLSX = require('xlsx');
 
 // "." es el placeholder que usa la propia plantilla para "todavía sin
@@ -63,11 +74,30 @@ function extraerMateriales(rutaArchivo) {
   const iEstado = col(/^estado$/i);
   const iComentario = col(/^comentario$/i);
 
+  // Columnas "propias del proyecto": de la A hasta "Ancho Proy." (inclusive),
+  // con el nombre de columna real del Excel como clave — varían de obra en
+  // obra, así que se guardan genéricas en vez de una por una como las de
+  // arriba.
+  const iAnchoProy = col(/ancho\s*proy/i);
+  const columnasExtra = [];
+  if (iAnchoProy !== -1) {
+    for (let c = 0; c <= iAnchoProy; c++) {
+      const nombre = normalizarValor(header[c]);
+      if (nombre) columnasExtra.push({ indice: c, nombre });
+    }
+  }
+
   const materiales = [];
   for (let i = idxHeader + 1; i < rows.length; i++) {
     const fila = rows[i];
     const material = normalizarValor(fila[iMaterial]);
     if (!material) continue; // fila vacía
+
+    const extra = {};
+    for (const { indice, nombre } of columnasExtra) {
+      const valor = normalizarValor(fila[indice]);
+      if (valor !== null) extra[nombre] = valor;
+    }
 
     materiales.push({
       // Número de fila real en la hoja (1-indexado, como lo ve Excel) — se
@@ -86,6 +116,7 @@ function extraerMateriales(rutaArchivo) {
       fecha_estimada: fechaDeSerial(fila[iFechaEstimada]),
       estado: normalizarValor(fila[iEstado]),
       comentario: normalizarValor(fila[iComentario]),
+      extra,
     });
   }
   return materiales;

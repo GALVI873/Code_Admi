@@ -8,9 +8,11 @@ declare(strict_types=1);
 // extract_seguimiento_materiales.js). Tabla separada de
 // presupuestos_en_estudio porque es un dominio de datos distinto
 // (logística de pedidos, no presupuesto) — el panel las cruza por nombre
-// de obra en el frontend. Se agrupa en el panel por Tipo (modelo de
-// ventana) y dentro de cada tipo por Posición (la ventana física puntual):
-// un mismo tipo puede repetirse en varias posiciones.
+// de obra en el frontend. El panel puede agrupar por Tipo, Posición,
+// Material, Estado, Proveedor o cualquier columna propia del proyecto
+// (extra_campos, JSON con las columnas de la A hasta "Ancho Proy." del
+// Excel — distintas de obra en obra, un edificio no trackea lo mismo que
+// una vivienda de particular, ver extract_seguimiento_materiales.js).
 //
 // GET: lista todo el seguimiento (requiere sesión + obras.ver_aceptadas).
 // Estado/Fecha Estimada/Comentario vienen con el override del panel
@@ -80,6 +82,15 @@ try {
             $tipoSql = $columna === 'fila_excel' ? 'INTEGER' : 'TEXT';
             $db->exec("ALTER TABLE seguimiento_materiales ADD COLUMN $columna $tipoSql");
         }
+    }
+    // Columnas propias del proyecto (de la A hasta "Ancho Proy." del Excel,
+    // ver extract_seguimiento_materiales.js) — varían de obra en obra
+    // (edificio vs. vivienda de particular), así que se guardan como un
+    // único JSON en vez de columnas fijas de tabla. El frontend las
+    // descubre por obra y las ofrece como agrupador/filtro adicional a
+    // Material/Estado/Proveedor.
+    if (!in_array('extra_campos', $columnas, true)) {
+        $db->exec('ALTER TABLE seguimiento_materiales ADD COLUMN extra_campos TEXT');
     }
 
     $db->exec("
@@ -161,8 +172,8 @@ try {
             $db->prepare('DELETE FROM seguimiento_materiales WHERE obra = ?')->execute([$obra]);
             $stmt = $db->prepare("
                 INSERT INTO seguimiento_materiales
-                    (obra, fila_excel, posicion, tipo, material, descripcion, estado, proveedor, fecha_pedido, numero_orden, fecha_estimada, comentario, actualizado_en)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                    (obra, fila_excel, posicion, tipo, material, descripcion, estado, proveedor, fecha_pedido, numero_orden, fecha_estimada, comentario, extra_campos, actualizado_en)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ");
             $clavesVigentes = [];
             foreach ($materiales as $m) {
@@ -179,6 +190,7 @@ try {
                     $m['numero_orden'] ?? null,
                     $m['fecha_estimada'] ?? null,
                     $m['comentario'] ?? null,
+                    !empty($m['extra']) ? json_encode($m['extra'], JSON_UNESCAPED_UNICODE) : null,
                 ]);
                 $clavesVigentes[claveEstableMaterial($m)] = true;
             }
