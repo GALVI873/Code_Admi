@@ -21,8 +21,11 @@
 // se guarda tal cual, con el nombre de columna real del Excel como clave,
 // para que el panel pueda ofrecer agrupar/filtrar por lo que sea que esta
 // obra puntual tenga ahí — sin necesitar tocar este script obra por obra.
-// Si "Ancho Proy." no aparece en el encabezado, se deja "extra" vacío en
-// vez de adivinar hasta dónde llegar (mejor nada que un corte mal hecho).
+// Si esta obra no tiene columna "Ancho Proy." (pasa de verdad: alguna
+// tiene "Vivienda"/"Planta" pero ningún "Ancho Proy." en ningún lado), se
+// capturan igual todas las columnas con encabezado de esa fila hasta el
+// final — mejor de más que perder columnas reales solo porque no coincide
+// el nombre exacto que se usa como límite habitual.
 const XLSX = require('xlsx');
 
 // "." es el placeholder que usa la propia plantilla para "todavía sin
@@ -77,14 +80,18 @@ function extraerMateriales(rutaArchivo) {
   // Columnas "propias del proyecto": de la A hasta "Ancho Proy." (inclusive),
   // con el nombre de columna real del Excel como clave — varían de obra en
   // obra, así que se guardan genéricas en vez de una por una como las de
-  // arriba.
+  // arriba. Si esta obra puntual no tiene una columna "Ancho Proy." (caso
+  // real encontrado: "Cea Bermudez", que sí tenía "Vivienda"/"Planta" antes
+  // de Posición pero ningún "Ancho Proy." en ningún lado) NO se deja
+  // "extra" vacío — se captura cualquier columna con encabezado en esa
+  // misma fila, para no perder columnas reales de la obra solo porque no
+  // coincide el nombre exacto que se esperaba como límite.
   const iAnchoProy = col(/ancho\s*proy/i);
+  const limiteColumnas = iAnchoProy !== -1 ? iAnchoProy : header.length - 1;
   const columnasExtra = [];
-  if (iAnchoProy !== -1) {
-    for (let c = 0; c <= iAnchoProy; c++) {
-      const nombre = normalizarValor(header[c]);
-      if (nombre) columnasExtra.push({ indice: c, nombre });
-    }
+  for (let c = 0; c <= limiteColumnas; c++) {
+    const nombre = normalizarValor(header[c]);
+    if (nombre) columnasExtra.push({ indice: c, nombre });
   }
 
   const materiales = [];
