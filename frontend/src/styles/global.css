@@ -2314,3 +2314,124 @@ select.celda-editable-material {
   box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
   pointer-events: none;
 }
+
+/* Pestaña "Estatus" — informe rápido de ventanas por estatus, por
+   categoría de material (Carpintería/Vidrio, luego Extras). */
+.estatus-total-obra {
+  font-size: 15px;
+  margin-bottom: 16px;
+}
+
+.estatus-total-obra strong {
+  font-size: 22px;
+  color: var(--azul);
+}
+
+.estatus-tarjetas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.estatus-tarjeta {
+  flex: 1 1 320px;
+  background: white;
+  border: 1px solid #e3e8f0;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
+  padding: 16px 20px;
+}
+
+.estatus-tarjeta h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  color: var(--azul);
+}
+
+.estatus-sin-datos {
+  color: #7a8699;
+  font-size: 13px;
+}
+
+.estatus-tarjeta-cuerpo {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.estatus-donut {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  min-width: 120px;
+  border-radius: 50%;
+}
+
+.estatus-donut-vacio {
+  background: var(--gris);
+}
+
+.estatus-donut-centro {
+  position: absolute;
+  inset: 18px;
+  background: white;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.1;
+}
+
+.estatus-donut-centro strong {
+  font-size: 20px;
+  color: var(--texto);
+}
+
+.estatus-donut-centro span {
+  font-size: 10px;
+  color: #7a8699;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+.estatus-leyenda {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1 1 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.estatus-leyenda li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.estatus-leyenda-punto {
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+  border-radius: 50%;
+}
+
+.estatus-leyenda-etiqueta {
+  flex: 1;
+  color: var(--texto);
+}
+
+.estatus-leyenda-cantidad {
+  font-weight: 600;
+  color: var(--azul);
+  white-space: nowrap;
+}
+
+.estatus-leyenda-cantidad small {
+  font-weight: 400;
+  color: #7a8699;
+}

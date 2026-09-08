@@ -964,7 +964,132 @@ function PlanosObra({ obra, materiales }) {
   )
 }
 
-const PESTANAS_DETALLE = ['Ficha', 'Seguimiento', 'Planos', 'Notas']
+// Informe rápido de estatus (a pedido de Álvaro): por cada categoría de
+// material, cuántas ventanas (=posiciones, igual criterio que Planos) hay
+// en total y cuántas están en cada estatus real — no solo los 3 que se
+// colorean en Planos (En obra/Fabricación/Medir), sino cualquier valor que
+// tenga esta obra en Seguimiento (ej. "Pedir material", "En proveedor").
+// "Extras" queda como una categoría más para sumar después (a definir).
+const CATEGORIAS_ESTATUS = [
+  { clave: 'carpinteria', etiqueta: 'Carpintería', patron: PATRON_MATERIAL_PLANO.carpinteria },
+  { clave: 'vidrio', etiqueta: 'Vidrio', patron: PATRON_MATERIAL_PLANO.vidrio },
+]
+
+// Paleta fija asignada por orden alfabético de estatus (no por frecuencia)
+// para que el mismo estatus tenga siempre el mismo color entre categorías y
+// entre una obra y otra — más fácil de leer de un vistazo.
+const PALETA_ESTATUS = ['#2563eb', '#f97316', '#16a34a', '#dc2626', '#7c3aed', '#0891b2', '#ca8a04', '#64748b']
+
+function resumenEstatusPorCategoria(materiales, patron) {
+  const estadoPorPosicion = new Map()
+  for (const m of materiales) {
+    if (!patron.test(m.material || '')) continue
+    const base = posicionBaseDe(m.posicion)
+    if (!base) continue
+    estadoPorPosicion.set(base, (m.estado || '').trim() || 'Sin estado')
+  }
+  const conteos = new Map()
+  for (const estado of estadoPorPosicion.values()) {
+    conteos.set(estado, (conteos.get(estado) || 0) + 1)
+  }
+  return { total: estadoPorPosicion.size, conteos }
+}
+
+function DonutEstatus({ total, segmentos }) {
+  if (total === 0) {
+    return <div className="estatus-donut estatus-donut-vacio" />
+  }
+  let acumulado = 0
+  const stops = segmentos.map(({ color, cantidad }) => {
+    const desde = (acumulado / total) * 100
+    acumulado += cantidad
+    const hasta = (acumulado / total) * 100
+    return `${color} ${desde}% ${hasta}%`
+  })
+  return (
+    <div className="estatus-donut" style={{ backgroundImage: `conic-gradient(${stops.join(', ')})` }}>
+      <div className="estatus-donut-centro">
+        <strong>{total}</strong>
+        <span>ventanas</span>
+      </div>
+    </div>
+  )
+}
+
+function TarjetaEstatusCategoria({ etiqueta, total, conteos, colorDeEstado }) {
+  const segmentos = [...conteos.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([estado, cantidad]) => ({ estado, cantidad, color: colorDeEstado(estado) }))
+
+  return (
+    <div className="estatus-tarjeta">
+      <h3>{etiqueta}</h3>
+      {total === 0 ? (
+        <p className="estatus-sin-datos">Sin datos de {etiqueta.toLowerCase()} en esta obra.</p>
+      ) : (
+        <div className="estatus-tarjeta-cuerpo">
+          <DonutEstatus total={total} segmentos={segmentos} />
+          <ul className="estatus-leyenda">
+            {segmentos.map(({ estado, cantidad, color }) => (
+              <li key={estado}>
+                <span className="estatus-leyenda-punto" style={{ background: color }} />
+                <span className="estatus-leyenda-etiqueta">{estado}</span>
+                <span className="estatus-leyenda-cantidad">
+                  {cantidad} <small>({Math.round((cantidad / total) * 100)}%)</small>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function EstatusObra({ materiales }) {
+  const resumenes = useMemo(
+    () => CATEGORIAS_ESTATUS.map((c) => ({ ...c, ...resumenEstatusPorCategoria(materiales, c.patron) })),
+    [materiales],
+  )
+
+  const totalVentanasObra = useMemo(
+    () => new Set(materiales.map((m) => posicionBaseDe(m.posicion)).filter(Boolean)).size,
+    [materiales],
+  )
+
+  // Mismo color para el mismo estatus en todas las categorías — se asigna
+  // por orden alfabético de todos los estatus que aparecen en la obra, no
+  // por categoría (si no, "En obra" de Carpintería podría salir de un color
+  // distinto que "En obra" de Vidrio).
+  const colorDeEstado = useMemo(() => {
+    const todos = new Set()
+    resumenes.forEach((r) => r.conteos.forEach((_, estado) => todos.add(estado)))
+    const ordenados = [...todos].sort((a, b) => a.localeCompare(b, 'es'))
+    const mapa = new Map(ordenados.map((estado, i) => [estado, PALETA_ESTATUS[i % PALETA_ESTATUS.length]]))
+    return (estado) => mapa.get(estado) || '#94a3b8'
+  }, [resumenes])
+
+  return (
+    <div className="estatus-obra">
+      <p className="estatus-total-obra">
+        <strong>{totalVentanasObra}</strong> ventanas en total en esta obra
+      </p>
+      <div className="estatus-tarjetas">
+        {resumenes.map((r) => (
+          <TarjetaEstatusCategoria
+            key={r.clave}
+            etiqueta={r.etiqueta}
+            total={r.total}
+            conteos={r.conteos}
+            colorDeEstado={colorDeEstado}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const PESTANAS_DETALLE = ['Ficha', 'Estatus', 'Seguimiento', 'Planos', 'Notas']
 
 // Página propia (no modal): la información de una obra aceptada —
 // especialmente Seguimiento, con su tabla ancha y filtros por columna —
@@ -1032,6 +1157,7 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar
       {pestana === 'Ficha' && (
         <FichaObraAceptada presupuesto={presupuesto} confirmaciones={confirmaciones} onConfirmar={onConfirmar} onQuitar={onQuitar} />
       )}
+      {pestana === 'Estatus' && <EstatusObra materiales={materiales} />}
       {pestana === 'Seguimiento' && (
         <SeguimientoPorPosicion materiales={materiales} onCambiarMaterial={(m, campo, valor) => onCambiarMaterial(presupuesto.obra, m, campo, valor)} />
       )}
