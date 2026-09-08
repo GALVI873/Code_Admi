@@ -385,12 +385,10 @@ function camposExtraDeMateriales(materiales) {
 
 function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
   // Qué campo arma las cajas — elegible por Alfredo/Álvaro (antes fijo en
-  // "tipo"). El filtro de valores del campo elegido (arriba, como "Agrupar
-  // por") reusa el mismo mecanismo que los filtros de columna de la
-  // tabla — es, en los hechos, el filtro de esa columna, solo que se
-  // muestra afuera en vez de en su propio encabezado, mismo motivo de
-  // siempre: no tiene sentido filtrar una caja desde adentro de su propia
-  // caja.
+  // "tipo"). A propósito NO controla qué filtros se ven en la barra de
+  // arriba (antes sí, y quedaba confuso: cambiaba el filtro visible según
+  // qué se hubiera elegido acá) — los filtros rápidos son siempre
+  // Material/Estado/Posición, fijos, sin importar el agrupador elegido.
   const [campoAgrupador, setCampoAgrupador] = useState('tipo')
   const [filtros, setFiltros] = useState({})
 
@@ -400,16 +398,26 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
   const camposExtra = useMemo(() => camposExtraDeMateriales(materiales), [materiales])
   const camposTodos = useMemo(() => [...CAMPOS_MATERIAL, ...camposExtra], [camposExtra])
 
+  // Filtros rápidos fijos en la barra de arriba — independientes de qué se
+  // haya elegido en "Agrupar por" (antes el filtro de esa barra cambiaba
+  // según el agrupador, confuso: quedaba "Vivienda" en vez de algo
+  // predecible). Cualquier otro campo (incluidas las columnas propias de
+  // la obra) se sigue pudiendo filtrar desde su propio encabezado en la
+  // tabla, ver columnasEnTabla.
+  const materialesDisponibles = useMemo(
+    () => [...new Set(materiales.map((m) => m.material).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es')),
+    [materiales],
+  )
   const estadosDisponibles = useMemo(
     () => [...new Set(materiales.map((m) => m.estado).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es')),
     [materiales],
   )
+  const posicionesDisponibles = useMemo(
+    () => [...new Set(materiales.map((m) => m.posicion).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true })),
+    [materiales],
+  )
 
   const infoAgrupador = camposTodos.find((c) => c.campo === campoAgrupador) || camposTodos[0]
-  const valoresAgrupador = useMemo(
-    () => [...new Set(materiales.map(infoAgrupador.valor))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true })),
-    [materiales, infoAgrupador],
-  )
 
   const materialesFiltrados = useMemo(
     () => materiales.filter((m) => pasaFiltros(m, filtros, camposTodos)),
@@ -427,14 +435,6 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
 
   function cambiarFiltroColumna(campo, valores) {
     setFiltros((f) => ({ ...f, [campo]: valores }))
-  }
-
-  function cambiarCampoAgrupador(campo) {
-    setCampoAgrupador(campo)
-    // Los valores seleccionados eran de OTRO campo — no tiene sentido
-    // arrastrarlos al cambiar de agrupador, quedarían filtrando por algo
-    // que ya no se ve en ningún lado.
-    setFiltros((f) => ({ ...f, [campoAgrupador]: new Set() }))
   }
 
   // La tabla (FilaMaterial) siempre tiene las mismas 9 celdas fijas más las
@@ -455,16 +455,11 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
             id="seguimiento-agrupar-por"
             className="select-inline"
             value={campoAgrupador}
-            onChange={(e) => cambiarCampoAgrupador(e.target.value)}
+            onChange={(e) => setCampoAgrupador(e.target.value)}
           >
             {CAMPOS_AGRUPABLES_SUGERIDOS.map((campo) => (
               <option key={campo} value={campo}>{CAMPOS_MATERIAL.find((c) => c.campo === campo).etiqueta}</option>
             ))}
-            <optgroup label="Otras columnas">
-              {CAMPOS_MATERIAL.filter((c) => !CAMPOS_AGRUPABLES_SUGERIDOS.includes(c.campo)).map(({ campo, etiqueta }) => (
-                <option key={campo} value={campo}>{etiqueta}</option>
-              ))}
-            </optgroup>
             {camposExtra.length > 0 && (
               <optgroup label="Columnas de esta obra">
                 {camposExtra.map(({ campo, etiqueta }) => (
@@ -475,11 +470,11 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
           </select>
         </div>
         <div className="filtro-campo">
-          <label>{infoAgrupador.etiqueta}</label>
+          <label>Material</label>
           <SelectorMultipleGenerico
-            valores={valoresAgrupador}
-            seleccionados={filtros[campoAgrupador] || EMPTY_SET}
-            onCambiar={(valores) => cambiarFiltroColumna(campoAgrupador, valores)}
+            valores={materialesDisponibles}
+            seleccionados={filtros.material || EMPTY_SET}
+            onCambiar={(valores) => cambiarFiltroColumna('material', valores)}
           />
         </div>
         <div className="filtro-campo">
@@ -488,6 +483,14 @@ function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
             valores={estadosDisponibles}
             seleccionados={filtros.estado || EMPTY_SET}
             onCambiar={(valores) => cambiarFiltroColumna('estado', valores)}
+          />
+        </div>
+        <div className="filtro-campo">
+          <label>Posición</label>
+          <SelectorMultipleGenerico
+            valores={posicionesDisponibles}
+            seleccionados={filtros.posicion || EMPTY_SET}
+            onCambiar={(valores) => cambiarFiltroColumna('posicion', valores)}
           />
         </div>
         <span className="filtro-contador">
