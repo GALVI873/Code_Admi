@@ -1186,6 +1186,10 @@ export default function ObrasAceptadasPage() {
   const [busquedaObra, setBusquedaObra] = useState('')
   const [filtroCategoria, setFiltroCategoria] = useState('Todos')
   const [filtroContacto, setFiltroContacto] = useState('Todos')
+  // A pedido de Álvaro: las obras "Terminada" quedan fuera de la vista por
+  // defecto (ya no hay nada que gestionar ahí) — solo vuelven a aparecer si
+  // se elige a propósito el estatus "Terminada" (o "Todos").
+  const [filtroEstatus, setFiltroEstatus] = useState('Activas')
   // A pedido de Álvaro: filtro rápido para encontrar de un vistazo qué
   // obras tienen algo cargado en "Notas" (con o sin leer, no solo las
   // nuevas) — botón aparte de los desplegables normales, mismo patrón que
@@ -1225,8 +1229,8 @@ export default function ObrasAceptadasPage() {
 
   // Cada fila de obras_aceptadas.php ya es, por definición, una obra
   // aceptada (la tabla solo existe para eso) — a diferencia de
-  // Presupuestos en Estudio/Presupuesto, acá no hay otros estatus que
-  // filtrar ni agrupar.
+  // Presupuestos en Estudio/Presupuesto, acá no se agrupa por estatus, pero
+  // sí se filtra (ver filtroEstatus) para poder ocultar las Terminada.
   const aceptadas = filas
 
   const contactosDisponibles = useMemo(() => {
@@ -1245,9 +1249,15 @@ export default function ObrasAceptadasPage() {
       .filter((p) => !texto || p.obra?.toLowerCase().includes(texto))
       .filter((p) => filtroCategoria === 'Todos' || p.categoria === filtroCategoria)
       .filter((p) => filtroContacto === 'Todos' || p.contacto === filtroContacto)
+      .filter((p) => {
+        const estatus = p.estatus || 'Activo'
+        if (filtroEstatus === 'Todos') return true
+        if (filtroEstatus === 'Activas') return estatus !== 'Terminada'
+        return estatus === filtroEstatus
+      })
       .filter((p) => !soloConNotas || p.tiene_mensajes)
       .sort((a, b) => (a.obra || '').localeCompare(b.obra || '', 'es'))
-  }, [aceptadas, busquedaObra, filtroCategoria, filtroContacto, soloConNotas])
+  }, [aceptadas, busquedaObra, filtroCategoria, filtroContacto, filtroEstatus, soloConNotas])
 
   // Agrupado por Cliente a pedido de Alfredo — antes era una sola grilla
   // de tarjetas anchas, ahora cada cliente es un encabezado con sus obras
@@ -1437,6 +1447,21 @@ export default function ObrasAceptadasPage() {
               {contactosDisponibles.map((op) => (
                 <option key={op} value={op}>{op}</option>
               ))}
+            </select>
+          </div>
+          <div className="filtro-campo">
+            <label htmlFor="filtro-estatus-obra">Estatus</label>
+            <select
+              id="filtro-estatus-obra"
+              className="select-inline"
+              value={filtroEstatus}
+              onChange={(e) => setFiltroEstatus(e.target.value)}
+            >
+              <option value="Activas">Activas (sin Terminada)</option>
+              {ESTATUS_ACEPTADA_OPCIONES.map((op) => (
+                <option key={op} value={op}>{op}</option>
+              ))}
+              <option value="Todos">Todos</option>
             </select>
           </div>
           {conNotas.length > 0 && (
