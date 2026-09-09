@@ -184,11 +184,11 @@ export function medidasObra(accessToken, obra) {
   })
 }
 
-export function confirmarMedidaObra(accessToken, obra, posicion, anchoReal, altoReal) {
+export function confirmarMedidaObra(accessToken, obra, posicion, anchoReal, altoReal, comentario) {
   return request('/medidas_obra.php', {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ obra, posicion, ancho_real: anchoReal, alto_real: altoReal }),
+    body: JSON.stringify({ obra, posicion, ancho_real: anchoReal, alto_real: altoReal, comentario }),
   })
 }
 

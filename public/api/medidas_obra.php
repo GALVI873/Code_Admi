@@ -40,11 +40,16 @@ try {
           posicion TEXT NOT NULL,
           ancho_real REAL,
           alto_real REAL,
+          comentario TEXT,
           confirmado_por TEXT,
           actualizado_en TEXT NOT NULL DEFAULT (datetime('now')),
           PRIMARY KEY (obra, posicion)
         )
     ");
+    $columnasMedidas = array_column($db->query('PRAGMA table_info(medidas_confirmadas_obra)')->fetchAll(), 'name');
+    if (!in_array('comentario', $columnasMedidas, true)) {
+        $db->exec('ALTER TABLE medidas_confirmadas_obra ADD COLUMN comentario TEXT');
+    }
     $db->exec("
         CREATE TABLE IF NOT EXISTS plano_dibujo_tipo (
           obra TEXT NOT NULL,
@@ -64,7 +69,7 @@ try {
             Response::error('Falta "obra"', 422);
         }
 
-        $stmtMedidas = $db->prepare('SELECT posicion, ancho_real, alto_real, confirmado_por, actualizado_en FROM medidas_confirmadas_obra WHERE obra = ?');
+        $stmtMedidas = $db->prepare('SELECT posicion, ancho_real, alto_real, comentario, confirmado_por, actualizado_en FROM medidas_confirmadas_obra WHERE obra = ?');
         $stmtMedidas->execute([$obra]);
         $medidas = $stmtMedidas->fetchAll();
 
@@ -92,16 +97,19 @@ try {
         }
         $anchoReal = array_key_exists('ancho_real', $body) && $body['ancho_real'] !== '' ? (float) $body['ancho_real'] : null;
         $altoReal = array_key_exists('alto_real', $body) && $body['alto_real'] !== '' ? (float) $body['alto_real'] : null;
+        $comentario = trim((string) ($body['comentario'] ?? ''));
+        $comentarioGuardado = $comentario === '' ? null : $comentario;
 
         $db->prepare("
-            INSERT INTO medidas_confirmadas_obra (obra, posicion, ancho_real, alto_real, confirmado_por, actualizado_en)
-            VALUES (?, ?, ?, ?, ?, datetime('now'))
+            INSERT INTO medidas_confirmadas_obra (obra, posicion, ancho_real, alto_real, comentario, confirmado_por, actualizado_en)
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(obra, posicion) DO UPDATE SET
                 ancho_real = excluded.ancho_real,
                 alto_real = excluded.alto_real,
+                comentario = excluded.comentario,
                 confirmado_por = excluded.confirmado_por,
                 actualizado_en = datetime('now')
-        ")->execute([$obra, $posicion, $anchoReal, $altoReal, $usuario['nombre']]);
+        ")->execute([$obra, $posicion, $anchoReal, $altoReal, $comentarioGuardado, $usuario['nombre']]);
 
         Response::json(['ok' => true]);
     }

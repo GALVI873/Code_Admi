@@ -783,10 +783,12 @@ function normalizarTipoDibujo(tipo) {
 function DetalleMedicionPosicion({ posicionBase, tipo, dibujoBase64, medida, puedeConfirmar, onGuardar, onCerrar, onAnterior, onSiguiente }) {
   const [ancho, setAncho] = useState('')
   const [alto, setAlto] = useState('')
+  const [comentario, setComentario] = useState('')
 
   useEffect(() => {
     setAncho(medida?.ancho_real != null ? String(medida.ancho_real) : '')
     setAlto(medida?.alto_real != null ? String(medida.alto_real) : '')
+    setComentario(medida?.comentario || '')
   }, [posicionBase, medida])
 
   useEffect(() => {
@@ -799,11 +801,16 @@ function DetalleMedicionPosicion({ posicionBase, tipo, dibujoBase64, medida, pue
     return () => window.removeEventListener('keydown', alTeclado)
   }, [onCerrar, onAnterior, onSiguiente])
 
+  // Los tres campos se mandan siempre juntos (el backend reemplaza la fila
+  // entera) — al guardar uno se usa el valor recién tipeado para ese campo
+  // y el resto tal cual está en pantalla, no el que traía la medida vieja.
   function guardarSiCambio(campo, valorCrudo) {
     const valor = valorCrudo.trim()
+    const actual = { ancho, alto, comentario, [campo]: valor }
     if (campo === 'ancho') setAncho(valor)
-    else setAlto(valor)
-    onGuardar(posicionBase, campo === 'ancho' ? valor : ancho, campo === 'alto' ? valor : alto)
+    else if (campo === 'alto') setAlto(valor)
+    else setComentario(valor)
+    onGuardar(posicionBase, actual.ancho, actual.alto, actual.comentario)
   }
 
   return (
@@ -819,46 +826,65 @@ function DetalleMedicionPosicion({ posicionBase, tipo, dibujoBase64, medida, pue
           </div>
         </div>
 
-        <div className="medicion-dibujo">
-          {dibujoBase64 ? (
-            <img src={dibujoBase64} alt={`Dibujo tipo ${tipo}`} />
-          ) : (
-            <p className="dashboard-nota">Todavía no hay dibujo cargado para el tipo {tipo || 'de esta posición'}.</p>
-          )}
-        </div>
+        <div className="medicion-cuerpo">
+          <div className="medicion-dibujo">
+            {dibujoBase64 ? (
+              <img src={dibujoBase64} alt={`Dibujo tipo ${tipo}`} />
+            ) : (
+              <p className="dashboard-nota">Todavía no hay dibujo cargado para el tipo {tipo || 'de esta posición'}.</p>
+            )}
+          </div>
 
-        <div className="medicion-campos">
-          <div className="filtro-campo medicion-campo">
-            <label htmlFor={`ancho-real-${posicionBase}`}>Ancho real (m)</label>
-            <input
-              id={`ancho-real-${posicionBase}`}
-              type="number"
-              step="0.01"
-              className="input-filtro"
-              value={ancho}
-              disabled={!puedeConfirmar}
-              onChange={(e) => setAncho(e.target.value)}
-              onBlur={(e) => guardarSiCambio('ancho', e.target.value)}
-            />
-          </div>
-          <div className="filtro-campo medicion-campo">
-            <label htmlFor={`alto-real-${posicionBase}`}>Alto real (m)</label>
-            <input
-              id={`alto-real-${posicionBase}`}
-              type="number"
-              step="0.01"
-              className="input-filtro"
-              value={alto}
-              disabled={!puedeConfirmar}
-              onChange={(e) => setAlto(e.target.value)}
-              onBlur={(e) => guardarSiCambio('alto', e.target.value)}
-            />
+          <div className="medicion-panel-derecho">
+            <div className="medicion-campos">
+              <div className="filtro-campo medicion-campo">
+                <label htmlFor={`ancho-real-${posicionBase}`}>Ancho real (m)</label>
+                <input
+                  id={`ancho-real-${posicionBase}`}
+                  type="number"
+                  step="0.01"
+                  className="input-filtro"
+                  value={ancho}
+                  disabled={!puedeConfirmar}
+                  onChange={(e) => setAncho(e.target.value)}
+                  onBlur={(e) => guardarSiCambio('ancho', e.target.value)}
+                />
+              </div>
+              <div className="filtro-campo medicion-campo">
+                <label htmlFor={`alto-real-${posicionBase}`}>Alto real (m)</label>
+                <input
+                  id={`alto-real-${posicionBase}`}
+                  type="number"
+                  step="0.01"
+                  className="input-filtro"
+                  value={alto}
+                  disabled={!puedeConfirmar}
+                  onChange={(e) => setAlto(e.target.value)}
+                  onBlur={(e) => guardarSiCambio('alto', e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="filtro-campo medicion-campo medicion-campo-comentario">
+              <label htmlFor={`comentario-medicion-${posicionBase}`}>Comentario</label>
+              <textarea
+                id={`comentario-medicion-${posicionBase}`}
+                className="input-filtro medicion-comentario-textarea"
+                rows={4}
+                placeholder="Notas de la medición…"
+                value={comentario}
+                disabled={!puedeConfirmar}
+                onChange={(e) => setComentario(e.target.value)}
+                onBlur={(e) => guardarSiCambio('comentario', e.target.value)}
+              />
+            </div>
+
+            {medida?.confirmado_por && (
+              <p className="medicion-confirmado-por">Confirmado por {medida.confirmado_por}</p>
+            )}
+            {!puedeConfirmar && <p className="dashboard-nota">Solo Álvaro puede confirmar medidas de obra por ahora.</p>}
           </div>
         </div>
-        {medida?.confirmado_por && (
-          <p className="medicion-confirmado-por">Confirmado por {medida.confirmado_por}</p>
-        )}
-        {!puedeConfirmar && <p className="dashboard-nota">Solo Álvaro puede confirmar medidas de obra por ahora.</p>}
       </div>
     </div>
   )
@@ -959,17 +985,18 @@ function PlanosObra({ obra, materiales }) {
     setPosicionSeleccionada(ordenPosicionesPagina[siguiente].posicion_base)
   }
 
-  async function handleGuardarMedida(posicionBase, anchoStr, altoStr) {
+  async function handleGuardarMedida(posicionBase, anchoStr, altoStr, comentarioStr) {
     const anteriores = medidas
     const nuevaMedida = {
       posicion: posicionBase,
       ancho_real: anchoStr === '' ? null : Number(anchoStr),
       alto_real: altoStr === '' ? null : Number(altoStr),
+      comentario: comentarioStr === '' ? null : comentarioStr,
       confirmado_por: usuario?.nombre,
     }
     setMedidas((ms) => [...ms.filter((m) => m.posicion !== posicionBase), nuevaMedida])
     try {
-      await confirmarMedidaObra(accessToken, obra, posicionBase, nuevaMedida.ancho_real, nuevaMedida.alto_real)
+      await confirmarMedidaObra(accessToken, obra, posicionBase, nuevaMedida.ancho_real, nuevaMedida.alto_real, nuevaMedida.comentario)
     } catch (err) {
       setMedidas(anteriores)
       setError(err.message)
