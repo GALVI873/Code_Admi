@@ -753,6 +753,16 @@ function posicionesConAmbosEnObra(materiales) {
   return new Set([...enObraCarpinteria].filter((base) => enObraVidrio.has(base)))
 }
 
+// El Tipo real de la obra suele venir con cero de relleno ("V01", "V09"),
+// pero los dibujos recortados de la memoria se guardan con el código tal
+// cual lo escribe la propia plancha ("V1", "V9") — se normaliza así en vez
+// de subir el dibujo con dos claves, para no duplicar guardado.
+function normalizarTipoDibujo(tipo) {
+  if (!tipo) return tipo
+  const m = /^V0*(\d+)$/i.exec(tipo.trim())
+  return m ? `V${m[1]}` : tipo
+}
+
 // Los planos son un escaneo con la numeración de posición escrita a mano
 // (no hay texto embebido en el PDF, ver sync_planos.js) — no hay forma de
 // calcular sola la coordenada de cada una, así que se calibra una vez a
@@ -1136,7 +1146,7 @@ function PlanosObra({ obra, materiales }) {
         <DetalleMedicionPosicion
           posicionBase={posicionSeleccionada}
           tipo={tipoPorPosicionBase.get(posicionSeleccionada)}
-          dibujoBase64={dibujosPorTipo[tipoPorPosicionBase.get(posicionSeleccionada)]}
+          dibujoBase64={dibujosPorTipo[normalizarTipoDibujo(tipoPorPosicionBase.get(posicionSeleccionada))]}
           medida={medidasPorPosicion.get(posicionSeleccionada)}
           puedeConfirmar={puedeConfirmarMedida}
           onGuardar={handleGuardarMedida}
