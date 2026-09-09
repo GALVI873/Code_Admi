@@ -383,14 +383,18 @@ function camposExtraDeMateriales(materiales) {
     }))
 }
 
-function SeguimientoPorPosicion({ materiales, onCambiarMaterial }) {
+function SeguimientoPorPosicion({ materiales, onCambiarMaterial, filtroInicial }) {
   // Qué campo arma las cajas — elegible por Alfredo/Álvaro (antes fijo en
   // "tipo"). A propósito NO controla qué filtros se ven en la barra de
   // arriba (antes sí, y quedaba confuso: cambiaba el filtro visible según
   // qué se hubiera elegido acá) — los filtros rápidos son siempre
   // Material/Estado/Posición, fijos, sin importar el agrupador elegido.
   const [campoAgrupador, setCampoAgrupador] = useState('tipo')
-  const [filtros, setFiltros] = useState({})
+  // Precargado al llegar desde un clic en la leyenda de "Estatus" (ver
+  // onVerEnSeguimiento en DetalleObraAceptada) — como esta pestaña se
+  // desmonta al cambiar de pestaña, el valor inicial se vuelve a leer cada
+  // vez que se entra de nuevo, tomando el último clic hecho en Estatus.
+  const [filtros, setFiltros] = useState(() => (filtroInicial ? { ...filtroInicial } : {}))
 
   // Se recalculan por obra (materiales cambia al abrir otra obra) — no se
   // puede armar una lista fija de antemano, cada obra puede traer columnas
@@ -982,8 +986,14 @@ const PALETA_ESTATUS = ['#2563eb', '#f97316', '#16a34a', '#dc2626', '#7c3aed', '
 
 function resumenEstatusPorCategoria(materiales, patron) {
   const estadoPorPosicion = new Map()
+  // Valores reales de "material" que matchean esta categoría (ej. podría
+  // haber más de un texto exacto para "Carpintería" según el Excel) — se
+  // guardan para poder armar el filtro exacto de Seguimiento al hacer clic
+  // en un ítem de la leyenda (ver onVerEnSeguimiento).
+  const materialesReales = new Set()
   for (const m of materiales) {
     if (!patron.test(m.material || '')) continue
+    materialesReales.add(m.material)
     const base = posicionBaseDe(m.posicion)
     if (!base) continue
     estadoPorPosicion.set(base, (m.estado || '').trim() || 'Sin estado')
@@ -992,7 +1002,7 @@ function resumenEstatusPorCategoria(materiales, patron) {
   for (const estado of estadoPorPosicion.values()) {
     conteos.set(estado, (conteos.get(estado) || 0) + 1)
   }
-  return { total: estadoPorPosicion.size, conteos }
+  return { total: estadoPorPosicion.size, conteos, materialesReales }
 }
 
 function DonutEstatus({ total, segmentos }) {
@@ -1016,7 +1026,7 @@ function DonutEstatus({ total, segmentos }) {
   )
 }
 
-function TarjetaEstatusCategoria({ etiqueta, total, conteos, colorDeEstado }) {
+function TarjetaEstatusCategoria({ etiqueta, total, conteos, colorDeEstado, materialesReales, onVerEnSeguimiento }) {
   const segmentos = [...conteos.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([estado, cantidad]) => ({ estado, cantidad, color: colorDeEstado(estado) }))
@@ -1031,7 +1041,12 @@ function TarjetaEstatusCategoria({ etiqueta, total, conteos, colorDeEstado }) {
           <DonutEstatus total={total} segmentos={segmentos} />
           <ul className="estatus-leyenda">
             {segmentos.map(({ estado, cantidad, color }) => (
-              <li key={estado}>
+              <li
+                key={estado}
+                className="estatus-leyenda-clicable"
+                onClick={() => onVerEnSeguimiento(materialesReales, estado)}
+                title={`Ver estas posiciones en Seguimiento (${etiqueta} · ${estado})`}
+              >
                 <span className="estatus-leyenda-punto" style={{ background: color }} />
                 <span className="estatus-leyenda-etiqueta">{estado}</span>
                 <span className="estatus-leyenda-cantidad">
@@ -1086,7 +1101,7 @@ function AvanceObra({ total, completas }) {
   )
 }
 
-function EstatusObra({ materiales }) {
+function EstatusObra({ materiales, onVerEnSeguimiento }) {
   const resumenes = useMemo(
     () => CATEGORIAS_ESTATUS.map((c) => ({ ...c, ...resumenEstatusPorCategoria(materiales, c.patron) })),
     [materiales],
@@ -1120,6 +1135,8 @@ function EstatusObra({ materiales }) {
             total={r.total}
             conteos={r.conteos}
             colorDeEstado={colorDeEstado}
+            materialesReales={r.materialesReales}
+            onVerEnSeguimiento={onVerEnSeguimiento}
           />
         ))}
       </div>
@@ -1149,6 +1166,15 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar
   // vuelve a mirar si después se cambia de pestaña a mano.
   const [searchParams] = useSearchParams()
   const [pestana, setPestana] = useState(() => searchParams.get('pestana') || 'Ficha')
+  // A pedido de Álvaro: clic en un ítem de la leyenda de "Estatus" (ej.
+  // "Carpintería · EN OBRA") salta a la pestaña Seguimiento ya filtrada por
+  // ese material y ese estado, para ver de una las posiciones puntuales.
+  const [filtroInicialSeguimiento, setFiltroInicialSeguimiento] = useState(null)
+
+  function handleVerEnSeguimiento(materialesReales, estado) {
+    setFiltroInicialSeguimiento({ material: materialesReales, estado: new Set([estado]) })
+    setPestana('Seguimiento')
+  }
 
   useEffect(() => {
     setPestana(searchParams.get('pestana') || 'Ficha')
@@ -1195,9 +1221,13 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar
       {pestana === 'Ficha' && (
         <FichaObraAceptada presupuesto={presupuesto} confirmaciones={confirmaciones} onConfirmar={onConfirmar} onQuitar={onQuitar} />
       )}
-      {pestana === 'Estatus' && <EstatusObra materiales={materiales} />}
+      {pestana === 'Estatus' && <EstatusObra materiales={materiales} onVerEnSeguimiento={handleVerEnSeguimiento} />}
       {pestana === 'Seguimiento' && (
-        <SeguimientoPorPosicion materiales={materiales} onCambiarMaterial={(m, campo, valor) => onCambiarMaterial(presupuesto.obra, m, campo, valor)} />
+        <SeguimientoPorPosicion
+          materiales={materiales}
+          onCambiarMaterial={(m, campo, valor) => onCambiarMaterial(presupuesto.obra, m, campo, valor)}
+          filtroInicial={filtroInicialSeguimiento}
+        />
       )}
       {pestana === 'Planos' && <PlanosObra obra={presupuesto.obra} materiales={materiales} />}
       {pestana === 'Notas' && (

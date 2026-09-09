@@ -2484,3 +2484,19 @@ select.celda-editable-material {
   color: #7a8699;
   font-size: 14px;
 }
+
+.estatus-leyenda-clicable {
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  transition: background .15s ease;
+}
+
+.estatus-leyenda-clicable:hover {
+  background: #f0f4fa;
+}
+
+.estatus-leyenda-clicable:hover .estatus-leyenda-etiqueta {
+  text-decoration: underline;
+}
