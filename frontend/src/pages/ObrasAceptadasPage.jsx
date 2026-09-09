@@ -979,7 +979,10 @@ function PlanosObra({ obra, materiales }) {
                 }}
               >
                 <span className={`planos-marca ${claseEstado}`} />
-                <span className="planos-marca-etiqueta">{tipo ? `${tipo} · ${p.posicion_base}` : p.posicion_base}</span>
+                <span className="planos-marca-etiqueta">
+                  {tipo && <span className="planos-marca-etiqueta-tipo">{tipo}</span>}
+                  <span className="planos-marca-etiqueta-posicion">{p.posicion_base}</span>
+                </span>
               </span>
             )
           })}
