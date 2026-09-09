@@ -2317,6 +2317,53 @@ select.celda-editable-material {
 
 /* Pestaña "Estatus" — informe rápido de ventanas por estatus, por
    categoría de material (Carpintería/Vidrio, luego Extras). */
+.estatus-avance {
+  background: white;
+  border: 1px solid #e3e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
+  padding: 22px 28px;
+  margin-bottom: 22px;
+}
+
+.estatus-avance-encabezado {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.estatus-avance-encabezado span {
+  font-size: 19px;
+  color: var(--azul);
+  font-weight: 600;
+}
+
+.estatus-avance-encabezado strong {
+  font-size: 32px;
+  color: var(--verde);
+}
+
+.estatus-avance-barra {
+  height: 22px;
+  background: var(--gris);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.estatus-avance-barra-relleno {
+  height: 100%;
+  background: linear-gradient(90deg, #2db260, var(--verde));
+  border-radius: 999px;
+  transition: width .3s ease;
+}
+
+.estatus-avance-detalle {
+  margin: 10px 0 0;
+  font-size: 15px;
+  color: #7a8699;
+}
+
 .estatus-total-obra {
   font-size: 19px;
   margin-bottom: 22px;

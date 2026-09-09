@@ -1046,16 +1046,53 @@ function TarjetaEstatusCategoria({ etiqueta, total, conteos, colorDeEstado }) {
   )
 }
 
+// Avance de obra (a pedido de Álvaro): una ventana (posición) cuenta como
+// "en obra" al 100% solo cuando TODAS sus categorías de material —
+// Carpintería, Vidrio, Persiana, cualquier otra que tenga esa posición, no
+// solo las dos que se muestran como tarjetas — están en estatus "en obra".
+// Distinto del verde de Planos (posicionesConAmbosEnObra), que solo mira
+// Carpintería+Vidrio: acá se exige el conjunto completo de filas de esa
+// posición.
+function posicionesCompletasEnObra(materiales) {
+  const filasPorPosicion = new Map()
+  for (const m of materiales) {
+    const base = posicionBaseDe(m.posicion)
+    if (!base) continue
+    if (!filasPorPosicion.has(base)) filasPorPosicion.set(base, [])
+    filasPorPosicion.get(base).push(m)
+  }
+  let completas = 0
+  for (const filas of filasPorPosicion.values()) {
+    if (filas.every((m) => (m.estado || '').toUpperCase().includes('OBRA'))) completas += 1
+  }
+  return { total: filasPorPosicion.size, completas }
+}
+
+function AvanceObra({ total, completas }) {
+  const porcentaje = total > 0 ? Math.round((completas / total) * 100) : 0
+  return (
+    <div className="estatus-avance">
+      <div className="estatus-avance-encabezado">
+        <span>Avance de obra</span>
+        <strong>{porcentaje}%</strong>
+      </div>
+      <div className="estatus-avance-barra">
+        <div className="estatus-avance-barra-relleno" style={{ width: `${porcentaje}%` }} />
+      </div>
+      <p className="estatus-avance-detalle">
+        {completas} de {total} ventanas 100% en obra (todas sus categorías: carpintería, vidrio, persiana, etc.)
+      </p>
+    </div>
+  )
+}
+
 function EstatusObra({ materiales }) {
   const resumenes = useMemo(
     () => CATEGORIAS_ESTATUS.map((c) => ({ ...c, ...resumenEstatusPorCategoria(materiales, c.patron) })),
     [materiales],
   )
 
-  const totalVentanasObra = useMemo(
-    () => new Set(materiales.map((m) => posicionBaseDe(m.posicion)).filter(Boolean)).size,
-    [materiales],
-  )
+  const avanceObra = useMemo(() => posicionesCompletasEnObra(materiales), [materiales])
 
   // Mismo color para el mismo estatus en todas las categorías — se asigna
   // por orden alfabético de todos los estatus que aparecen en la obra, no
@@ -1071,8 +1108,9 @@ function EstatusObra({ materiales }) {
 
   return (
     <div className="estatus-obra">
+      <AvanceObra total={avanceObra.total} completas={avanceObra.completas} />
       <p className="estatus-total-obra">
-        <strong>{totalVentanasObra}</strong> ventanas en total en esta obra
+        <strong>{avanceObra.total}</strong> ventanas en total en esta obra
       </p>
       <div className="estatus-tarjetas">
         {resumenes.map((r) => (
