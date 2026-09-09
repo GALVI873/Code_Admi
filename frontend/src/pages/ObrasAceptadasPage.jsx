@@ -13,6 +13,8 @@ import {
   planosObra,
   guardarPosicionPlano,
   quitarPosicionPlano,
+  medidasObra,
+  confirmarMedidaObra,
 } from '../api/client.js'
 import NotasObraAceptada from '../components/NotasObraAceptada.jsx'
 import DireccionContactoObra from '../components/DireccionContactoObra.jsx'
@@ -759,8 +761,105 @@ function posicionesConAmbosEnObra(materiales) {
 // solo con lo que ya está cargado en `materiales` — no hace falta releer
 // nada cuando Alfredo cambia el Estado de una posición en la pestaña
 // Seguimiento, por eso se ve reflejado al toque.
+// Detalle de una posición al hacer clic en el plano (fuera del modo
+// Calibrar) — a pedido de Álvaro: quiere ver el dibujo del tipo con sus
+// medidas de proyecto y poder cargar la medida REAL que confirma en obra
+// (distinta a la de proyecto), sin tener que entrar y salir para pasar de
+// una posición a la siguiente — de ahí las flechas ‹ › que recorren las
+// posiciones ya calibradas de esta misma página del plano, en orden.
+// El dibujo (recorte de la memoria de carpintería) es opcional: solo existe
+// para las obras donde ya se cargó a mano (hoy, únicamente José Abascal) —
+// sin él, igual se puede confirmar la medida.
+function DetalleMedicionPosicion({ posicionBase, tipo, dibujoBase64, medida, puedeConfirmar, onGuardar, onCerrar, onAnterior, onSiguiente }) {
+  const [ancho, setAncho] = useState('')
+  const [alto, setAlto] = useState('')
+
+  useEffect(() => {
+    setAncho(medida?.ancho_real != null ? String(medida.ancho_real) : '')
+    setAlto(medida?.alto_real != null ? String(medida.alto_real) : '')
+  }, [posicionBase, medida])
+
+  useEffect(() => {
+    function alTeclado(e) {
+      if (e.key === 'Escape') onCerrar()
+      else if (e.key === 'ArrowLeft') onAnterior()
+      else if (e.key === 'ArrowRight') onSiguiente()
+    }
+    window.addEventListener('keydown', alTeclado)
+    return () => window.removeEventListener('keydown', alTeclado)
+  }, [onCerrar, onAnterior, onSiguiente])
+
+  function guardarSiCambio(campo, valorCrudo) {
+    const valor = valorCrudo.trim()
+    if (campo === 'ancho') setAncho(valor)
+    else setAlto(valor)
+    onGuardar(posicionBase, campo === 'ancho' ? valor : ancho, campo === 'alto' ? valor : alto)
+  }
+
+  return (
+    <div className="modal-fondo" onClick={onCerrar}>
+      <div className="modal-caja medicion-caja" onClick={(e) => e.stopPropagation()}>
+        <button type="button" className="medicion-flecha medicion-flecha-izq" onClick={onAnterior} aria-label="Posición anterior">‹</button>
+        <button type="button" className="medicion-flecha medicion-flecha-der" onClick={onSiguiente} aria-label="Posición siguiente">›</button>
+        <button className="modal-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
+
+        <div className="modal-header">
+          <div>
+            <h2>Posición {posicionBase}{tipo ? ` — ${tipo}` : ''}</h2>
+          </div>
+        </div>
+
+        <div className="medicion-dibujo">
+          {dibujoBase64 ? (
+            <img src={dibujoBase64} alt={`Dibujo tipo ${tipo}`} />
+          ) : (
+            <p className="dashboard-nota">Todavía no hay dibujo cargado para el tipo {tipo || 'de esta posición'}.</p>
+          )}
+        </div>
+
+        <div className="medicion-campos">
+          <div className="filtro-campo medicion-campo">
+            <label htmlFor={`ancho-real-${posicionBase}`}>Ancho real (m)</label>
+            <input
+              id={`ancho-real-${posicionBase}`}
+              type="number"
+              step="0.01"
+              className="input-filtro"
+              value={ancho}
+              disabled={!puedeConfirmar}
+              onChange={(e) => setAncho(e.target.value)}
+              onBlur={(e) => guardarSiCambio('ancho', e.target.value)}
+            />
+          </div>
+          <div className="filtro-campo medicion-campo">
+            <label htmlFor={`alto-real-${posicionBase}`}>Alto real (m)</label>
+            <input
+              id={`alto-real-${posicionBase}`}
+              type="number"
+              step="0.01"
+              className="input-filtro"
+              value={alto}
+              disabled={!puedeConfirmar}
+              onChange={(e) => setAlto(e.target.value)}
+              onBlur={(e) => guardarSiCambio('alto', e.target.value)}
+            />
+          </div>
+        </div>
+        {medida?.confirmado_por && (
+          <p className="medicion-confirmado-por">Confirmado por {medida.confirmado_por}</p>
+        )}
+        {!puedeConfirmar && <p className="dashboard-nota">Solo Álvaro puede confirmar medidas de obra por ahora.</p>}
+      </div>
+    </div>
+  )
+}
+
 function PlanosObra({ obra, materiales }) {
-  const { accessToken } = useAuth()
+  const { accessToken, usuario } = useAuth()
+  const puedeConfirmarMedida = usuario?.roles?.includes('admin')
+  const [medidas, setMedidas] = useState([])
+  const [dibujosPorTipo, setDibujosPorTipo] = useState({})
+  const [posicionSeleccionada, setPosicionSeleccionada] = useState(null)
   const [paginas, setPaginas] = useState([])
   const [posiciones, setPosiciones] = useState([])
   const [paginaActiva, setPaginaActiva] = useState(1)
@@ -778,6 +877,7 @@ function PlanosObra({ obra, materiales }) {
     setError('')
     setModoCalibrar(false)
     setPosicionArmada('')
+    setPosicionSeleccionada(null)
     planosObra(accessToken, obra)
       .then((data) => {
         if (cancelado) return
@@ -787,6 +887,13 @@ function PlanosObra({ obra, materiales }) {
       })
       .catch((err) => !cancelado && setError(err.message))
       .finally(() => !cancelado && setCargando(false))
+    medidasObra(accessToken, obra)
+      .then((data) => {
+        if (cancelado) return
+        setMedidas(data.medidas || [])
+        setDibujosPorTipo(data.dibujos || {})
+      })
+      .catch(() => {}) // opcional: si falla, el plano sigue funcionando igual sin medidas/dibujos
     return () => {
       cancelado = true
     }
@@ -826,6 +933,38 @@ function PlanosObra({ obra, materiales }) {
   const posicionesSinCalibrar = posicionesBase.filter((p) => !posicionesCalibradas.has(p))
   const paginaImagen = paginas.find((p) => p.pagina === paginaActiva)
   const posicionesDeEstaPagina = posiciones.filter((p) => p.pagina === paginaActiva)
+  // Orden para las flechas ‹ › del detalle de medición — mismo orden en que
+  // se recorrería el plano a mano, numérico/alfabético por posición.
+  const ordenPosicionesPagina = useMemo(
+    () => [...posicionesDeEstaPagina].sort((a, b) => a.posicion_base.localeCompare(b.posicion_base, 'es', { numeric: true })),
+    [posicionesDeEstaPagina],
+  )
+  const medidasPorPosicion = useMemo(() => new Map(medidas.map((m) => [m.posicion, m])), [medidas])
+
+  function moverSeleccion(direccion) {
+    if (!posicionSeleccionada || ordenPosicionesPagina.length === 0) return
+    const idx = ordenPosicionesPagina.findIndex((p) => p.posicion_base === posicionSeleccionada)
+    if (idx === -1) return
+    const siguiente = (idx + direccion + ordenPosicionesPagina.length) % ordenPosicionesPagina.length
+    setPosicionSeleccionada(ordenPosicionesPagina[siguiente].posicion_base)
+  }
+
+  async function handleGuardarMedida(posicionBase, anchoStr, altoStr) {
+    const anteriores = medidas
+    const nuevaMedida = {
+      posicion: posicionBase,
+      ancho_real: anchoStr === '' ? null : Number(anchoStr),
+      alto_real: altoStr === '' ? null : Number(altoStr),
+      confirmado_por: usuario?.nombre,
+    }
+    setMedidas((ms) => [...ms.filter((m) => m.posicion !== posicionBase), nuevaMedida])
+    try {
+      await confirmarMedidaObra(accessToken, obra, posicionBase, nuevaMedida.ancho_real, nuevaMedida.alto_real)
+    } catch (err) {
+      setMedidas(anteriores)
+      setError(err.message)
+    }
+  }
 
   async function handleClickImagen(e) {
     if (!modoCalibrar || !posicionArmada) return
@@ -974,9 +1113,12 @@ function PlanosObra({ obra, materiales }) {
                 style={{ left: `${p.x_pct}%`, top: `${p.y_pct}%` }}
                 title={`Posición ${p.posicion_base}${tipo ? ` (${tipo})` : ''}${estadoTexto}`}
                 onClick={(e) => {
-                  if (!modoCalibrar) return
                   e.stopPropagation()
-                  handleQuitarMarca(p.posicion_base)
+                  if (modoCalibrar) {
+                    handleQuitarMarca(p.posicion_base)
+                  } else {
+                    setPosicionSeleccionada(p.posicion_base)
+                  }
                 }}
               >
                 <span className={`planos-marca ${claseEstado}`} />
@@ -988,6 +1130,20 @@ function PlanosObra({ obra, materiales }) {
             )
           })}
         </div>
+      )}
+
+      {posicionSeleccionada && (
+        <DetalleMedicionPosicion
+          posicionBase={posicionSeleccionada}
+          tipo={tipoPorPosicionBase.get(posicionSeleccionada)}
+          dibujoBase64={dibujosPorTipo[tipoPorPosicionBase.get(posicionSeleccionada)]}
+          medida={medidasPorPosicion.get(posicionSeleccionada)}
+          puedeConfirmar={puedeConfirmarMedida}
+          onGuardar={handleGuardarMedida}
+          onCerrar={() => setPosicionSeleccionada(null)}
+          onAnterior={() => moverSeleccion(-1)}
+          onSiguiente={() => moverSeleccion(1)}
+        />
       )}
     </div>
   )

@@ -178,6 +178,20 @@ export function quitarPosicionPlano(accessToken, obra, posicionBase) {
   })
 }
 
+export function medidasObra(accessToken, obra) {
+  return request(`/medidas_obra.php?obra=${encodeURIComponent(obra)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
+export function confirmarMedidaObra(accessToken, obra, posicion, anchoReal, altoReal) {
+  return request('/medidas_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ obra, posicion, ancho_real: anchoReal, alto_real: altoReal }),
+  })
+}
+
 export function diarioGeneral(accessToken) {
   return request('/diario_general.php', {
     headers: { Authorization: `Bearer ${accessToken}` },
