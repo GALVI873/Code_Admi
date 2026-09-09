@@ -2612,3 +2612,111 @@ select.celda-editable-material {
 .direccion-mapa-link:hover {
   text-decoration: underline;
 }
+
+/* Pestaña "Bitácora" — diario de actividad de Álvaro por obra. */
+.bitacora-obra {
+  max-width: 900px;
+}
+
+.bitacora-obra-form {
+  background: #f7f9fc;
+  border: 1px solid #e3e8f0;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+
+.bitacora-obra-form-fila {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.bitacora-obra-fecha {
+  width: auto;
+  flex: none;
+}
+
+.bitacora-obra-nota-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--texto);
+  cursor: pointer;
+}
+
+.bitacora-obra-textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 44px;
+  font-family: inherit;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.bitacora-obra-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bitacora-obra-item {
+  background: white;
+  border: 1px solid #e3e8f0;
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.bitacora-obra-item-encabezado {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.bitacora-obra-item-fecha {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--azul);
+}
+
+.bitacora-obra-item-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #b8860b;
+  background: #fff8e6;
+  border: 1px solid #f0dca0;
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+
+.bitacora-obra-item-borrar {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  opacity: .5;
+}
+
+.bitacora-obra-item-borrar:hover {
+  opacity: 1;
+}
+
+.bitacora-obra-item-texto {
+  font-size: 14.5px;
+  color: var(--texto);
+  white-space: pre-wrap;
+  margin: 0 0 4px;
+}
+
+.bitacora-obra-item-autor {
+  font-size: 11.5px;
+  color: #999;
+}

@@ -230,6 +230,27 @@ export function eliminarConversacionObra(accessToken, obra) {
   })
 }
 
+export function bitacoraObra(accessToken, obra) {
+  return request(`/bitacora_obra.php?obra=${encodeURIComponent(obra)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
+export function agregarBitacoraObra(accessToken, obra, fecha, texto, enviarComoNota) {
+  return request('/bitacora_obra.php', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ obra, fecha, texto, enviar_como_nota: enviarComoNota }),
+  })
+}
+
+export function eliminarBitacoraObra(accessToken, id) {
+  return request(`/bitacora_obra.php?id=${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
 export function adicionalesObra(accessToken) {
   return request('/adicionales_obra.php', {
     headers: { Authorization: `Bearer ${accessToken}` },
