@@ -761,6 +761,7 @@ function DetalleSeguimiento({ base, opciones, ofertas, direccion, onGuardarDirec
         <DireccionContactoObra
           obra={base}
           datos={direccion}
+          colapsable
           onGuardar={(datos) => onGuardarDireccion(base, datos)}
         />
 

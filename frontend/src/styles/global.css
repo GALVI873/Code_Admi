@@ -2517,6 +2517,50 @@ select.celda-editable-material {
   color: var(--azul);
 }
 
+/* Variante colapsable: mismo fondo tenue que la página (en vez de tarjeta
+   blanca) para no llamar la atención antes de tiempo — arranca cerrada. */
+.direccion-contacto-tenue {
+  background: #f4f7fb;
+  box-shadow: none;
+}
+
+.direccion-contacto-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--azul);
+  cursor: pointer;
+  text-align: left;
+}
+
+.direccion-contacto-toggle:hover {
+  color: var(--azul-med);
+}
+
+.direccion-contacto-toggle span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.direccion-contacto-flecha {
+  font-size: 10px;
+  color: #7a8699;
+  flex: none;
+}
+
+.direccion-contacto-tenue .direccion-contacto-grid {
+  margin-top: 16px;
+}
+
 .direccion-contacto-grid {
   display: flex;
   flex-wrap: wrap;

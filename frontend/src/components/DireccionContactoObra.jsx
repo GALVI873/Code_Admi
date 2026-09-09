@@ -14,7 +14,13 @@ import { useEffect, useState } from 'react'
 // backend (obra_direccion_contacto, keyeada por nombre base): la dirección
 // se puede cargar apenas se presupuesta y sigue viéndose igual una vez
 // aceptada la obra, sin tener que cargarla dos veces.
-export default function DireccionContactoObra({ obra, datos, onGuardar }) {
+//
+// "colapsable" (a pedido de Álvaro): arranca cerrado y con el mismo fondo
+// tenue de la página (en vez de tarjeta blanca) para no ensuciar la Ficha
+// ni el modal de Presupuesto a primera vista — se vuelve a cerrar solo
+// cada vez que se cambia de obra. Cuando está cerrado y ya hay algo
+// cargado, el encabezado muestra la dirección como resumen.
+export default function DireccionContactoObra({ obra, datos, onGuardar, colapsable = false }) {
   // El nombre de obra trae comas/espacios ("Manipa, 89") — no válidos en un
   // id de HTML, así que los inputs usan esta versión "limpia" solo para
   // id/htmlFor (la key de React sí puede llevar el nombre tal cual).
@@ -26,6 +32,7 @@ export default function DireccionContactoObra({ obra, datos, onGuardar }) {
     telefono: '',
     email: '',
   })
+  const [abierto, setAbierto] = useState(!colapsable)
 
   useEffect(() => {
     setCampos({
@@ -37,6 +44,11 @@ export default function DireccionContactoObra({ obra, datos, onGuardar }) {
     })
   }, [obra, datos])
 
+  useEffect(() => {
+    setAbierto(!colapsable)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [obra])
+
   function guardarCampo(campo, valorCrudo) {
     const valor = valorCrudo.trim()
     if (valor === (campos[campo] || '')) return // sin cambios, no manda un PATCH de más
@@ -45,14 +57,27 @@ export default function DireccionContactoObra({ obra, datos, onGuardar }) {
     onGuardar(actualizado)
   }
 
-  const direccionParaMapa = [campos.direccion, campos.localidad].filter(Boolean).join(', ')
-  const urlMapa = direccionParaMapa
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(direccionParaMapa)}`
+  const resumen = [campos.direccion, campos.localidad].filter(Boolean).join(', ')
+  const urlMapa = resumen
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(resumen)}`
     : null
 
   return (
-    <div className="direccion-contacto">
-      <h3>Dirección y contacto</h3>
+    <div className={`direccion-contacto ${colapsable ? 'direccion-contacto-tenue' : ''}`}>
+      {colapsable ? (
+        <button
+          type="button"
+          className="direccion-contacto-toggle"
+          onClick={() => setAbierto((v) => !v)}
+          aria-expanded={abierto}
+        >
+          <span>📍 Dirección y contacto{!abierto && resumen ? ` — ${resumen}` : ''}</span>
+          <span className="direccion-contacto-flecha">{abierto ? '▲' : '▼'}</span>
+        </button>
+      ) : (
+        <h3>Dirección y contacto</h3>
+      )}
+      {abierto && (
       <div className="direccion-contacto-grid">
         <div className="filtro-campo direccion-contacto-campo-direccion">
           <label htmlFor={`direccion-${idBase}`}>Dirección</label>
@@ -116,6 +141,7 @@ export default function DireccionContactoObra({ obra, datos, onGuardar }) {
           />
         </div>
       </div>
+      )}
     </div>
   )
 }

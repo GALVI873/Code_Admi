@@ -1255,6 +1255,7 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, direccio
           <DireccionContactoObra
             obra={presupuesto.obra}
             datos={direccion}
+            colapsable
             onGuardar={(datos) => onGuardarDireccion(presupuesto.obra, datos)}
           />
           <FichaObraAceptada presupuesto={presupuesto} confirmaciones={confirmaciones} onConfirmar={onConfirmar} onQuitar={onQuitar} />
