@@ -1061,14 +1061,17 @@ function TarjetaEstatusCategoria({ etiqueta, total, conteos, colorDeEstado, mate
   )
 }
 
-// Avance de obra (a pedido de Álvaro): una ventana (posición) cuenta como
-// "en obra" al 100% solo cuando TODAS sus categorías de material —
-// Carpintería, Vidrio, Persiana, cualquier otra que tenga esa posición, no
-// solo las dos que se muestran como tarjetas — están en estatus "en obra".
-// Distinto del verde de Planos (posicionesConAmbosEnObra), que solo mira
-// Carpintería+Vidrio: acá se exige el conjunto completo de filas de esa
-// posición.
-function posicionesCompletasEnObra(materiales) {
+// Avance de obra (a pedido de Álvaro): cada ventana (posición) pesa igual
+// dentro del total, pero SU propio avance es ponderado por cuánto de sus
+// categorías de material —Carpintería, Vidrio, Persiana, Precerco,
+// cualquier otra que tenga esa posición, no solo las dos que se muestran
+// como tarjetas— ya están "en obra" (ej. una ventana con Precerco y
+// Carpintería en obra pero el Vidrio en fabricación pesa 2/3 = 67%, no 0%
+// como si nada estuviera hecho). El avance de la obra completa es el
+// promedio de esos avances por ventana. "Completas" (100%) son las que
+// tienen TODAS sus filas en obra — distinto del verde de Planos
+// (posicionesConAmbosEnObra), que solo mira Carpintería+Vidrio.
+function avanceObraDe(materiales) {
   const filasPorPosicion = new Map()
   for (const m of materiales) {
     const base = posicionBaseDe(m.posicion)
@@ -1077,14 +1080,17 @@ function posicionesCompletasEnObra(materiales) {
     filasPorPosicion.get(base).push(m)
   }
   let completas = 0
+  let sumaAvances = 0
   for (const filas of filasPorPosicion.values()) {
-    if (filas.every((m) => (m.estado || '').toUpperCase().includes('OBRA'))) completas += 1
+    const enObra = filas.filter((m) => (m.estado || '').toUpperCase().includes('OBRA')).length
+    if (enObra === filas.length) completas += 1
+    sumaAvances += enObra / filas.length
   }
-  return { total: filasPorPosicion.size, completas }
+  const total = filasPorPosicion.size
+  return { total, completas, equivalente: sumaAvances, porcentaje: total > 0 ? Math.round((sumaAvances / total) * 100) : 0 }
 }
 
-function AvanceObra({ total, completas }) {
-  const porcentaje = total > 0 ? Math.round((completas / total) * 100) : 0
+function AvanceObra({ total, completas, equivalente, porcentaje }) {
   return (
     <div className="estatus-avance">
       <div className="estatus-avance-encabezado">
@@ -1095,7 +1101,7 @@ function AvanceObra({ total, completas }) {
         <div className="estatus-avance-barra-relleno" style={{ width: `${porcentaje}%` }} />
       </div>
       <p className="estatus-avance-detalle">
-        {completas} de {total} ventanas 100% en obra (todas sus categorías: carpintería, vidrio, persiana, etc.)
+        {equivalente.toFixed(1)} de {total} ventanas equivalentes en obra ({completas} completas al 100% — el resto pondera lo que ya tiene cada una: carpintería, vidrio, persiana, etc.)
       </p>
     </div>
   )
@@ -1107,7 +1113,7 @@ function EstatusObra({ materiales, onVerEnSeguimiento }) {
     [materiales],
   )
 
-  const avanceObra = useMemo(() => posicionesCompletasEnObra(materiales), [materiales])
+  const avanceObra = useMemo(() => avanceObraDe(materiales), [materiales])
 
   // Mismo color para el mismo estatus en todas las categorías — se asigna
   // por orden alfabético de todos los estatus que aparecen en la obra, no
@@ -1123,7 +1129,12 @@ function EstatusObra({ materiales, onVerEnSeguimiento }) {
 
   return (
     <div className="estatus-obra">
-      <AvanceObra total={avanceObra.total} completas={avanceObra.completas} />
+      <AvanceObra
+        total={avanceObra.total}
+        completas={avanceObra.completas}
+        equivalente={avanceObra.equivalente}
+        porcentaje={avanceObra.porcentaje}
+      />
       <p className="estatus-total-obra">
         <strong>{avanceObra.total}</strong> ventanas en total en esta obra
       </p>
