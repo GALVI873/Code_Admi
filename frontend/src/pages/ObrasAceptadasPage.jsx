@@ -346,13 +346,31 @@ function pasaFiltros(m, filtros, campos) {
 
 const EMPTY_SET = new Set()
 
+// Sin tilde/mayúsculas/espacios sueltos — para poder comparar el nombre de
+// columna real del Excel ("Posición", "TIPO"...) contra las etiquetas fijas
+// de CAMPOS_MATERIAL sin que un acento o un espacio de más cuente como
+// "distinta columna".
+function normalizarNombreColumna(s) {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
+const ETIQUETAS_CAMPOS_FIJOS = new Set(CAMPOS_MATERIAL.map((c) => normalizarNombreColumna(c.etiqueta)))
+
 // Columnas propias del proyecto (extra_campos, ver
 // extract_seguimiento_materiales.js) — de la A hasta "Ancho Proy." del
 // Excel de ESTA obra puntual, distintas entre un edificio y una vivienda
 // de particular. Se descubren leyendo qué claves realmente trae el JSON de
 // cada fila (no hay una lista fija posible, cada obra puede traer otras) y
 // se ofrecen como agrupador/filtro adicional a Tipo/Posición/Material/
-// Estado/Proveedor.
+// Estado/Proveedor. Si el Excel de esta obra ya trae una columna con ese
+// mismo nombre en su rango fijo (ej. "Posición" o "Tipo" repetidos: una
+// vez en la zona de datos del proyecto y otra en la de seguimiento), se
+// descarta acá — si no, salía duplicada como agrupador y como columna de
+// tabla (caso real: Manipa, 89).
 function camposExtraDeMateriales(materiales) {
   const nombres = new Set()
   for (const m of materiales) {
@@ -367,6 +385,7 @@ function camposExtraDeMateriales(materiales) {
     }
   }
   return [...nombres]
+    .filter((nombre) => !ETIQUETAS_CAMPOS_FIJOS.has(normalizarNombreColumna(nombre)))
     .sort((a, b) => a.localeCompare(b, 'es', { numeric: true }))
     .map((nombre) => ({
       campo: `extra:${nombre}`,
