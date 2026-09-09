@@ -2500,3 +2500,56 @@ select.celda-editable-material {
 .estatus-leyenda-clicable:hover .estatus-leyenda-etiqueta {
   text-decoration: underline;
 }
+
+/* Ficha — "Dirección y contacto" (dato manual, no viene de ningún Excel). */
+.direccion-contacto {
+  background: white;
+  border: 1px solid #e3e8f0;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
+  padding: 18px 20px;
+  margin-bottom: 20px;
+}
+
+.direccion-contacto h3 {
+  margin: 0 0 14px;
+  font-size: 15px;
+  color: var(--azul);
+}
+
+.direccion-contacto-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.direccion-contacto-campo-direccion {
+  flex: 1 1 260px;
+}
+
+/* .filtro-campo por defecto es una fila (label + input lado a lado, 130px
+   fijo) — acá se quiere label arriba e input ancho, mismo criterio que se
+   corrigió antes en .adicionales-obra-form. */
+.direccion-contacto-grid .filtro-campo {
+  flex: 1 1 180px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.direccion-contacto-grid .filtro-campo .input-filtro {
+  width: 100%;
+  flex: none;
+}
+
+.direccion-mapa-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--azul-med);
+  text-decoration: none;
+}
+
+.direccion-mapa-link:hover {
+  text-decoration: underline;
+}

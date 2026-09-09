@@ -9,6 +9,7 @@ import {
   actualizarMaterialObraAceptada,
   cambiarEstatusObraAceptada,
   marcarObraAceptadaVista,
+  guardarDireccionObra,
   planosObra,
   guardarPosicionPlano,
   quitarPosicionPlano,
@@ -654,6 +655,119 @@ function FilaFicha({ definicion, valorPresupuesto, confirmacion, onConfirmar, on
   )
 }
 
+// Dirección y contacto (a pedido de Álvaro): dato 100% manual, no sale de
+// ningún Excel — se guarda en cuanto se toca cada campo (onBlur), sin botón
+// "Guardar" aparte, mismo criterio que el resto de los campos sueltos del
+// panel (ej. Fecha límite de entrega en Presupuesto). La dirección, si hay
+// algo cargado, se muestra además como link a Google Maps (con la
+// localidad sumada a la búsqueda si también está cargada, para desambiguar
+// calles con el mismo nombre en ciudades distintas).
+function DireccionContactoObra({ obra, datos, onGuardar }) {
+  // El nombre de obra trae comas/espacios ("Manipa, 89") — no válidos en un
+  // id de HTML, así que los inputs usan esta versión "limpia" solo para
+  // id/htmlFor (la key de React sí puede llevar el nombre tal cual).
+  const idBase = obra.replace(/[^a-zA-Z0-9]+/g, '-')
+  const [campos, setCampos] = useState({
+    direccion: '',
+    localidad: '',
+    contacto_nombre: '',
+    telefono: '',
+    email: '',
+  })
+
+  useEffect(() => {
+    setCampos({
+      direccion: datos?.direccion || '',
+      localidad: datos?.localidad || '',
+      contacto_nombre: datos?.contacto_nombre || '',
+      telefono: datos?.telefono || '',
+      email: datos?.email || '',
+    })
+  }, [obra, datos])
+
+  function guardarCampo(campo, valorCrudo) {
+    const valor = valorCrudo.trim()
+    if (valor === (campos[campo] || '')) return // sin cambios, no manda un PATCH de más
+    const actualizado = { ...campos, [campo]: valor }
+    setCampos(actualizado)
+    onGuardar(actualizado)
+  }
+
+  const direccionParaMapa = [campos.direccion, campos.localidad].filter(Boolean).join(', ')
+  const urlMapa = direccionParaMapa
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(direccionParaMapa)}`
+    : null
+
+  return (
+    <div className="direccion-contacto">
+      <h3>Dirección y contacto</h3>
+      <div className="direccion-contacto-grid">
+        <div className="filtro-campo direccion-contacto-campo-direccion">
+          <label htmlFor={`direccion-${idBase}`}>Dirección</label>
+          <input
+            id={`direccion-${idBase}`}
+            type="text"
+            className="input-filtro"
+            defaultValue={campos.direccion}
+            key={`direccion-${obra}-${campos.direccion}`}
+            placeholder="Calle, número…"
+            onBlur={(e) => guardarCampo('direccion', e.target.value)}
+          />
+          {urlMapa && (
+            <a href={urlMapa} target="_blank" rel="noopener noreferrer" className="direccion-mapa-link">
+              📍 Ver en Google Maps
+            </a>
+          )}
+        </div>
+        <div className="filtro-campo">
+          <label htmlFor={`localidad-${idBase}`}>Localidad</label>
+          <input
+            id={`localidad-${idBase}`}
+            type="text"
+            className="input-filtro"
+            defaultValue={campos.localidad}
+            key={`localidad-${obra}-${campos.localidad}`}
+            onBlur={(e) => guardarCampo('localidad', e.target.value)}
+          />
+        </div>
+        <div className="filtro-campo">
+          <label htmlFor={`contacto-nombre-${idBase}`}>Persona de contacto</label>
+          <input
+            id={`contacto-nombre-${idBase}`}
+            type="text"
+            className="input-filtro"
+            defaultValue={campos.contacto_nombre}
+            key={`contacto-nombre-${obra}-${campos.contacto_nombre}`}
+            onBlur={(e) => guardarCampo('contacto_nombre', e.target.value)}
+          />
+        </div>
+        <div className="filtro-campo">
+          <label htmlFor={`telefono-${idBase}`}>Teléfono</label>
+          <input
+            id={`telefono-${idBase}`}
+            type="text"
+            className="input-filtro"
+            defaultValue={campos.telefono}
+            key={`telefono-${obra}-${campos.telefono}`}
+            onBlur={(e) => guardarCampo('telefono', e.target.value)}
+          />
+        </div>
+        <div className="filtro-campo">
+          <label htmlFor={`email-${idBase}`}>Email</label>
+          <input
+            id={`email-${idBase}`}
+            type="email"
+            className="input-filtro"
+            defaultValue={campos.email}
+            key={`email-${obra}-${campos.email}`}
+            onBlur={(e) => guardarCampo('email', e.target.value)}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function FichaObraAceptada({ presupuesto, confirmaciones, onConfirmar, onQuitar }) {
   const confirmacionPorCampo = useMemo(
     () => new Map(confirmaciones.map((c) => [c.campo, c])),
@@ -1188,7 +1302,7 @@ const PESTANAS_DETALLE = ['Ficha', 'Estatus', 'Seguimiento', 'Planos', 'Notas']
 // tildando. La pestaña muestra un punto cuando hay mensajes sin leer,
 // además de la insignia en la tarjeta de la lista (InsigniaMensajes, mismo
 // criterio que las otras vistas).
-function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar, onConfirmar, onQuitar, onCambiarMaterial, onLeido, onVista }) {
+function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, direccion, onCerrar, onConfirmar, onQuitar, onCambiarMaterial, onLeido, onVista, onGuardarDireccion }) {
   const { accessToken, usuario } = useAuth()
   // La vista "Pendientes" enlaza directo a la pestaña Notas de una obra
   // (?pestana=Notas, ver PendientesObrasPage.jsx) para no obligar a un
@@ -1249,7 +1363,14 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, onCerrar
       </div>
 
       {pestana === 'Ficha' && (
-        <FichaObraAceptada presupuesto={presupuesto} confirmaciones={confirmaciones} onConfirmar={onConfirmar} onQuitar={onQuitar} />
+        <>
+          <DireccionContactoObra
+            obra={presupuesto.obra}
+            datos={direccion}
+            onGuardar={(datos) => onGuardarDireccion(presupuesto.obra, datos)}
+          />
+          <FichaObraAceptada presupuesto={presupuesto} confirmaciones={confirmaciones} onConfirmar={onConfirmar} onQuitar={onQuitar} />
+        </>
       )}
       {pestana === 'Estatus' && <EstatusObra materiales={materiales} onVerEnSeguimiento={handleVerEnSeguimiento} />}
       {pestana === 'Seguimiento' && (
@@ -1279,6 +1400,7 @@ export default function ObrasAceptadasPage() {
   const [filas, setFilas] = useState([])
   const [materiales, setMateriales] = useState([])
   const [confirmaciones, setConfirmaciones] = useState([])
+  const [direcciones, setDirecciones] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [busquedaObra, setBusquedaObra] = useState('')
@@ -1299,6 +1421,7 @@ export default function ObrasAceptadasPage() {
       .then(([datosObras, datosMateriales]) => {
         setFilas(datosObras.obras)
         setConfirmaciones(datosObras.confirmaciones || [])
+        setDirecciones(datosObras.direcciones || [])
         setMateriales(datosMateriales.materiales || [])
       })
       .catch((err) => setError(err.message))
@@ -1324,6 +1447,17 @@ export default function ObrasAceptadasPage() {
     }
     return mapa
   }, [confirmaciones])
+
+  const direccionesPorObra = useMemo(() => new Map(direcciones.map((d) => [d.obra, d])), [direcciones])
+
+  async function handleGuardarDireccion(obra, datos) {
+    setDirecciones((ds) => [...ds.filter((d) => d.obra !== obra), { obra, ...datos }])
+    try {
+      await guardarDireccionObra(accessToken, obra, datos)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
 
   // Cada fila de obras_aceptadas.php ya es, por definición, una obra
   // aceptada (la tabla solo existe para eso) — a diferencia de
@@ -1477,12 +1611,14 @@ export default function ObrasAceptadasPage() {
           presupuesto={obraSeleccionada}
           materiales={materialesPorObra.get(obraSeleccionada.obra) || []}
           confirmaciones={confirmacionesPorObra.get(obraSeleccionada.obra) || []}
+          direccion={direccionesPorObra.get(obraSeleccionada.obra)}
           onCerrar={() => navigate('/obras-aceptadas')}
           onConfirmar={handleConfirmarCampo}
           onQuitar={handleQuitarConfirmacion}
           onCambiarMaterial={handleCambiarMaterial}
           onLeido={handleLeido}
           onVista={handleVista}
+          onGuardarDireccion={handleGuardarDireccion}
         />
       )
     }

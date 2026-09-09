@@ -140,6 +140,14 @@ export function marcarObraAceptadaVista(accessToken, obra) {
   })
 }
 
+export function guardarDireccionObra(accessToken, obra, datos) {
+  return request('/obras_aceptadas.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ obra, guardar_direccion: true, ...datos }),
+  })
+}
+
 export function planosObra(accessToken, obra) {
   return request(`/planos.php?obra=${encodeURIComponent(obra)}`, {
     headers: { Authorization: `Bearer ${accessToken}` },

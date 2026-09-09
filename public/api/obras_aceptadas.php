@@ -42,6 +42,17 @@ declare(strict_types=1);
 // PATCH {obra, marcar_vista:true}: apaga la insignia "Nueva" (es_nueva) al
 // abrir el detalle por primera vez — ver traspasar_obras_aceptadas.js para
 // cómo se pone en 1.
+// PATCH {obra, guardar_direccion:true, direccion, localidad, contacto_nombre,
+// telefono, email}: Dirección/contacto de la obra, a pedido de Álvaro —
+// dato 100% manual (no sale de ningún Excel ni de Drive, a diferencia del
+// resto de esta página), por eso vive en su propia tabla
+// (obra_direccion_contacto) en vez de una columna más de obras_aceptadas:
+// si fuera columna de obras_aceptadas, el UPSERT de la sincronización de
+// más abajo la pisaría con NULL en la próxima corrida (ese INSERT/UPDATE
+// siempre manda todos los campos que conoce, y Drive no sabe nada de
+// dirección/contacto). Guardando en tabla aparte, la sincronización ni la
+// toca — mismo motivo por el que "estatus"/"es_nueva" quedan afuera del
+// UPDATE de la sincronización en vez de protegidas ahí mismo.
 // POST: {accion:"listar"} lectura administrativa para el script de
 // escritura (protegido por SYNC_TOKEN, sin sesión). Upsert de una obra
 // puntual, usado por la sincronización con Drive (mismo token).
@@ -156,6 +167,18 @@ try {
         )
     ");
     $db->exec("
+        CREATE TABLE IF NOT EXISTS obra_direccion_contacto (
+          obra TEXT PRIMARY KEY,
+          direccion TEXT,
+          localidad TEXT,
+          contacto_nombre TEXT,
+          telefono TEXT,
+          email TEXT,
+          actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    ");
+
+    $db->exec("
         CREATE TABLE IF NOT EXISTS comentarios_obra_leido (
           obra TEXT NOT NULL,
           usuario_email TEXT NOT NULL,
@@ -170,6 +193,7 @@ try {
 
         $obras = $db->query('SELECT * FROM obras_aceptadas ORDER BY obra')->fetchAll();
         $confirmaciones = $db->query('SELECT * FROM obra_aceptada_confirmaciones')->fetchAll();
+        $direcciones = $db->query('SELECT * FROM obra_direccion_contacto')->fetchAll();
 
         // Insignia de "hay mensajes sin leer" por obra — mismo criterio que
         // presupuestos_en_estudio.php: último mensaje de la conversación
@@ -196,7 +220,7 @@ try {
         }
         unset($o);
 
-        Response::json(['obras' => $obras, 'confirmaciones' => $confirmaciones]);
+        Response::json(['obras' => $obras, 'confirmaciones' => $confirmaciones, 'direcciones' => $direcciones]);
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'PATCH') {
@@ -205,6 +229,41 @@ try {
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
         $obra = trim((string) ($body['obra'] ?? ''));
+
+        // Dirección/contacto — ver comentario grande de arriba. Se guardan
+        // los 5 campos juntos siempre (el frontend manda el objeto completo
+        // en cada guardado, no campo por campo) para no necesitar un
+        // "campo" más en CAMPOS_CONFIRMABLES.
+        if (($body['guardar_direccion'] ?? false) === true) {
+            if ($obra === '') {
+                Response::error('Falta "obra"', 422);
+            }
+            $direccion = trim((string) ($body['direccion'] ?? ''));
+            $localidad = trim((string) ($body['localidad'] ?? ''));
+            $contactoNombre = trim((string) ($body['contacto_nombre'] ?? ''));
+            $telefono = trim((string) ($body['telefono'] ?? ''));
+            $email = trim((string) ($body['email'] ?? ''));
+
+            $db->prepare("
+                INSERT INTO obra_direccion_contacto (obra, direccion, localidad, contacto_nombre, telefono, email, actualizado_en)
+                VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(obra) DO UPDATE SET
+                    direccion = excluded.direccion,
+                    localidad = excluded.localidad,
+                    contacto_nombre = excluded.contacto_nombre,
+                    telefono = excluded.telefono,
+                    email = excluded.email,
+                    actualizado_en = datetime('now')
+            ")->execute([
+                $obra,
+                $direccion === '' ? null : $direccion,
+                $localidad === '' ? null : $localidad,
+                $contactoNombre === '' ? null : $contactoNombre,
+                $telefono === '' ? null : $telefono,
+                $email === '' ? null : $email,
+            ]);
+            Response::json(['ok' => true]);
+        }
 
         // Apaga la insignia "Nueva" — se llama sola al abrir el detalle de
         // la obra por primera vez (ver ObrasAceptadasPage.jsx).
