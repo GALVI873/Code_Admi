@@ -10,7 +10,9 @@ import {
   adicionalesObra,
   cambiarPrioridadAdicionalObra,
   cambiarEstatusAdicionalObra,
+  guardarDireccionPresupuesto,
 } from '../api/client.js'
+import DireccionContactoObra from '../components/DireccionContactoObra.jsx'
 import ComentariosObra from '../components/ComentariosObra.jsx'
 import AdicionalesDeObra from '../components/AdicionalesDeObra.jsx'
 
@@ -663,7 +665,7 @@ function ItemGrupoGeneralCompacto({ grupo, numero, onAbrir, onCambio, puedeMarca
   )
 }
 
-function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta, puedeMarcarInteresante, puedeCambiarPrioridad, puedeGestionarOfertas, accessToken, usuarioEmail, onLeido }) {
+function DetalleSeguimiento({ base, opciones, ofertas, direccion, onGuardarDireccion, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta, puedeMarcarInteresante, puedeCambiarPrioridad, puedeGestionarOfertas, accessToken, usuarioEmail, onLeido }) {
   const [ofertasAbiertas, setOfertasAbiertas] = useState(false)
   const [pestanaActivaId, setPestanaActivaId] = useState(opciones[0]?.id)
   const [chatAbierto, setChatAbierto] = useState(false)
@@ -755,6 +757,12 @@ function DetalleSeguimiento({ base, opciones, ofertas, onCerrar, onCambio, onAgr
             <FechaLimiteEntrega presupuesto={activo} onCambio={onCambio} puedeEditar={puedeGestionarOfertas} />
           </div>
         </div>
+
+        <DireccionContactoObra
+          obra={base}
+          datos={direccion}
+          onGuardar={(datos) => onGuardarDireccion(base, datos)}
+        />
 
         <LineaTiempo
           presupuesto={activo}
@@ -943,6 +951,7 @@ export default function SeguimientoPage() {
   const [filas, setFilas] = useState([])
   const [ofertas, setOfertas] = useState([])
   const [adicionales, setAdicionales] = useState([])
+  const [direcciones, setDirecciones] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [busquedaObra, setBusquedaObra] = useState('')
@@ -981,6 +990,7 @@ export default function SeguimientoPage() {
       .then((data) => {
         setFilas(data.presupuestos)
         setOfertas(data.ofertas || [])
+        setDirecciones(data.direcciones || [])
       })
       .catch((err) => setError(err.message))
       .finally(() => setCargando(false))
@@ -1219,6 +1229,7 @@ export default function SeguimientoPage() {
   const ofertasDeSeleccionada = obraSeleccionadaBase
     ? ofertas.filter((o) => nombreBase(o.obra) === obraSeleccionadaBase)
     : []
+  const direccionesPorBase = useMemo(() => new Map(direcciones.map((d) => [d.obra, d])), [direcciones])
 
   async function handleCambio(id, cambios) {
     const anteriores = filas
@@ -1227,6 +1238,19 @@ export default function SeguimientoPage() {
       await actualizarPresupuestoEnEstudio(accessToken, id, cambios)
     } catch (err) {
       setFilas(anteriores)
+      setError(err.message)
+    }
+  }
+
+  // Dirección/contacto (a pedido de Álvaro) — guardada por nombre BASE de
+  // obra, misma tabla que usa Obras Aceptadas (ver DireccionContactoObra),
+  // así que lo que se carga acá mientras se presupuesta se ve igual una vez
+  // aceptada la obra.
+  async function handleGuardarDireccion(base, datos) {
+    setDirecciones((ds) => [...ds.filter((d) => d.obra !== base), { obra: base, ...datos }])
+    try {
+      await guardarDireccionPresupuesto(accessToken, base, datos)
+    } catch (err) {
       setError(err.message)
     }
   }
@@ -1517,6 +1541,8 @@ export default function SeguimientoPage() {
           base={obraSeleccionadaBase}
           opciones={opcionesSeleccionadas}
           ofertas={ofertasDeSeleccionada}
+          direccion={direccionesPorBase.get(obraSeleccionadaBase)}
+          onGuardarDireccion={handleGuardarDireccion}
           onCerrar={() => setObraSeleccionadaBase(null)}
           onCambio={handleCambio}
           onAgregarOferta={handleAgregarOferta}

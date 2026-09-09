@@ -234,6 +234,24 @@ try {
         )
     ");
 
+    // Dirección/contacto de la obra (a pedido de Álvaro) — misma tabla que
+    // usa obras_aceptadas.php, keyeada por nombre BASE (nombreBaseObra) para
+    // que lo cargado acá mientras se presupuesta se siga viendo igual una
+    // vez que la obra se acepta, sin cargarlo dos veces. Definida también
+    // acá por el mismo motivo que comentarios_obra: cada endpoint asegura
+    // las tablas que toca, sin depender de cuál la creó primero.
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS obra_direccion_contacto (
+          obra TEXT PRIMARY KEY,
+          direccion TEXT,
+          localidad TEXT,
+          contacto_nombre TEXT,
+          telefono TEXT,
+          email TEXT,
+          actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    ");
+
     $columnasOfertas = array_column($db->query('PRAGMA table_info(ofertas_proveedor)')->fetchAll(), 'name');
     if (!in_array('estatus', $columnasOfertas, true)) {
         $db->exec("ALTER TABLE ofertas_proveedor ADD COLUMN estatus TEXT NOT NULL DEFAULT 'Recibido'");
@@ -338,6 +356,7 @@ try {
         $stmt = $db->query('SELECT * FROM presupuestos_en_estudio ORDER BY fecha_ultimo_envio DESC');
         $presupuestos = $stmt->fetchAll();
         $ofertas = $db->query('SELECT * FROM ofertas_proveedor ORDER BY obra, fecha DESC')->fetchAll();
+        $direcciones = $db->query('SELECT * FROM obra_direccion_contacto')->fetchAll();
 
         // Insignia de "hay mensajes sin leer" por obra: se compara el
         // mensaje más reciente de cada conversación contra la última vez que
@@ -386,13 +405,51 @@ try {
         }
         unset($p);
 
-        Response::json(['presupuestos' => $presupuestos, 'ofertas' => $ofertas]);
+        Response::json(['presupuestos' => $presupuestos, 'ofertas' => $ofertas, 'direcciones' => $direcciones]);
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'PATCH') {
         $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
+
+        // Dirección/contacto — mismo dato manual y misma tabla que
+        // obras_aceptadas.php (obra_direccion_contacto), acá guardada bajo
+        // el nombre BASE de la obra para que las distintas "— Opción A/B"
+        // de una misma obra compartan una sola dirección, y para que lo
+        // cargado acá se siga viendo igual una vez aceptada la obra.
+        if (($body['guardar_direccion'] ?? false) === true) {
+            AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento']);
+            $obra = nombreBaseObra(trim((string) ($body['obra'] ?? '')));
+            if ($obra === '') {
+                Response::error('Falta "obra"', 422);
+            }
+            $direccion = trim((string) ($body['direccion'] ?? ''));
+            $localidad = trim((string) ($body['localidad'] ?? ''));
+            $contactoNombre = trim((string) ($body['contacto_nombre'] ?? ''));
+            $telefono = trim((string) ($body['telefono'] ?? ''));
+            $email = trim((string) ($body['email'] ?? ''));
+
+            $db->prepare("
+                INSERT INTO obra_direccion_contacto (obra, direccion, localidad, contacto_nombre, telefono, email, actualizado_en)
+                VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(obra) DO UPDATE SET
+                    direccion = excluded.direccion,
+                    localidad = excluded.localidad,
+                    contacto_nombre = excluded.contacto_nombre,
+                    telefono = excluded.telefono,
+                    email = excluded.email,
+                    actualizado_en = datetime('now')
+            ")->execute([
+                $obra,
+                $direccion === '' ? null : $direccion,
+                $localidad === '' ? null : $localidad,
+                $contactoNombre === '' ? null : $contactoNombre,
+                $telefono === '' ? null : $telefono,
+                $email === '' ? null : $email,
+            ]);
+            Response::json(['ok' => true]);
+        }
 
         // Solicitudes de valoración a proveedor (obra de Geraldinne, no de
         // presupuestos_en_estudio) — van por "accion" en vez de "id" porque

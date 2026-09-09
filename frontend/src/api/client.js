@@ -64,6 +64,14 @@ export function agregarSolicitudOferta(accessToken, obra, proveedor, fechaSolici
   })
 }
 
+export function guardarDireccionPresupuesto(accessToken, obra, datos) {
+  return request('/presupuestos_en_estudio.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ obra, guardar_direccion: true, ...datos }),
+  })
+}
+
 export function eliminarOferta(accessToken, ofertaId) {
   return request('/presupuestos_en_estudio.php', {
     method: 'PATCH',

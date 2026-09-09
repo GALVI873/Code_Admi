@@ -238,6 +238,12 @@ try {
             if ($obra === '') {
                 Response::error('Falta "obra"', 422);
             }
+            // Misma clave (nombre BASE) que usa presupuestos_en_estudio.php
+            // para esta misma tabla — una obra aceptada normalmente ya
+            // viene sin sufijo "— Opción A/B", así que en la práctica no
+            // cambia nada, pero así ambos endpoints escriben siempre
+            // exactamente la misma fila.
+            $obraBase = nombreBaseObra($obra);
             $direccion = trim((string) ($body['direccion'] ?? ''));
             $localidad = trim((string) ($body['localidad'] ?? ''));
             $contactoNombre = trim((string) ($body['contacto_nombre'] ?? ''));
@@ -255,7 +261,7 @@ try {
                     email = excluded.email,
                     actualizado_en = datetime('now')
             ")->execute([
-                $obra,
+                $obraBase,
                 $direccion === '' ? null : $direccion,
                 $localidad === '' ? null : $localidad,
                 $contactoNombre === '' ? null : $contactoNombre,
