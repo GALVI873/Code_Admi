@@ -29,3 +29,6 @@ backend/drive_sync/resultado_llenar_ficha.json
 
 # Base de datos SQLite (datos reales de producción, nunca en el repo)
 backend/data/*.sqlite
+
+# Logs de tareas programadas locales (ver escribir_cambios_panel.ps1)
+backend/drive_sync/logs/
