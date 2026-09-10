@@ -1314,7 +1314,8 @@ body {
 
 .medicion-lienzo {
   width: 100%;
-  aspect-ratio: 640 / 440;
+  aspect-ratio: 640 / 440; /* respaldo si el JS de ObrasAceptadasPage.jsx no llegó a correr aún */
+  min-height: 260px; /* respaldo si el navegador no soporta aspect-ratio (tablets viejas) */
   background: #fafbfc;
   border: 1px solid #e3e8f0;
   border-radius: 8px;

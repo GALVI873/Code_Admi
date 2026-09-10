@@ -801,6 +801,25 @@ function LienzoMedicion({ posicionBase, imagenBase, puedeDibujar, onGuardarDibuj
     }
   }, [posicionBase, imagenBase])
 
+  // El alto del lienzo se calcula acá a mano (no solo con la propiedad CSS
+  // "aspect-ratio") porque en algunos navegadores viejos de tablet esa
+  // propiedad no existe y el lienzo queda en un recuadro vacío/chico sin
+  // alto — esto funciona en cualquier navegador, es lo mismo que ya hace
+  // "aspect-ratio" pero calculado a mano.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    function ajustarAlto() {
+      const anchoMostrado = canvas.getBoundingClientRect().width
+      if (anchoMostrado > 0) {
+        canvas.style.height = `${(anchoMostrado * canvas.height) / canvas.width}px`
+      }
+    }
+    ajustarAlto()
+    window.addEventListener('resize', ajustarAlto)
+    return () => window.removeEventListener('resize', ajustarAlto)
+  }, [])
+
   function coordenadas(e) {
     const canvas = canvasRef.current
     const rect = canvas.getBoundingClientRect()
