@@ -25,11 +25,24 @@ declare(strict_types=1);
 // (mismo criterio que el resto de Drive: automático, corrido por cron, no al
 // instante del clic).
 //
+// "Dibujar sobre la posición" (a pedido de Álvaro, con el lápiz de la
+// tablet): a veces la forma real de una ventana cambia respecto al dibujo
+// de tipo — puede dibujar encima (lápiz + borrador) para corregirlo. Es por
+// POSICIÓN (no pisa el dibujo del tipo, que es compartido por todas las
+// posiciones de ese mismo tipo) — el trazo se aplana junto con la imagen de
+// base en el propio navegador y se guarda como una imagen nueva en
+// medidas_dibujo_obra; borrar el dibujo (limpiar) vuelve a mostrar el del
+// tipo. También se manda embebido en el Excel del taller.
+//
 // GET ?obra=... : requiere sesión + obras.ver_aceptadas. Devuelve las
-// medidas confirmadas de esa obra, los dibujos por tipo disponibles, y el
-// estado del último pedido de envío (si hay uno).
+// medidas confirmadas de esa obra, los dibujos por tipo disponibles, los
+// dibujos corregidos por posición, y el estado del último pedido de envío
+// (si hay uno).
 // PATCH {obra, posicion, ancho_real, alto_real, comentario}: requiere sesión
 // + rol admin (solo Álvaro confirma medidas en obra, por ahora).
+// PATCH {obra, posicion, guardar_dibujo_posicion:true, imagen_base64}:
+// requiere sesión + rol admin — guarda el dibujo corregido de esa posición;
+// imagen_base64 vacío borra la corrección (vuelve a mostrarse el del tipo).
 // PATCH {obra, solicitar_envio:true}: requiere sesión + obras.ver_aceptadas
 // (Álvaro o Alfredo) — anota el pedido de envío; si ya se había mandado
 // antes, volver a pedirlo lo marca de nuevo como pendiente (para mandar una
@@ -40,8 +53,9 @@ declare(strict_types=1);
 // POST (SYNC_TOKEN) {accion:"listar_pendientes_envio"}: obras con un pedido
 // de envío todavía no procesado.
 // POST (SYNC_TOKEN) {accion:"listar_medidas_para_envio", obra}: medidas
-// confirmadas de esa obra con su Tipo (cruzado con seguimiento_materiales),
-// para armar el Excel.
+// confirmadas de esa obra con su Tipo (cruzado con seguimiento_materiales) y
+// el dibujo a usar (el corregido por posición si existe, si no el del tipo),
+// para armar el Excel con la imagen embebida.
 // POST (SYNC_TOKEN) {accion:"marcar_envio_hecho", obra}: marca el pedido
 // como procesado — usado por enviar_medidas_taller.js al terminar.
 
@@ -93,6 +107,15 @@ try {
         )
     ");
     $db->exec("
+        CREATE TABLE IF NOT EXISTS medidas_dibujo_obra (
+          obra TEXT NOT NULL,
+          posicion TEXT NOT NULL,
+          imagen_base64 TEXT NOT NULL,
+          actualizado_en TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (obra, posicion)
+        )
+    ");
+    $db->exec("
         CREATE TABLE IF NOT EXISTS medidas_envio_taller (
           obra TEXT PRIMARY KEY,
           solicitado_por TEXT,
@@ -121,11 +144,18 @@ try {
             $dibujos[$d['tipo']] = $d['imagen_base64'];
         }
 
+        $stmtDibujosPos = $db->prepare('SELECT posicion, imagen_base64 FROM medidas_dibujo_obra WHERE obra = ?');
+        $stmtDibujosPos->execute([$obra]);
+        $dibujosPosicion = [];
+        foreach ($stmtDibujosPos->fetchAll() as $d) {
+            $dibujosPosicion[$d['posicion']] = $d['imagen_base64'];
+        }
+
         $stmtEnvio = $db->prepare('SELECT solicitado_por, solicitado_en, enviado_en FROM medidas_envio_taller WHERE obra = ?');
         $stmtEnvio->execute([$obra]);
         $envio = $stmtEnvio->fetch() ?: null;
 
-        Response::json(['medidas' => $medidas, 'dibujos' => $dibujos, 'envio' => $envio]);
+        Response::json(['medidas' => $medidas, 'dibujos' => $dibujos, 'dibujos_posicion' => $dibujosPosicion, 'envio' => $envio]);
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'PATCH') {
@@ -155,6 +185,27 @@ try {
 
         if (!tieneRolMedidas($usuario, 'admin')) {
             Response::error('Solo Álvaro puede confirmar medidas de obra por ahora', 403);
+        }
+
+        // Dibujo corregido a mano sobre la posición — ver comentario de
+        // cabecera. imagen_base64 vacío borra la corrección (se vuelve a
+        // mostrar el dibujo del tipo).
+        if (($body['guardar_dibujo_posicion'] ?? false) === true) {
+            $posicion = trim((string) ($body['posicion'] ?? ''));
+            if ($obra === '' || $posicion === '') {
+                Response::error('Faltan "obra" y/o "posicion"', 422);
+            }
+            $imagen = (string) ($body['imagen_base64'] ?? '');
+            if ($imagen === '') {
+                $db->prepare('DELETE FROM medidas_dibujo_obra WHERE obra = ? AND posicion = ?')->execute([$obra, $posicion]);
+            } else {
+                $db->prepare("
+                    INSERT INTO medidas_dibujo_obra (obra, posicion, imagen_base64, actualizado_en)
+                    VALUES (?, ?, ?, datetime('now'))
+                    ON CONFLICT(obra, posicion) DO UPDATE SET imagen_base64 = excluded.imagen_base64, actualizado_en = datetime('now')
+                ")->execute([$obra, $posicion, $imagen]);
+            }
+            Response::json(['ok' => true]);
         }
 
         $posicion = trim((string) ($body['posicion'] ?? ''));
@@ -226,7 +277,30 @@ try {
                 WHERE m.obra = ?
             ");
             $stmt->execute([$obra]);
-            Response::json(['medidas' => $stmt->fetchAll()]);
+            $medidas = $stmt->fetchAll();
+
+            $stmtDibujosPos = $db->prepare('SELECT posicion, imagen_base64 FROM medidas_dibujo_obra WHERE obra = ?');
+            $stmtDibujosPos->execute([$obra]);
+            $dibujosPorPosicion = [];
+            foreach ($stmtDibujosPos->fetchAll() as $d) {
+                $dibujosPorPosicion[$d['posicion']] = $d['imagen_base64'];
+            }
+            $stmtDibujosTipo = $db->prepare('SELECT tipo, imagen_base64 FROM plano_dibujo_tipo WHERE obra = ?');
+            $stmtDibujosTipo->execute([$obra]);
+            $dibujosPorTipo = [];
+            foreach ($stmtDibujosTipo->fetchAll() as $d) {
+                $dibujosPorTipo[$d['tipo']] = $d['imagen_base64'];
+            }
+
+            // El dibujo corregido a mano (ver "Dibujar sobre la posición" en
+            // el comentario de cabecera) pisa al del tipo — es el que mejor
+            // refleja la forma real de esa ventana puntual.
+            foreach ($medidas as &$m) {
+                $m['dibujo_base64'] = $dibujosPorPosicion[$m['posicion']] ?? ($dibujosPorTipo[$m['tipo']] ?? null);
+            }
+            unset($m);
+
+            Response::json(['medidas' => $medidas]);
         }
 
         if (($body['accion'] ?? '') === 'marcar_envio_hecho') {

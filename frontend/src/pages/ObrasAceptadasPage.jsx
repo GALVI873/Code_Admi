@@ -16,6 +16,7 @@ import {
   medidasObra,
   confirmarMedidaObra,
   solicitarEnvioMedidasTaller,
+  guardarDibujoPosicion,
 } from '../api/client.js'
 import NotasObraAceptada from '../components/NotasObraAceptada.jsx'
 import DireccionContactoObra from '../components/DireccionContactoObra.jsx'
@@ -772,6 +773,120 @@ function normalizarTipoDibujo(tipo) {
 // solo con lo que ya está cargado en `materiales` — no hace falta releer
 // nada cuando Alfredo cambia el Estado de una posición en la pestaña
 // Seguimiento, por eso se ve reflejado al toque.
+// Lienzo para corregir a mano el dibujo de una posición puntual (a pedido
+// de Álvaro, con el lápiz de la tablet: a veces la forma real de la
+// ventana cambia respecto al dibujo de tipo). Dibuja SIEMPRE sobre lo que
+// ya se ve (el dibujo corregido antes, o si no el del tipo, o blanco si no
+// hay ninguno) — cada trazo se aplana junto con esa base al soltar el
+// lápiz/dedo y eso es lo que se guarda, así que "corregir un poco más"
+// después sigue dibujando sobre la última versión guardada, no pisa todo
+// de cero. "Limpiar" no borra el trazo nomás: borra la corrección entera y
+// vuelve a mostrar el dibujo original del tipo.
+function LienzoMedicion({ posicionBase, imagenBase, puedeDibujar, onGuardarDibujo }) {
+  const canvasRef = useRef(null)
+  const dibujandoRef = useRef(false)
+  const [modo, setModo] = useState('lapiz')
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    if (imagenBase) {
+      const img = new Image()
+      img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      img.src = imagenBase
+    }
+  }, [posicionBase, imagenBase])
+
+  function coordenadas(e) {
+    const canvas = canvasRef.current
+    const rect = canvas.getBoundingClientRect()
+    return {
+      x: ((e.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((e.clientY - rect.top) / rect.height) * canvas.height,
+    }
+  }
+
+  function empezarTrazo(e) {
+    if (!puedeDibujar) return
+    e.preventDefault()
+    dibujandoRef.current = true
+    const ctx = canvasRef.current.getContext('2d')
+    const { x, y } = coordenadas(e)
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    canvasRef.current.setPointerCapture(e.pointerId)
+  }
+
+  function seguirTrazo(e) {
+    if (!dibujandoRef.current) return
+    e.preventDefault()
+    const ctx = canvasRef.current.getContext('2d')
+    const { x, y } = coordenadas(e)
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    if (modo === 'borrador') {
+      ctx.lineWidth = 24
+      ctx.strokeStyle = '#ffffff'
+    } else {
+      ctx.lineWidth = 3
+      ctx.strokeStyle = '#c0392b'
+    }
+    ctx.lineTo(x, y)
+    ctx.stroke()
+  }
+
+  function terminarTrazo() {
+    if (!dibujandoRef.current) return
+    dibujandoRef.current = false
+    onGuardarDibujo(canvasRef.current.toDataURL('image/png'))
+  }
+
+  function limpiar() {
+    onGuardarDibujo(null)
+  }
+
+  return (
+    <div className="medicion-lienzo-envoltorio">
+      {puedeDibujar && (
+        <div className="medicion-lienzo-herramientas">
+          <button
+            type="button"
+            className={`medicion-lienzo-boton ${modo === 'lapiz' ? 'medicion-lienzo-boton-activo' : ''}`}
+            onClick={() => setModo('lapiz')}
+          >
+            ✏️ Lápiz
+          </button>
+          <button
+            type="button"
+            className={`medicion-lienzo-boton ${modo === 'borrador' ? 'medicion-lienzo-boton-activo' : ''}`}
+            onClick={() => setModo('borrador')}
+          >
+            🧹 Borrador
+          </button>
+          <button type="button" className="medicion-lienzo-boton" onClick={limpiar}>
+            Limpiar corrección
+          </button>
+        </div>
+      )}
+      <canvas
+        ref={canvasRef}
+        width={640}
+        height={440}
+        className="medicion-lienzo"
+        onPointerDown={empezarTrazo}
+        onPointerMove={seguirTrazo}
+        onPointerUp={terminarTrazo}
+        onPointerLeave={terminarTrazo}
+        onPointerCancel={terminarTrazo}
+      />
+    </div>
+  )
+}
+
 // Detalle de una posición al hacer clic en el plano (fuera del modo
 // Calibrar) — a pedido de Álvaro: quiere ver el dibujo del tipo con sus
 // medidas de proyecto y poder cargar la medida REAL que confirma en obra
@@ -780,8 +895,9 @@ function normalizarTipoDibujo(tipo) {
 // posiciones ya calibradas de esta misma página del plano, en orden.
 // El dibujo (recorte de la memoria de carpintería) es opcional: solo existe
 // para las obras donde ya se cargó a mano (hoy, únicamente José Abascal) —
-// sin él, igual se puede confirmar la medida.
-function DetalleMedicionPosicion({ posicionBase, tipo, dibujoBase64, medida, puedeConfirmar, onGuardar, onCerrar, onAnterior, onSiguiente }) {
+// sin él, igual se puede confirmar la medida (y todavía se puede dibujar
+// sobre un lienzo en blanco).
+function DetalleMedicionPosicion({ posicionBase, tipo, dibujoBase64, dibujoPosicionBase64, medida, puedeConfirmar, onGuardar, onGuardarDibujo, onCerrar, onAnterior, onSiguiente }) {
   const [ancho, setAncho] = useState('')
   const [alto, setAlto] = useState('')
   const [comentario, setComentario] = useState('')
@@ -829,10 +945,16 @@ function DetalleMedicionPosicion({ posicionBase, tipo, dibujoBase64, medida, pue
 
         <div className="medicion-cuerpo">
           <div className="medicion-dibujo">
-            {dibujoBase64 ? (
-              <img src={dibujoBase64} alt={`Dibujo tipo ${tipo}`} />
-            ) : (
-              <p className="dashboard-nota">Todavía no hay dibujo cargado para el tipo {tipo || 'de esta posición'}.</p>
+            <LienzoMedicion
+              posicionBase={posicionBase}
+              imagenBase={dibujoPosicionBase64 || dibujoBase64}
+              puedeDibujar={puedeConfirmar}
+              onGuardarDibujo={onGuardarDibujo}
+            />
+            {!dibujoPosicionBase64 && !dibujoBase64 && (
+              <p className="dashboard-nota medicion-dibujo-aviso">
+                Sin dibujo de referencia para el tipo {tipo || 'de esta posición'} — se puede dibujar igual sobre el lienzo en blanco.
+              </p>
             )}
           </div>
 
@@ -896,6 +1018,7 @@ function PlanosObra({ obra, materiales }) {
   const puedeConfirmarMedida = usuario?.roles?.includes('admin')
   const [medidas, setMedidas] = useState([])
   const [dibujosPorTipo, setDibujosPorTipo] = useState({})
+  const [dibujosPorPosicion, setDibujosPorPosicion] = useState({})
   const [envioTaller, setEnvioTaller] = useState(null)
   const [enviandoTaller, setEnviandoTaller] = useState(false)
   const [posicionSeleccionada, setPosicionSeleccionada] = useState(null)
@@ -931,6 +1054,7 @@ function PlanosObra({ obra, materiales }) {
         if (cancelado) return
         setMedidas(data.medidas || [])
         setDibujosPorTipo(data.dibujos || {})
+        setDibujosPorPosicion(data.dibujos_posicion || {})
         setEnvioTaller(data.envio || null)
       })
       .catch(() => {}) // opcional: si falla, el plano sigue funcionando igual sin medidas/dibujos
@@ -1003,6 +1127,26 @@ function PlanosObra({ obra, materiales }) {
       await confirmarMedidaObra(accessToken, obra, posicionBase, nuevaMedida.ancho_real, nuevaMedida.alto_real, nuevaMedida.comentario)
     } catch (err) {
       setMedidas(anteriores)
+      setError(err.message)
+    }
+  }
+
+  // Dibujo corregido a mano sobre una posición puntual (ver LienzoMedicion)
+  // — imagenBase64 null/vacío borra la corrección (vuelve a mostrarse el
+  // dibujo del tipo).
+  async function handleGuardarDibujoPosicion(posicionBase, imagenBase64) {
+    const anteriores = dibujosPorPosicion
+    setDibujosPorPosicion((ds) => {
+      if (!imagenBase64) {
+        const { [posicionBase]: _quitado, ...resto } = ds
+        return resto
+      }
+      return { ...ds, [posicionBase]: imagenBase64 }
+    })
+    try {
+      await guardarDibujoPosicion(accessToken, obra, posicionBase, imagenBase64)
+    } catch (err) {
+      setDibujosPorPosicion(anteriores)
       setError(err.message)
     }
   }
@@ -1212,9 +1356,11 @@ function PlanosObra({ obra, materiales }) {
           posicionBase={posicionSeleccionada}
           tipo={tipoPorPosicionBase.get(posicionSeleccionada)}
           dibujoBase64={dibujosPorTipo[normalizarTipoDibujo(tipoPorPosicionBase.get(posicionSeleccionada))]}
+          dibujoPosicionBase64={dibujosPorPosicion[posicionSeleccionada]}
           medida={medidasPorPosicion.get(posicionSeleccionada)}
           puedeConfirmar={puedeConfirmarMedida}
           onGuardar={handleGuardarMedida}
+          onGuardarDibujo={(imagen) => handleGuardarDibujoPosicion(posicionSeleccionada, imagen)}
           onCerrar={() => setPosicionSeleccionada(null)}
           onAnterior={() => moverSeleccion(-1)}
           onSiguiente={() => moverSeleccion(1)}

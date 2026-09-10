@@ -1273,18 +1273,53 @@ body {
 .medicion-dibujo {
   flex: 1 1 320px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  min-height: 220px;
+  gap: 8px;
+}
+
+.medicion-dibujo-aviso {
+  text-align: center;
+}
+
+.medicion-lienzo-envoltorio {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.medicion-lienzo-herramientas {
+  display: flex;
+  gap: 6px;
+}
+
+.medicion-lienzo-boton {
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 1px solid #dfe6e9;
+  background: white;
+  color: var(--texto);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.medicion-lienzo-boton:hover { background: #f4f6f8; }
+.medicion-lienzo-boton-activo {
+  background: var(--azul-med);
+  border-color: var(--azul-med);
+  color: white;
+}
+
+.medicion-lienzo {
+  width: 100%;
+  aspect-ratio: 640 / 440;
   background: #fafbfc;
   border: 1px solid #e3e8f0;
   border-radius: 8px;
-  padding: 10px;
-}
-
-.medicion-dibujo img {
-  max-width: 100%;
-  max-height: 320px;
+  touch-action: none;
+  cursor: crosshair;
 }
 
 .medicion-panel-derecho {

@@ -7,12 +7,16 @@
 // fórmulas, arma uno nuevo desde cero, así que no hace falta Excel
 // instalado ni el mount Z:\ de Drive Desktop — solo la API de Drive.
 //
+// Usa exceljs (no el xlsx de siempre) porque necesita embeber una imagen
+// por fila — el dibujo del tipo, o el corregido a mano por Álvaro con el
+// lápiz de la tablet si lo hay (ver LienzoMedicion en
+// ObrasAceptadasPage.jsx) — y la edición community de xlsx/SheetJS no
+// soporta imágenes.
+//
 // Uso:
 //   node enviar_medidas_taller.js
-const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { getDrive } = require('./drive_client.js');
 const { Readable } = require('stream');
@@ -80,21 +84,60 @@ function ordenarPosiciones(a, b) {
   return String(a.posicion).localeCompare(String(b.posicion), 'es', { numeric: true });
 }
 
-function armarExcel(obra, medidas) {
-  const filas = [...medidas].sort(ordenarPosiciones).map((m) => ({
-    Posición: m.posicion,
-    Tipo: m.tipo || '',
-    'Ancho real (m)': m.ancho_real ?? '',
-    'Alto real (m)': m.alto_real ?? '',
-    Comentario: m.comentario || '',
-    'Confirmado por': m.confirmado_por || '',
-    'Confirmado el': m.actualizado_en || '',
-  }));
-  const ws = XLSX.utils.json_to_sheet(filas);
-  ws['!cols'] = [{ wch: 10 }, { wch: 8 }, { wch: 13 }, { wch: 12 }, { wch: 40 }, { wch: 16 }, { wch: 18 }];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Medidas confirmadas');
-  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+// data:image/png;base64,xxxx -> { extension, base64 } que pide exceljs.
+function partirDataUrl(dataUrl) {
+  const m = /^data:image\/(\w+);base64,(.+)$/.exec(dataUrl || '');
+  if (!m) return null;
+  const extension = m[1] === 'jpg' ? 'jpeg' : m[1];
+  if (!['png', 'jpeg', 'gif'].includes(extension)) return null;
+  return { extension, base64: m[2] };
+}
+
+const ALTO_FILA_CON_DIBUJO = 95; // puntos — suficiente para que la imagen no quede recortada
+
+async function armarExcel(obra, medidas) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Medidas confirmadas');
+  ws.columns = [
+    { header: 'Posición', key: 'posicion', width: 10 },
+    { header: 'Tipo', key: 'tipo', width: 8 },
+    { header: 'Ancho real (m)', key: 'ancho', width: 14 },
+    { header: 'Alto real (m)', key: 'alto', width: 12 },
+    { header: 'Comentario', key: 'comentario', width: 40 },
+    { header: 'Confirmado por', key: 'confirmado_por', width: 16 },
+    { header: 'Confirmado el', key: 'confirmado_el', width: 18 },
+    { header: 'Dibujo', key: 'dibujo', width: 24 },
+  ];
+  ws.getRow(1).font = { bold: true };
+
+  const ordenadas = [...medidas].sort(ordenarPosiciones);
+  ordenadas.forEach((m, i) => {
+    const fila = ws.addRow({
+      posicion: m.posicion,
+      tipo: m.tipo || '',
+      ancho: m.ancho_real ?? '',
+      alto: m.alto_real ?? '',
+      comentario: m.comentario || '',
+      confirmado_por: m.confirmado_por || '',
+      confirmado_el: m.actualizado_en || '',
+    });
+    const numeroFila = i + 2; // fila 1 = encabezados
+
+    const partes = partirDataUrl(m.dibujo_base64);
+    if (partes) {
+      fila.height = ALTO_FILA_CON_DIBUJO;
+      const imageId = wb.addImage({ base64: partes.base64, extension: partes.extension });
+      // Columna "Dibujo" es la 8ª (índice 0-based 7) — ancla en la esquina
+      // de la celda, con un margen chico para que no toque los bordes.
+      ws.addImage(imageId, {
+        tl: { col: 7.05, row: numeroFila - 1 + 0.05 },
+        ext: { width: 150, height: (ALTO_FILA_CON_DIBUJO - 10) * 1.333 }, // pt -> px aprox.
+        editAs: 'oneCell',
+      });
+    }
+  });
+
+  return wb.xlsx.writeBuffer();
 }
 
 async function subirExcel(drive, carpetaId, nombreArchivo, buffer) {
@@ -174,7 +217,7 @@ async function main() {
       }
 
       const carpetaMedicion = await buscarOCrearCarpetaMedicion(drive, info.folderId);
-      const buffer = armarExcel(obra, medidas);
+      const buffer = await armarExcel(obra, medidas);
       const nombreArchivo = `Medidas confirmadas - ${obra} - ${fechaHoyDDMMYYYY()}.xlsx`;
       await subirExcel(drive, carpetaMedicion.id, nombreArchivo, buffer);
       await marcarEnviado(obra);

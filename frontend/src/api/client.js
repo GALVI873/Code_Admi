@@ -200,6 +200,14 @@ export function solicitarEnvioMedidasTaller(accessToken, obra) {
   })
 }
 
+export function guardarDibujoPosicion(accessToken, obra, posicion, imagenBase64) {
+  return request('/medidas_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ obra, posicion, guardar_dibujo_posicion: true, imagen_base64: imagenBase64 || '' }),
+  })
+}
+
 export function diarioGeneral(accessToken) {
   return request('/diario_general.php', {
     headers: { Authorization: `Bearer ${accessToken}` },
