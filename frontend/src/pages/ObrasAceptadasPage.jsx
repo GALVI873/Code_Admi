@@ -980,11 +980,12 @@ function DetalleMedicionPosicion({ posicionBase, tipo, dibujoBase64, dibujoPosic
           <div className="medicion-panel-derecho">
             <div className="medicion-campos">
               <div className="filtro-campo medicion-campo">
-                <label htmlFor={`ancho-real-${posicionBase}`}>Ancho real (m)</label>
+                <label htmlFor={`ancho-real-${posicionBase}`}>Ancho real (mm)</label>
                 <input
                   id={`ancho-real-${posicionBase}`}
                   type="number"
-                  step="0.01"
+                  step="1"
+                  placeholder="Ej: 2895"
                   className="input-filtro"
                   value={ancho}
                   disabled={!puedeConfirmar}
@@ -993,11 +994,12 @@ function DetalleMedicionPosicion({ posicionBase, tipo, dibujoBase64, dibujoPosic
                 />
               </div>
               <div className="filtro-campo medicion-campo">
-                <label htmlFor={`alto-real-${posicionBase}`}>Alto real (m)</label>
+                <label htmlFor={`alto-real-${posicionBase}`}>Alto real (mm)</label>
                 <input
                   id={`alto-real-${posicionBase}`}
                   type="number"
-                  step="0.01"
+                  step="1"
+                  placeholder="Ej: 1510"
                   className="input-filtro"
                   value={alto}
                   disabled={!puedeConfirmar}

@@ -101,8 +101,8 @@ async function armarExcel(obra, medidas) {
   ws.columns = [
     { header: 'Posición', key: 'posicion', width: 10 },
     { header: 'Tipo', key: 'tipo', width: 8 },
-    { header: 'Ancho real (m)', key: 'ancho', width: 14 },
-    { header: 'Alto real (m)', key: 'alto', width: 12 },
+    { header: 'Ancho real (mm)', key: 'ancho', width: 14 },
+    { header: 'Alto real (mm)', key: 'alto', width: 12 },
     { header: 'Comentario', key: 'comentario', width: 40 },
     { header: 'Confirmado por', key: 'confirmado_por', width: 16 },
     { header: 'Confirmado el', key: 'confirmado_el', width: 18 },
