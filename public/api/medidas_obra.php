@@ -66,6 +66,23 @@ function tieneRolMedidas(array $usuario, string $rol): bool
     return in_array($rol, $usuario['roles'] ?? [], true);
 }
 
+// El Tipo real de la obra suele venir con cero de relleno ("V01", "V09"),
+// pero plano_dibujo_tipo se carga con el código tal cual lo escribe la
+// propia plancha de la memoria ("V1", "V9", ver subir_dibujos_tipo.js) —
+// mismo criterio que normalizarTipoDibujo() en ObrasAceptadasPage.jsx (el
+// panel ya lo resuelve bien al mostrar el dibujo en pantalla; acá hacía
+// falta lo mismo para que el Excel del taller también lo encuentre).
+function normalizarTipoDibujo(?string $tipo): ?string
+{
+    if ($tipo === null || $tipo === '') {
+        return $tipo;
+    }
+    if (preg_match('/^V0*(\d+)$/i', trim($tipo), $m)) {
+        return 'V' . $m[1];
+    }
+    return $tipo;
+}
+
 try {
     $db = Database::connection($config);
 
@@ -289,14 +306,14 @@ try {
             $stmtDibujosTipo->execute([$obra]);
             $dibujosPorTipo = [];
             foreach ($stmtDibujosTipo->fetchAll() as $d) {
-                $dibujosPorTipo[$d['tipo']] = $d['imagen_base64'];
+                $dibujosPorTipo[normalizarTipoDibujo($d['tipo'])] = $d['imagen_base64'];
             }
 
             // El dibujo corregido a mano (ver "Dibujar sobre la posición" en
             // el comentario de cabecera) pisa al del tipo — es el que mejor
             // refleja la forma real de esa ventana puntual.
             foreach ($medidas as &$m) {
-                $m['dibujo_base64'] = $dibujosPorPosicion[$m['posicion']] ?? ($dibujosPorTipo[$m['tipo']] ?? null);
+                $m['dibujo_base64'] = $dibujosPorPosicion[$m['posicion']] ?? ($dibujosPorTipo[normalizarTipoDibujo($m['tipo'])] ?? null);
             }
             unset($m);
 
