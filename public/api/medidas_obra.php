@@ -271,7 +271,6 @@ try {
                 Response::error('Faltan "obra" y/o "posicion"', 422);
             }
             $db->prepare('DELETE FROM medidas_confirmadas_obra WHERE obra = ? AND posicion = ?')->execute([$obra, $posicion]);
-            $db->prepare('DELETE FROM medidas_envio_taller WHERE obra = ?')->execute([$obra]);
             Response::json(['ok' => true]);
         }
 
