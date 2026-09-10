@@ -238,6 +238,43 @@ try {
             Response::json(['ok' => true]);
         }
 
+        // TEMPORAL — para verificar el flujo completo contra Drive real
+        // antes de darlo por terminado, sin depender de un clic real en el
+        // panel (acá no hay sesión de usuario). Se saca apenas se verifique.
+        if (($body['accion'] ?? '') === 'debug_probar_envio') {
+            $obra = trim((string) ($body['obra'] ?? ''));
+            $posicion = trim((string) ($body['posicion'] ?? ''));
+            if ($obra === '' || $posicion === '') {
+                Response::error('Faltan "obra" y/o "posicion"', 422);
+            }
+            $db->prepare("
+                INSERT INTO medidas_confirmadas_obra (obra, posicion, ancho_real, alto_real, comentario, confirmado_por, actualizado_en)
+                VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(obra, posicion) DO UPDATE SET
+                    ancho_real = excluded.ancho_real, alto_real = excluded.alto_real,
+                    comentario = excluded.comentario, confirmado_por = excluded.confirmado_por,
+                    actualizado_en = datetime('now')
+            ")->execute([$obra, $posicion, (float) ($body['ancho_real'] ?? 0), (float) ($body['alto_real'] ?? 0), (string) ($body['comentario'] ?? ''), 'Debug (prueba)']);
+            $db->prepare("
+                INSERT INTO medidas_envio_taller (obra, solicitado_por, solicitado_en, enviado_en)
+                VALUES (?, 'Debug (prueba)', datetime('now'), NULL)
+                ON CONFLICT(obra) DO UPDATE SET solicitado_por = excluded.solicitado_por, solicitado_en = datetime('now'), enviado_en = NULL
+            ")->execute([$obra]);
+            Response::json(['ok' => true]);
+        }
+
+        // TEMPORAL — limpia lo que dejó debug_probar_envio.
+        if (($body['accion'] ?? '') === 'debug_borrar_prueba') {
+            $obra = trim((string) ($body['obra'] ?? ''));
+            $posicion = trim((string) ($body['posicion'] ?? ''));
+            if ($obra === '' || $posicion === '') {
+                Response::error('Faltan "obra" y/o "posicion"', 422);
+            }
+            $db->prepare('DELETE FROM medidas_confirmadas_obra WHERE obra = ? AND posicion = ?')->execute([$obra, $posicion]);
+            $db->prepare('DELETE FROM medidas_envio_taller WHERE obra = ?')->execute([$obra]);
+            Response::json(['ok' => true]);
+        }
+
         Response::error('Acción no reconocida', 422);
     }
 
