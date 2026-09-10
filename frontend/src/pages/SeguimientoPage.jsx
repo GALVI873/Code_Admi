@@ -1141,11 +1141,18 @@ export default function SeguimientoPage() {
 
   const filasFiltradas = useMemo(() => {
     const texto = busquedaObra.trim().toLowerCase()
-    return filasSegunEstatus
+    // Buscando por nombre, se busca en TODOS los estatus (Enviado,
+    // Descartado, Aceptado...), no solo en los que ya se estaban mostrando
+    // según el filtro de Estatus/"Prox. Descartar" — si no, buscar algo que
+    // está justo en un estatus escondido no encontraba nada. El filtro de
+    // Categoría/Contacto sigue aplicando igual, solo el de Estatus se deja
+    // de lado mientras hay texto escrito.
+    const base = texto ? filasVivas : filasSegunEstatus
+    return base
       .filter((p) => !texto || p.obra?.toLowerCase().includes(texto))
       .filter((p) => filtroCategoria === 'Todos' || p.categoria === filtroCategoria)
       .filter((p) => filtroContacto === 'Todos' || p.contacto === filtroContacto)
-  }, [filasSegunEstatus, busquedaObra, filtroCategoria, filtroContacto])
+  }, [filasSegunEstatus, filasVivas, busquedaObra, filtroCategoria, filtroContacto])
 
   // Agrupa las opciones de una misma obra ("— Opción A"/"— Opción B") bajo
   // una sola tarjeta. El estatus que decide en qué sección aparece el grupo
@@ -1186,10 +1193,14 @@ export default function SeguimientoPage() {
       })
   }, [filasFiltradas])
 
-  const totalGruposSegunEstatus = useMemo(
-    () => new Set(filasSegunEstatus.map((p) => nombreBase(p.obra))).size,
-    [filasSegunEstatus],
-  )
+  // Mientras se busca por nombre, el universo de referencia para el
+  // contador "X de Y" es TODAS las obras (mismo criterio que filasFiltradas
+  // más arriba), no solo las del estatus que se estaba mostrando antes de
+  // escribir la búsqueda.
+  const totalGruposSegunEstatus = useMemo(() => {
+    const base = busquedaObra.trim() ? filasVivas : filasSegunEstatus
+    return new Set(base.map((p) => nombreBase(p.obra))).size
+  }, [filasSegunEstatus, filasVivas, busquedaObra])
 
   // Agrupadas por estatus para que el grid tenga secciones claras en vez de
   // una sola pared de tarjetas (mismo patrón que Presupuestos en Estudio).
@@ -1210,10 +1221,18 @@ export default function SeguimientoPage() {
     if (filtroEstatus !== 'Todos') {
       return [{ estatus: filtroEstatus, items: gruposObra.filter((g) => g.opciones.some((o) => o.estatus === filtroEstatus)) }]
     }
-    return ESTATUS_OPCIONES.filter((e) => e !== 'Enviado' && e !== 'Descartado')
+    // Buscando por nombre, también se muestran las secciones "Enviado" y
+    // "Descartado" si ahí cae algún resultado — si no, gruposObra ya venía
+    // con esas obras (gracias a filasFiltradas buscando en todos los
+    // estatus) pero acá se las volvía a esconder igual, y la búsqueda
+    // "encontraba" la obra sin mostrarla en ningún lado.
+    const estatusAMostrar = busquedaObra.trim()
+      ? ESTATUS_OPCIONES
+      : ESTATUS_OPCIONES.filter((e) => e !== 'Enviado' && e !== 'Descartado')
+    return estatusAMostrar
       .map((estatus) => ({ estatus, items: gruposObra.filter((g) => g.estatusRepresentativo === estatus) }))
       .filter((g) => g.items.length > 0)
-  }, [gruposObra, filtroEstatus, soloProxDescartar])
+  }, [gruposObra, filtroEstatus, soloProxDescartar, busquedaObra])
 
   function handleCambioCategoria(valor) {
     setFiltroCategoria(valor)
