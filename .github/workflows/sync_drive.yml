@@ -66,3 +66,11 @@ jobs:
       - name: Sincronizar Diario General
         run: node sync_diario_general.js
         continue-on-error: true
+
+      # Botón "Enviar medidas" en Planos: arma el Excel de medidas
+      # confirmadas y lo sube a la carpeta "medición" de la obra — no edita
+      # ningún Excel existente, así que puede correr acá (a diferencia de
+      # escribir_confirmaciones_aceptadas.js / escribir_ubicacion_diario_general.js).
+      - name: Enviar medidas confirmadas al taller
+        run: node enviar_medidas_taller.js
+        continue-on-error: true

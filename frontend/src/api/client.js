@@ -192,6 +192,14 @@ export function confirmarMedidaObra(accessToken, obra, posicion, anchoReal, alto
   })
 }
 
+export function solicitarEnvioMedidasTaller(accessToken, obra) {
+  return request('/medidas_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ obra, solicitar_envio: true }),
+  })
+}
+
 export function diarioGeneral(accessToken) {
   return request('/diario_general.php', {
     headers: { Authorization: `Bearer ${accessToken}` },

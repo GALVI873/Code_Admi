@@ -15,6 +15,7 @@ import {
   quitarPosicionPlano,
   medidasObra,
   confirmarMedidaObra,
+  solicitarEnvioMedidasTaller,
 } from '../api/client.js'
 import NotasObraAceptada from '../components/NotasObraAceptada.jsx'
 import DireccionContactoObra from '../components/DireccionContactoObra.jsx'
@@ -895,6 +896,8 @@ function PlanosObra({ obra, materiales }) {
   const puedeConfirmarMedida = usuario?.roles?.includes('admin')
   const [medidas, setMedidas] = useState([])
   const [dibujosPorTipo, setDibujosPorTipo] = useState({})
+  const [envioTaller, setEnvioTaller] = useState(null)
+  const [enviandoTaller, setEnviandoTaller] = useState(false)
   const [posicionSeleccionada, setPosicionSeleccionada] = useState(null)
   const [paginas, setPaginas] = useState([])
   const [posiciones, setPosiciones] = useState([])
@@ -928,6 +931,7 @@ function PlanosObra({ obra, materiales }) {
         if (cancelado) return
         setMedidas(data.medidas || [])
         setDibujosPorTipo(data.dibujos || {})
+        setEnvioTaller(data.envio || null)
       })
       .catch(() => {}) // opcional: si falla, el plano sigue funcionando igual sin medidas/dibujos
     return () => {
@@ -1000,6 +1004,23 @@ function PlanosObra({ obra, materiales }) {
     } catch (err) {
       setMedidas(anteriores)
       setError(err.message)
+    }
+  }
+
+  // "Enviar medidas" no sube nada al toque (el panel no tiene acceso
+  // directo a Drive) — solo deja pedido el envío; el .xlsx se arma y sube a
+  // la carpeta "medición" de la obra en la próxima sincronización
+  // (backend/drive_sync/enviar_medidas_taller.js).
+  async function handleEnviarMedidas() {
+    setEnviandoTaller(true)
+    setError('')
+    try {
+      await solicitarEnvioMedidasTaller(accessToken, obra)
+      setEnvioTaller({ solicitado_por: usuario?.nombre, solicitado_en: new Date().toISOString(), enviado_en: null })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setEnviandoTaller(false)
     }
   }
 
@@ -1076,6 +1097,23 @@ function PlanosObra({ obra, materiales }) {
           />
           Calibrar posiciones
         </label>
+        <div className="planos-enviar-taller">
+          <button
+            type="button"
+            className="btn-secundario"
+            onClick={handleEnviarMedidas}
+            disabled={enviandoTaller}
+          >
+            📤 {envioTaller ? 'Reenviar medidas' : 'Enviar medidas'}
+          </button>
+          {envioTaller && (
+            <span className="planos-enviar-taller-estado">
+              {envioTaller.enviado_en
+                ? `Enviado el ${formatoFechaHora(envioTaller.enviado_en)}`
+                : `Pedido por ${envioTaller.solicitado_por} el ${formatoFechaHora(envioTaller.solicitado_en)} — se sube en la próxima sincronización`}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="planos-leyenda">
