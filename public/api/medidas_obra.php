@@ -329,6 +329,28 @@ try {
             Response::json(['ok' => true]);
         }
 
+        // TEMPORAL — limpia las medidas/dibujos/pedido de envío de prueba de
+        // una obra, sin tocar plano_dibujo_tipo (esos 21 dibujos sí son
+        // reales). Se saca apenas se use.
+        if (($body['accion'] ?? '') === 'debug_limpiar_obra') {
+            $obra = trim((string) ($body['obra'] ?? ''));
+            if ($obra === '') {
+                Response::error('Falta "obra"', 422);
+            }
+            $borradasMedidas = $db->prepare('DELETE FROM medidas_confirmadas_obra WHERE obra = ?');
+            $borradasMedidas->execute([$obra]);
+            $borradasDibujos = $db->prepare('DELETE FROM medidas_dibujo_obra WHERE obra = ?');
+            $borradasDibujos->execute([$obra]);
+            $borradoEnvio = $db->prepare('DELETE FROM medidas_envio_taller WHERE obra = ?');
+            $borradoEnvio->execute([$obra]);
+            Response::json([
+                'ok' => true,
+                'medidas_borradas' => $borradasMedidas->rowCount(),
+                'dibujos_posicion_borrados' => $borradasDibujos->rowCount(),
+                'envio_borrado' => $borradoEnvio->rowCount(),
+            ]);
+        }
+
         Response::error('Acción no reconocida', 422);
     }
 
