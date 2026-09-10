@@ -1249,6 +1249,16 @@ body {
   flex-wrap: wrap;
 }
 
+/* Un <canvas> tiene tamaño propio (sus atributos width/height, 640x440) que
+   por default un hijo flex no deja encoger por debajo de eso ("min-width:
+   auto" de flexbox) — en pantallas angostas (tablet) esto lo desbordaba
+   fuera de su columna, tapando Ancho real/Alto real/Comentario aunque el
+   propio lienzo se viera chico/vacío. min-width:0 en toda la cadena de
+   contenedores saca ese piso. */
+.medicion-cuerpo > * {
+  min-width: 0;
+}
+
 .medicion-flecha {
   position: fixed;
   top: 50%;
@@ -1287,6 +1297,7 @@ body {
   flex-direction: column;
   gap: 8px;
   width: 100%;
+  min-width: 0;
 }
 
 .medicion-lienzo-herramientas {
@@ -1313,7 +1324,9 @@ body {
 }
 
 .medicion-lienzo {
+  display: block;
   width: 100%;
+  max-width: 100%;
   aspect-ratio: 640 / 440; /* respaldo si el JS de ObrasAceptadasPage.jsx no llegó a correr aún */
   min-height: 260px; /* respaldo si el navegador no soporta aspect-ratio (tablets viejas) */
   background: #fafbfc;
