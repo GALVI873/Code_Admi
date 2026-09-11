@@ -1053,6 +1053,7 @@ function PlanosObra({ obra, materiales }) {
   const [error, setError] = useState('')
   const [modoCalibrar, setModoCalibrar] = useState(false)
   const [posicionArmada, setPosicionArmada] = useState('')
+  const [soloSinMedir, setSoloSinMedir] = useState(false)
 
   useEffect(() => {
     let cancelado = false
@@ -1125,6 +1126,20 @@ function PlanosObra({ obra, materiales }) {
     [posicionesDeEstaPagina],
   )
   const medidasPorPosicion = useMemo(() => new Map(medidas.map((m) => [m.posicion, m])), [medidas])
+  // Una posición cuenta como "medida" cuando tiene ancho y alto real
+  // cargados (igual criterio que habilita el botón "Enviar medidas") — un
+  // comentario solo, sin números, no alcanza.
+  const posicionesMedidas = useMemo(() => {
+    const set = new Set()
+    posicionesBase.forEach((p) => {
+      const m = medidasPorPosicion.get(p)
+      if (m && m.ancho_real != null && m.alto_real != null) set.add(p)
+    })
+    return set
+  }, [posicionesBase, medidasPorPosicion])
+  const posicionesDeEstaPaginaAMostrar = soloSinMedir
+    ? posicionesDeEstaPagina.filter((p) => !posicionesMedidas.has(p.posicion_base))
+    : posicionesDeEstaPagina
 
   function moverSeleccion(direccion) {
     if (!posicionSeleccionada || ordenPosicionesPagina.length === 0) return
@@ -1262,7 +1277,14 @@ function PlanosObra({ obra, materiales }) {
           />
           Calibrar posiciones
         </label>
+        <label className="planos-calibrar-toggle">
+          <input type="checkbox" checked={soloSinMedir} onChange={(e) => setSoloSinMedir(e.target.checked)} />
+          Ver solo sin medir
+        </label>
         <div className="planos-enviar-taller">
+          <span className="planos-medidas-contador">
+            📐 Medidas: {posicionesMedidas.size}/{posicionesBase.length}
+          </span>
           <button
             type="button"
             className="btn-secundario"
@@ -1286,6 +1308,8 @@ function PlanosObra({ obra, materiales }) {
         <span className={`planos-leyenda-item planos-leyenda-${materialPlano}-en-fabricacion`}>En fabricación</span>
         <span className="planos-leyenda-item planos-leyenda-medir">A medir</span>
         <span className="planos-leyenda-item planos-leyenda-completo">Completo (los dos en obra)</span>
+        <span className="planos-leyenda-item planos-leyenda-medida-si">✓ Medida confirmada</span>
+        <span className="planos-leyenda-item planos-leyenda-medida-no">? Falta medir</span>
       </div>
 
       {modoCalibrar && (
@@ -1319,7 +1343,7 @@ function PlanosObra({ obra, materiales }) {
           style={{ cursor: modoCalibrar && posicionArmada ? 'crosshair' : 'default' }}
         >
           <img src={paginaImagen.imagen_base64} alt={`Plano página ${paginaActiva}`} draggable={false} />
-          {posicionesDeEstaPagina.map((p) => {
+          {posicionesDeEstaPaginaAMostrar.map((p) => {
             // "Medir" pisa a los otros dos si por algún motivo coincidieran
             // (no debería pasar, son valores de Estado mutuamente
             // excluyentes) — es la que más urge que salte a la vista.
@@ -1328,6 +1352,7 @@ function PlanosObra({ obra, materiales }) {
             const enObraAqui = !completoAqui && !medirAqui && enObra.has(p.posicion_base)
             const enFabricacionAqui = !completoAqui && !medirAqui && !enObraAqui && enFabricacion.has(p.posicion_base)
             const tipo = tipoPorPosicionBase.get(p.posicion_base)
+            const medidaOk = posicionesMedidas.has(p.posicion_base)
             const estadoTexto = completoAqui
               ? ' — COMPLETO (Carpintería y Vidrio en obra)'
               : medirAqui
@@ -1337,6 +1362,7 @@ function PlanosObra({ obra, materiales }) {
                   : enFabricacionAqui
                     ? ' — FABRICACIÓN'
                     : ''
+            const medidaTexto = medidaOk ? ' — medida confirmada' : ' — falta medir'
             const claseEstado = completoAqui
               ? 'planos-marca-completo'
               : medirAqui
@@ -1351,7 +1377,7 @@ function PlanosObra({ obra, materiales }) {
                 key={p.posicion_base}
                 className="planos-marca-grupo"
                 style={{ left: `${p.x_pct}%`, top: `${p.y_pct}%` }}
-                title={`Posición ${p.posicion_base}${tipo ? ` (${tipo})` : ''}${estadoTexto}`}
+                title={`Posición ${p.posicion_base}${tipo ? ` (${tipo})` : ''}${estadoTexto}${medidaTexto}`}
                 onClick={(e) => {
                   e.stopPropagation()
                   if (modoCalibrar) {
@@ -1361,7 +1387,12 @@ function PlanosObra({ obra, materiales }) {
                   }
                 }}
               >
-                <span className={`planos-marca ${claseEstado}`} />
+                <span className="planos-marca-envoltorio">
+                  <span className={`planos-marca ${claseEstado}`} />
+                  <span className={`planos-marca-medida ${medidaOk ? 'planos-marca-medida-si' : 'planos-marca-medida-no'}`}>
+                    {medidaOk ? '✓' : '?'}
+                  </span>
+                </span>
                 <span className="planos-marca-etiqueta">
                   {tipo && <span className="planos-marca-etiqueta-tipo">{tipo}</span>}
                   <span className="planos-marca-etiqueta-posicion">{p.posicion_base}</span>

@@ -2285,6 +2285,12 @@ select.celda-editable-material {
   color: #7a8699;
 }
 
+.planos-medidas-contador {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #3a4757;
+}
+
 /* Selector Carpintería/Vidrio — decide qué Estado colorea las marcas del
    plano (ver posicionesPorEstadoMaterial en ObrasAceptadasPage.jsx). */
 .planos-material-toggle {
@@ -2351,6 +2357,8 @@ select.celda-editable-material {
 .planos-leyenda-vidrio-en-fabricacion::before { background: #7fb0f0; }
 .planos-leyenda-medir::before { background: var(--rojo); }
 .planos-leyenda-completo::before { background: #2db260; }
+.planos-leyenda-medida-si::before { background: #2db260; }
+.planos-leyenda-medida-no::before { background: var(--rojo); }
 
 .planos-calibrar-panel {
   background: #eaf0fb;
@@ -2403,6 +2411,12 @@ select.celda-editable-material {
   cursor: pointer;
 }
 
+.planos-marca-envoltorio {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
 .planos-marca {
   flex: none;
   width: 14px;
@@ -2410,6 +2424,34 @@ select.celda-editable-material {
   border-radius: 50%;
   background: rgba(122, 134, 153, .35);
   border: 2px solid #7a8699;
+}
+
+/* Badge chico en la esquina de cada marca — independiente del color de
+   Estado (Carpintería/Vidrio), muestra si esa posición ya tiene medida
+   real cargada (ver posicionesMedidas en PlanosObra). */
+.planos-marca-medida {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid white;
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.planos-marca-medida-si {
+  background: #2db260;
+}
+
+.planos-marca-medida-no {
+  background: var(--rojo);
 }
 
 /* Carpintería: naranja — oscuro en obra, claro en fabricación.
