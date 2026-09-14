@@ -665,18 +665,20 @@ function ItemGrupoGeneralCompacto({ grupo, numero, onAbrir, onCambio, puedeMarca
   )
 }
 
-function DetalleSeguimiento({ base, opciones, ofertas, direccion, onGuardarDireccion, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta, puedeMarcarInteresante, puedeCambiarPrioridad, puedeGestionarOfertas, accessToken, usuarioEmail, onLeido }) {
+function DetalleSeguimiento({ base, opciones, ofertas, direccion, abrirEnNotas, onGuardarDireccion, onCerrar, onCambio, onAgregarOferta, onEliminarOferta, onCambiarEstatusOferta, puedeMarcarInteresante, puedeCambiarPrioridad, puedeGestionarOfertas, accessToken, usuarioEmail, onLeido }) {
   const [ofertasAbiertas, setOfertasAbiertas] = useState(false)
   const [pestanaActivaId, setPestanaActivaId] = useState(opciones[0]?.id)
-  const [chatAbierto, setChatAbierto] = useState(false)
+  const [chatAbierto, setChatAbierto] = useState(Boolean(abrirEnNotas))
 
   // Se resetea a la primera pestaña solo cuando se abre una obra distinta
   // (por base, no por el array de opciones, que cambia de referencia cada
-  // vez que se guarda algo aunque sea la misma obra).
+  // vez que se guarda algo aunque sea la misma obra). abrirEnNotas viene
+  // del filtro "con Notas" de la lista — si se entró desde ahí, el chat
+  // arranca ya desplegado en vez de la Ficha.
   useEffect(() => {
     setPestanaActivaId(opciones[0]?.id)
     setOfertasAbiertas(false)
-    setChatAbierto(false)
+    setChatAbierto(Boolean(abrirEnNotas))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base])
 
@@ -965,6 +967,15 @@ export default function SeguimientoPage() {
   const [soloProxDescartar, setSoloProxDescartar] = useState(false)
   const [soloConNotas, setSoloConNotas] = useState(false)
   const [obraSeleccionadaBase, setObraSeleccionadaBase] = useState(null)
+  // Si se abre una obra viniendo del filtro "con Notas", Álvaro quiere
+  // entrar directo a la conversación en vez de tener que apretar el botón
+  // 💬 de nuevo dentro del detalle.
+  const [abrirEnNotas, setAbrirEnNotas] = useState(false)
+
+  function abrirObra(base, notas = false) {
+    setObraSeleccionadaBase(base)
+    setAbrirEnNotas(notas)
+  }
   // "Orden del día" es la agenda de trabajo diaria de Geraldinne — arranca
   // ahí en vez de en "General" porque es lo primero que necesita mirar al
   // entrar a organizar el día.
@@ -1386,7 +1397,7 @@ export default function SeguimientoPage() {
                     numero={i + 1}
                     deshabilitarArriba={i === 0}
                     deshabilitarAbajo={i === itemsAgendaAlta.length - 1}
-                    onAbrir={setObraSeleccionadaBase}
+                    onAbrir={abrirObra}
                     onMover={(clave, dir) => handleMoverItemAgenda(itemsAgendaAlta, clave, dir)}
                     onCambio={handleCambio}
                     puedeCambiarPrioridad={puedeCambiarPrioridad}
@@ -1415,7 +1426,7 @@ export default function SeguimientoPage() {
                     numero={itemsAgendaAlta.length + i + 1}
                     deshabilitarArriba={i === 0}
                     deshabilitarAbajo={i === itemsAgendaNormal.length - 1}
-                    onAbrir={setObraSeleccionadaBase}
+                    onAbrir={abrirObra}
                     onMover={(clave, dir) => handleMoverItemAgenda(itemsAgendaNormal, clave, dir)}
                     onCambio={handleCambio}
                     puedeCambiarPrioridad={puedeCambiarPrioridad}
@@ -1556,13 +1567,13 @@ export default function SeguimientoPage() {
           {puedeElegirVistaGeneral && vistaGeneral === 'lista' ? (
             <div className="obras-lista-compacta">
               {grupo.items.map((g, i) => (
-                <ItemGrupoGeneralCompacto key={g.base} grupo={g} numero={i + 1} onAbrir={setObraSeleccionadaBase} onCambio={handleCambio} puedeMarcarInteresante={puedeMarcarInteresante} puedeCambiarPrioridad={puedeCambiarPrioridad} />
+                <ItemGrupoGeneralCompacto key={g.base} grupo={g} numero={i + 1} onAbrir={(base) => abrirObra(base, soloConNotas)} onCambio={handleCambio} puedeMarcarInteresante={puedeMarcarInteresante} puedeCambiarPrioridad={puedeCambiarPrioridad} />
               ))}
             </div>
           ) : (
             <div className="obras-grid">
               {grupo.items.map((g) => (
-                <TarjetaGrupoSeguimiento key={g.base} grupo={g} onAbrir={setObraSeleccionadaBase} onCambio={handleCambio} puedeMarcarInteresante={puedeMarcarInteresante} puedeCambiarPrioridad={puedeCambiarPrioridad} />
+                <TarjetaGrupoSeguimiento key={g.base} grupo={g} onAbrir={(base) => abrirObra(base, soloConNotas)} onCambio={handleCambio} puedeMarcarInteresante={puedeMarcarInteresante} puedeCambiarPrioridad={puedeCambiarPrioridad} />
               ))}
             </div>
           )}
@@ -1575,6 +1586,7 @@ export default function SeguimientoPage() {
           opciones={opcionesSeleccionadas}
           ofertas={ofertasDeSeleccionada}
           direccion={direccionesPorBase.get(obraSeleccionadaBase)}
+          abrirEnNotas={abrirEnNotas}
           onGuardarDireccion={handleGuardarDireccion}
           onCerrar={() => setObraSeleccionadaBase(null)}
           onCambio={handleCambio}
