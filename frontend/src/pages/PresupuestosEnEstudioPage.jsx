@@ -379,6 +379,7 @@ export default function PresupuestosEnEstudioPage() {
   // filtro rápido, no un estatus real, así que se maneja como un toggle
   // independiente que pisa a filtroEstatus mientras está activo.
   const [soloProxDescartar, setSoloProxDescartar] = useState(false)
+  const [soloConNotas, setSoloConNotas] = useState(false)
   const [obraSeleccionadaBase, setObraSeleccionadaBase] = useState(null)
   const puedeCambiarPrioridad = tienePermiso('presupuestos.gestionar_prioridad')
   const puedeMarcarInteresante = tienePermiso('presupuestos.marcar_interesante')
@@ -422,13 +423,16 @@ export default function PresupuestosEnEstudioPage() {
     return Array.from(unicos).sort((a, b) => a.localeCompare(b, 'es'))
   }, [filas, filtroCategoria])
 
+  const conNotas = useMemo(() => filas.filter((p) => p.tiene_mensajes), [filas])
+
   const filasFiltradas = useMemo(() => {
     const terminoObra = busquedaObra.trim().toLowerCase()
     return filasSegunEstatus
       .filter((p) => !terminoObra || p.obra?.toLowerCase().includes(terminoObra))
       .filter((p) => filtroCategoria === 'Todos' || p.categoria === filtroCategoria)
       .filter((p) => filtroContacto === 'Todos' || p.contacto === filtroContacto)
-  }, [filasSegunEstatus, busquedaObra, filtroCategoria, filtroContacto])
+      .filter((p) => !soloConNotas || p.tiene_mensajes)
+  }, [filasSegunEstatus, busquedaObra, filtroCategoria, filtroContacto, soloConNotas])
 
   function handleCambioCategoria(valor) {
     setFiltroCategoria(valor)
@@ -594,6 +598,15 @@ export default function PresupuestosEnEstudioPage() {
               onClick={handleToggleProxDescartar}
             >
               ⚠ {proxADescartar.length} próx. a descartar
+            </button>
+          )}
+          {conNotas.length > 0 && (
+            <button
+              type="button"
+              className={`filtro-con-notas ${soloConNotas ? 'filtro-con-notas-activo' : ''}`}
+              onClick={() => setSoloConNotas((v) => !v)}
+            >
+              💬 {conNotas.length} con Notas
             </button>
           )}
           <span className="filtro-contador">

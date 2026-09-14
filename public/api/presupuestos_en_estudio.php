@@ -382,6 +382,10 @@ try {
             $base = nombreBaseObra($p['obra']);
             $ultimo = $ultimoMensajePorObra[$base] ?? null;
             $leido = $lecturaPorObra[$base] ?? null;
+            // "tiene_mensajes" (con o sin leer) alimenta el filtro rápido de
+            // la lista ("con Notas"); "tiene_mensajes_sin_leer" sigue siendo
+            // la insignia/punto rojo de notificación.
+            $p['tiene_mensajes'] = $ultimo !== null;
             $p['tiene_mensajes_sin_leer'] = $ultimo !== null && ($leido === null || $ultimo > $leido);
             $p['orden_agenda'] = $ordenAgendaPorBase[$base] ?? null;
             // Mientras la obra no tiene Ficha diligenciada, la hoja de
