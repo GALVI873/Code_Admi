@@ -2059,7 +2059,7 @@ export default function ObrasAceptadasPage() {
                 key={p.id}
                 presupuesto={p}
                 numero={i + 1}
-                onAbrir={(id) => navigate(`/obras-aceptadas/${id}`)}
+                onAbrir={(id) => navigate(`/obras-aceptadas/${id}${soloConNotas ? '?pestana=Notas' : ''}`)}
                 onCambiarEstatus={handleCambiarEstatusObra}
               />
             ))}
