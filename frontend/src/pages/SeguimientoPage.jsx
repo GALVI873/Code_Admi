@@ -963,6 +963,7 @@ export default function SeguimientoPage() {
   // filtro rápido, no un estatus real, así que se maneja como un toggle
   // independiente que pisa a filtroEstatus mientras está activo.
   const [soloProxDescartar, setSoloProxDescartar] = useState(false)
+  const [soloConNotas, setSoloConNotas] = useState(false)
   const [obraSeleccionadaBase, setObraSeleccionadaBase] = useState(null)
   // "Orden del día" es la agenda de trabajo diaria de Geraldinne — arranca
   // ahí en vez de en "General" porque es lo primero que necesita mirar al
@@ -1139,6 +1140,8 @@ export default function SeguimientoPage() {
     return Array.from(unicos).sort((a, b) => a.localeCompare(b, 'es'))
   }, [filasVivas, filtroCategoria])
 
+  const conNotas = useMemo(() => filasVivas.filter((p) => p.tiene_mensajes), [filasVivas])
+
   const filasFiltradas = useMemo(() => {
     const texto = busquedaObra.trim().toLowerCase()
     // Buscando por nombre, se busca en TODOS los estatus (Enviado,
@@ -1152,7 +1155,8 @@ export default function SeguimientoPage() {
       .filter((p) => !texto || p.obra?.toLowerCase().includes(texto))
       .filter((p) => filtroCategoria === 'Todos' || p.categoria === filtroCategoria)
       .filter((p) => filtroContacto === 'Todos' || p.contacto === filtroContacto)
-  }, [filasSegunEstatus, filasVivas, busquedaObra, filtroCategoria, filtroContacto])
+      .filter((p) => !soloConNotas || p.tiene_mensajes)
+  }, [filasSegunEstatus, filasVivas, busquedaObra, filtroCategoria, filtroContacto, soloConNotas])
 
   // Agrupa las opciones de una misma obra ("— Opción A"/"— Opción B") bajo
   // una sola tarjeta. El estatus que decide en qué sección aparece el grupo
@@ -1500,6 +1504,15 @@ export default function SeguimientoPage() {
               onClick={handleToggleProxDescartar}
             >
               ⚠ {proxADescartar.length} próx. a descartar
+            </button>
+          )}
+          {conNotas.length > 0 && (
+            <button
+              type="button"
+              className={`filtro-con-notas ${soloConNotas ? 'filtro-con-notas-activo' : ''}`}
+              onClick={() => setSoloConNotas((v) => !v)}
+            >
+              💬 {conNotas.length} con Notas
             </button>
           )}
           {puedeElegirVistaGeneral && (
