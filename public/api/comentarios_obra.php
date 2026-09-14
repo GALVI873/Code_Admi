@@ -43,8 +43,21 @@ declare(strict_types=1);
 // usa en las otras dos vistas que comparten este mismo endpoint
 // (Presupuestos en Estudio/Presupuesto son charla libre entre Álvaro y
 // Geraldinne, no pendientes) — ahí el campo simplemente queda siempre en 0.
-// PATCH {id, hecho}: requiere sesión + rol gestion_obras específicamente
-// (no alcanza con el permiso obras.ver_aceptadas, que también tiene admin).
+// "archivado" (columna nueva): también solo para la pestaña "Notas" — una
+// vez que Alfredo terminó con una nota (comentada y/o hecha), la archiva
+// para que deje de aparecer en la lista sin borrarla. GET la excluye por
+// defecto; ?incluir_archivadas=1 las vuelve a traer (por si hace falta
+// revisar o desarchivar alguna).
+// comentarios_obra_respuestas: hilo corto de respuestas colgado de una nota
+// puntual (comentario_id) — a diferencia de la nota en sí, que es de
+// Álvaro, acá cualquiera de los dos puede escribir (típicamente Alfredo
+// contestando esa nota puntual, sin abrir una nota nueva aparte).
+// PATCH {id, hecho} y/o {id, archivado}: requiere sesión + rol
+// gestion_obras (hecho, específicamente Alfredo) o gestion_obras/admin
+// (archivado, cualquiera de los dos).
+// POST {obra, mensaje, comentario_id?}: sin comentario_id crea una nota
+// nueva (comportamiento de siempre); con comentario_id agrega una
+// respuesta a esa nota puntual en comentarios_obra_respuestas.
 // GET ?pendientes=1 (sin "obra"): junta, de TODAS las obras que están en
 // obras_aceptadas, los mensajes que no son de Alfredo y siguen sin marcar
 // "hecho" — la vista "Pendientes" (control general de Alfredo, no tiene
@@ -93,12 +106,25 @@ try {
     if (!in_array('hecho', $columnasComentarios, true)) {
         $db->exec('ALTER TABLE comentarios_obra ADD COLUMN hecho INTEGER NOT NULL DEFAULT 0');
     }
+    if (!in_array('archivado', $columnasComentarios, true)) {
+        $db->exec('ALTER TABLE comentarios_obra ADD COLUMN archivado INTEGER NOT NULL DEFAULT 0');
+    }
     $db->exec("
         CREATE TABLE IF NOT EXISTS comentarios_obra_leido (
           obra TEXT NOT NULL,
           usuario_email TEXT NOT NULL,
           ultima_lectura TEXT NOT NULL,
           PRIMARY KEY (obra, usuario_email)
+        )
+    ");
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS comentarios_obra_respuestas (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          comentario_id INTEGER NOT NULL,
+          autor_nombre TEXT NOT NULL,
+          autor_email TEXT NOT NULL,
+          mensaje TEXT NOT NULL,
+          creado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
     ");
 
@@ -115,6 +141,7 @@ try {
                 FROM comentarios_obra co
                 INNER JOIN obras_aceptadas oa ON oa.obra = co.obra
                 WHERE co.hecho = 0
+                  AND co.archivado = 0
                   AND co.autor_email NOT IN (
                     SELECT u.email FROM usuarios u
                     INNER JOIN usuario_roles ur ON ur.usuario_id = u.id
@@ -130,9 +157,29 @@ try {
         if ($obra === '') {
             Response::error('Falta "obra"', 422);
         }
-        $stmt = $db->prepare('SELECT * FROM comentarios_obra WHERE obra = ? ORDER BY creado_en ASC, id ASC');
+        $incluirArchivadas = ($_GET['incluir_archivadas'] ?? '') === '1';
+        $sql = 'SELECT * FROM comentarios_obra WHERE obra = ?' . ($incluirArchivadas ? '' : ' AND archivado = 0') . ' ORDER BY creado_en ASC, id ASC';
+        $stmt = $db->prepare($sql);
         $stmt->execute([$obra]);
         $comentarios = $stmt->fetchAll();
+
+        // Respuestas colgadas de cada nota (ver comentario de cabecera) —
+        // se traen todas juntas en una sola consulta y se reparten acá en
+        // vez de una consulta por nota.
+        if ($comentarios) {
+            $ids = array_column($comentarios, 'id');
+            $marcadores = implode(',', array_fill(0, count($ids), '?'));
+            $stmtR = $db->prepare("SELECT * FROM comentarios_obra_respuestas WHERE comentario_id IN ($marcadores) ORDER BY creado_en ASC, id ASC");
+            $stmtR->execute($ids);
+            $respuestasPorComentario = [];
+            foreach ($stmtR->fetchAll() as $r) {
+                $respuestasPorComentario[$r['comentario_id']][] = $r;
+            }
+            foreach ($comentarios as &$c) {
+                $c['respuestas'] = $respuestasPorComentario[$c['id']] ?? [];
+            }
+            unset($c);
+        }
 
         marcarLeido($db, $obra, $usuario['email']);
 
@@ -146,6 +193,22 @@ try {
         if ($obra === '' || $mensaje === '') {
             Response::error('Faltan "obra" y/o "mensaje"', 422);
         }
+
+        $comentarioId = (int) ($body['comentario_id'] ?? 0);
+        if ($comentarioId > 0) {
+            // Respuesta colgada de una nota puntual, no una nota nueva.
+            $db->prepare('INSERT INTO comentarios_obra_respuestas (comentario_id, autor_nombre, autor_email, mensaje) VALUES (?, ?, ?, ?)')
+                ->execute([$comentarioId, $usuario['nombre'], $usuario['email'], $mensaje]);
+
+            $id = (int) $db->lastInsertId();
+            $stmt = $db->prepare('SELECT * FROM comentarios_obra_respuestas WHERE id = ?');
+            $stmt->execute([$id]);
+
+            marcarLeido($db, $obra, $usuario['email']);
+
+            Response::json(['respuesta' => $stmt->fetch()]);
+        }
+
         $db->prepare('INSERT INTO comentarios_obra (obra, autor_nombre, autor_email, mensaje) VALUES (?, ?, ?, ?)')
             ->execute([$obra, $usuario['nombre'], $usuario['email'], $mensaje]);
 
@@ -159,16 +222,28 @@ try {
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'PATCH') {
-        if (!tieneRol($usuario, 'gestion_obras')) {
-            Response::error('Solo Alfredo puede marcar un pendiente como hecho', 403);
-        }
         $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
         $id = (int) ($body['id'] ?? 0);
-        if ($id <= 0 || !array_key_exists('hecho', $body)) {
-            Response::error('Faltan "id" y/o "hecho"', 422);
+        if ($id <= 0 || (!array_key_exists('hecho', $body) && !array_key_exists('archivado', $body))) {
+            Response::error('Falta "id" y "hecho" y/o "archivado"', 422);
         }
-        $db->prepare('UPDATE comentarios_obra SET hecho = ? WHERE id = ?')
-            ->execute([$body['hecho'] ? 1 : 0, $id]);
+
+        if (array_key_exists('hecho', $body)) {
+            if (!tieneRol($usuario, 'gestion_obras')) {
+                Response::error('Solo Alfredo puede marcar un pendiente como hecho', 403);
+            }
+            $db->prepare('UPDATE comentarios_obra SET hecho = ? WHERE id = ?')
+                ->execute([$body['hecho'] ? 1 : 0, $id]);
+        }
+
+        if (array_key_exists('archivado', $body)) {
+            if (!tieneRol($usuario, 'gestion_obras') && !tieneRol($usuario, 'admin')) {
+                Response::error('No tenés permiso para archivar esta nota', 403);
+            }
+            $db->prepare('UPDATE comentarios_obra SET archivado = ? WHERE id = ?')
+                ->execute([$body['archivado'] ? 1 : 0, $id]);
+        }
+
         Response::json(['ok' => true]);
     }
 
@@ -181,6 +256,13 @@ try {
         $obra = nombreBaseObra((string) ($_GET['obra'] ?? ''));
         if ($obra === '') {
             Response::error('Falta "obra"', 422);
+        }
+        $stmtIds = $db->prepare('SELECT id FROM comentarios_obra WHERE obra = ?');
+        $stmtIds->execute([$obra]);
+        $ids = array_column($stmtIds->fetchAll(), 'id');
+        if ($ids) {
+            $marcadores = implode(',', array_fill(0, count($ids), '?'));
+            $db->prepare("DELETE FROM comentarios_obra_respuestas WHERE comentario_id IN ($marcadores)")->execute($ids);
         }
         $db->prepare('DELETE FROM comentarios_obra WHERE obra = ?')->execute([$obra]);
         $db->prepare('DELETE FROM comentarios_obra_leido WHERE obra = ?')->execute([$obra]);

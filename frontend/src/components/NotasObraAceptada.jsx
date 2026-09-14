@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import {
   comentariosObra,
   agregarComentarioObra,
+  agregarRespuestaNota,
   marcarComentarioHecho,
+  archivarComentarioObra,
   eliminarConversacionObra,
 } from '../api/client.js'
 
@@ -14,6 +16,13 @@ import {
 // — a pedido explícito, Álvaro no tilda sus propios mensajes. Mismo
 // backend que ComentariosObra (comentarios_obra.php), agrega el campo
 // "hecho" y el PATCH para cambiarlo.
+//
+// Cada nota admite además un hilo corto de respuestas (comentario_id en
+// comentarios_obra_respuestas) — a pedido de Álvaro, para que Alfredo
+// pueda contestar puntualmente esa nota sin abrir una nota nueva aparte —
+// y un estatus de "archivado", para que una nota ya resuelta deje de
+// aparecer en la lista sin borrarla (Alfredo o Álvaro pueden archivar y
+// desarchivar).
 function nombreBaseObra(obra) {
   return (obra || '').replace(/\s*—\s*Opci[oó]n\s+\w+\s*$/i, '').trim()
 }
@@ -28,9 +37,89 @@ function formatoFechaHora(iso) {
   return `${dia}/${mes}/${fecha.getFullYear()} ${horas}:${minutos}`
 }
 
+function NotaItem({ nota, obraBase, accessToken, puedeMarcarHecho, puedeArchivar, onToggleHecho, onArchivar, onNuevaRespuesta }) {
+  const [respuesta, setRespuesta] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState('')
+
+  async function enviarRespuesta(e) {
+    e.preventDefault()
+    const texto = respuesta.trim()
+    if (!texto || enviando) return
+    setEnviando(true)
+    setError('')
+    try {
+      const data = await agregarRespuestaNota(accessToken, obraBase, nota.id, texto)
+      onNuevaRespuesta(nota.id, data.respuesta)
+      setRespuesta('')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <li className={`notas-obra-item ${nota.hecho ? 'notas-obra-item-hecho' : ''} ${nota.archivado ? 'notas-obra-item-archivado' : ''}`}>
+      <input
+        type="checkbox"
+        className="notas-obra-checkbox"
+        checked={!!nota.hecho}
+        disabled={!puedeMarcarHecho}
+        onChange={() => onToggleHecho(nota)}
+        title={puedeMarcarHecho ? 'Marcar como hecho' : 'Solo Alfredo puede marcar esto como hecho'}
+      />
+      <div className="notas-obra-item-cuerpo">
+        <p className="notas-obra-item-texto">{nota.mensaje}</p>
+        <span className="notas-obra-item-meta">
+          {nota.autor_nombre} · {formatoFechaHora(nota.creado_en)}
+          {nota.archivado && ' · Archivada'}
+        </span>
+
+        {nota.respuestas?.length > 0 && (
+          <ul className="notas-obra-respuestas">
+            {nota.respuestas.map((r) => (
+              <li key={r.id} className="notas-obra-respuesta">
+                <p className="notas-obra-respuesta-texto">{r.mensaje}</p>
+                <span className="notas-obra-respuesta-meta">{r.autor_nombre} · {formatoFechaHora(r.creado_en)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form className="notas-obra-respuesta-form" onSubmit={enviarRespuesta}>
+          <input
+            type="text"
+            className="input-filtro notas-obra-respuesta-input"
+            placeholder="Responder esta nota…"
+            value={respuesta}
+            onChange={(e) => setRespuesta(e.target.value)}
+          />
+          <button type="submit" className="notas-obra-respuesta-boton" disabled={enviando || !respuesta.trim()}>
+            Responder
+          </button>
+        </form>
+        {error && <div className="auth-error">{error}</div>}
+      </div>
+
+      {puedeArchivar && (
+        <button
+          type="button"
+          className="notas-obra-archivar"
+          onClick={() => onArchivar(nota, !nota.archivado)}
+          title={nota.archivado ? 'Desarchivar' : 'Archivar — deja de aparecer en la lista'}
+        >
+          {nota.archivado ? '↩' : '🗄'}
+        </button>
+      )}
+    </li>
+  )
+}
+
 export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido }) {
   const obraBase = nombreBaseObra(obra)
   const puedeMarcarHecho = usuario?.roles?.includes('gestion_obras')
+  const puedeArchivar = usuario?.roles?.includes('gestion_obras') || usuario?.roles?.includes('admin')
   const puedeEliminar = usuario?.roles?.includes('admin')
 
   const [notas, setNotas] = useState([])
@@ -38,11 +127,14 @@ export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido 
   const [error, setError] = useState('')
   const [mensaje, setMensaje] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const [verArchivadas, setVerArchivadas] = useState(false)
 
   useEffect(() => {
     let activo = true
     setCargando(true)
-    comentariosObra(accessToken, obraBase)
+    // Trae también las archivadas (incluirArchivadas=true) — se filtran acá
+    // nomás según verArchivadas, así alternar el toggle no pide de nuevo.
+    comentariosObra(accessToken, obraBase, true)
       .then((data) => {
         if (!activo) return
         setNotas(data.comentarios || [])
@@ -76,7 +168,7 @@ export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido 
       const nuevas = []
       for (const linea of lineas) {
         const data = await agregarComentarioObra(accessToken, obraBase, linea)
-        nuevas.push(data.comentario)
+        nuevas.push({ ...data.comentario, respuestas: [] })
       }
       setNotas((prev) => [...prev, ...nuevas])
       setMensaje('')
@@ -110,6 +202,22 @@ export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido 
     }
   }
 
+  async function handleArchivar(nota, archivado) {
+    if (!puedeArchivar) return
+    const anteriores = notas
+    setNotas((prev) => prev.map((n) => (n.id === nota.id ? { ...n, archivado: archivado ? 1 : 0 } : n)))
+    try {
+      await archivarComentarioObra(accessToken, nota.id, archivado)
+    } catch (err) {
+      setNotas(anteriores)
+      setError(err.message)
+    }
+  }
+
+  function handleNuevaRespuesta(notaId, respuesta) {
+    setNotas((prev) => prev.map((n) => (n.id === notaId ? { ...n, respuestas: [...(n.respuestas || []), respuesta] } : n)))
+  }
+
   async function handleVaciarConversacion() {
     if (!puedeEliminar) return
     if (!window.confirm(`¿Vaciar toda la conversación de "${obraBase}"? Esto borra todos los mensajes, no se puede deshacer.`)) {
@@ -124,38 +232,45 @@ export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido 
     }
   }
 
+  const archivadas = notas.filter((n) => n.archivado)
+  const notasVisibles = verArchivadas ? notas : notas.filter((n) => !n.archivado)
+
   return (
     <div className="notas-obra">
       <div className="notas-obra-encabezado">
         <span className="chat-obra-titulo">Notas</span>
-        {puedeEliminar && (
-          <button type="button" className="notas-obra-vaciar" onClick={handleVaciarConversacion}>
-            🗑 Vaciar (prueba)
-          </button>
-        )}
+        <div className="notas-obra-encabezado-acciones">
+          {puedeArchivar && archivadas.length > 0 && (
+            <button type="button" className="notas-obra-ver-archivadas" onClick={() => setVerArchivadas((v) => !v)}>
+              {verArchivadas ? 'Ocultar archivadas' : `Ver archivadas (${archivadas.length})`}
+            </button>
+          )}
+          {puedeEliminar && (
+            <button type="button" className="notas-obra-vaciar" onClick={handleVaciarConversacion}>
+              🗑 Vaciar (prueba)
+            </button>
+          )}
+        </div>
       </div>
 
       {cargando && <p className="dashboard-nota">Cargando…</p>}
-      {!cargando && notas.length === 0 && (
+      {!cargando && notasVisibles.length === 0 && (
         <p className="dashboard-nota">Todavía no hay notas en esta obra.</p>
       )}
 
       <ul className="notas-obra-lista">
-        {notas.map((n) => (
-          <li key={n.id} className={`notas-obra-item ${n.hecho ? 'notas-obra-item-hecho' : ''}`}>
-            <input
-              type="checkbox"
-              className="notas-obra-checkbox"
-              checked={!!n.hecho}
-              disabled={!puedeMarcarHecho}
-              onChange={() => handleToggleHecho(n)}
-              title={puedeMarcarHecho ? 'Marcar como hecho' : 'Solo Alfredo puede marcar esto como hecho'}
-            />
-            <div className="notas-obra-item-cuerpo">
-              <p className="notas-obra-item-texto">{n.mensaje}</p>
-              <span className="notas-obra-item-meta">{n.autor_nombre} · {formatoFechaHora(n.creado_en)}</span>
-            </div>
-          </li>
+        {notasVisibles.map((n) => (
+          <NotaItem
+            key={n.id}
+            nota={n}
+            obraBase={obraBase}
+            accessToken={accessToken}
+            puedeMarcarHecho={puedeMarcarHecho}
+            puedeArchivar={puedeArchivar}
+            onToggleHecho={handleToggleHecho}
+            onArchivar={handleArchivar}
+            onNuevaRespuesta={handleNuevaRespuesta}
+          />
         ))}
       </ul>
 

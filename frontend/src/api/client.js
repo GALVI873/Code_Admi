@@ -222,8 +222,9 @@ export function actualizarUbicacionDiarioGeneral(accessToken, id, ubicacion) {
   })
 }
 
-export function comentariosObra(accessToken, obra) {
-  return request(`/comentarios_obra.php?obra=${encodeURIComponent(obra)}`, {
+export function comentariosObra(accessToken, obra, incluirArchivadas = false) {
+  const sufijo = incluirArchivadas ? '&incluir_archivadas=1' : ''
+  return request(`/comentarios_obra.php?obra=${encodeURIComponent(obra)}${sufijo}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
 }
@@ -241,6 +242,22 @@ export function marcarComentarioHecho(accessToken, id, hecho) {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ id, hecho }),
+  })
+}
+
+export function archivarComentarioObra(accessToken, id, archivado) {
+  return request('/comentarios_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ id, archivado }),
+  })
+}
+
+export function agregarRespuestaNota(accessToken, obra, comentarioId, mensaje) {
+  return request('/comentarios_obra.php', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ obra, comentario_id: comentarioId, mensaje }),
   })
 }
 
