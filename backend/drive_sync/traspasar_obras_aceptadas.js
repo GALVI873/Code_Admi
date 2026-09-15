@@ -1,13 +1,42 @@
 // Traspaso de Drive al aceptar un presupuesto: mueve la carpeta de la obra
 // desde "HOJAS DE CALCULO (PPTOS)" (en estudio) a "SEGUIMIENTO DE OBRAS
-// (Aceptadas)", dejando en la carpeta nueva solo el Excel de cálculo, el
-// PDF más reciente de "Enviados" (el presupuesto aprobado) y la carpeta
-// "1.Organización" completa (con "Valoración" adentro) — el resto de lo
-// que había en el origen (la propia carpeta "Enviados" con lo que le
-// quede, otros archivos sueltos) se archiva en una subcarpeta "_Archivo"
-// DENTRO del origen, nunca se borra. También copia la plantilla
-// MEDYSEG.xlsx (vive directo en la raíz de GOOGLE_DRIVE_OBRAS_ACEPTADAS_
-// FOLDER_ID) a la carpeta nueva, renombrada con el nombre de la obra.
+// (Aceptadas)", dejando en la carpeta nueva el Excel de cálculo, el PDF más
+// reciente de "Enviados" (el presupuesto aprobado), la carpeta
+// "1.Organización" (con "Valoración" adentro, si el origen ya tenía una —
+// si no, se crea una nueva vacía) y la carpeta "Doc" del origen si existe
+// (ver más abajo). También copia la plantilla MEDYSEG.xlsx (vive directo en
+// la raíz de GOOGLE_DRIVE_OBRAS_ACEPTADAS_FOLDER_ID) a la carpeta nueva,
+// renombrada con el nombre de la obra.
+//
+// A pedido de Álvaro (2026-09-15), tres cambios sobre la versión anterior:
+//
+// 1. La carpeta de origen se ELIMINA (a la papelera de Drive, no un borrado
+//    permanente — recuperable ahí por un tiempo) una vez que ya se movió
+//    todo lo necesario, en vez de quedar con un "_Archivo" adentro. El
+//    panel sigue mostrando la obra igual, como "Aceptado", aunque su
+//    carpeta de origen ya no exista con ese nombre — presupuestos_en_
+//    estudio.php nunca borra una fila en estatus Aceptado o Descartado por
+//    reconciliación (son decisiones finales, se conservan como historial).
+//    Lo que quedaba suelto en el origen sin moverse a ningún lado (la
+//    propia carpeta "Enviados" con el resto de PDFs, archivos sueltos) se
+//    va con la carpeta a la papelera, ya no se preserva aparte.
+// 2. Dentro de "1.Organización" del destino se crean (si no existen ya)
+//    las subcarpetas: "Planos", "Fabricación", "Vidrios" y "Medición" —
+//    esta última con "Chapas" y "Carpintería" adentro. "Medición/
+//    Carpintería" es donde enviar_medidas_taller.js sube el Excel con las
+//    medidas que Álvaro manda desde el panel (antes subía directo a
+//    "Medición" — ver ese script para el cambio correspondiente).
+// 3. Si el origen tiene una carpeta "Doc" (ubicación históricamente
+//    inconsistente, no todas las obras la tienen — ver
+//    extract_ofertas_proveedor.js), lo que tenga suelto adentro se mueve
+//    primero a una subcarpeta "Origen" dentro de la propia "Doc" (si esa
+//    subcarpeta ya existe de una corrida anterior, no se duplica), y
+//    después la carpeta "Doc" entera (ya con "Origen" adentro) se traspasa
+//    al destino igual que "1.Organización".
+//
+// Todo esto aplica solo a obras que se acepten de acá en adelante — no es
+// retroactivo para las que ya estaban en "SEGUIMIENTO DE OBRAS (Aceptadas)"
+// antes de este cambio.
 //
 // A diferencia de la primera versión, esta lee y mueve todo por la API de
 // Drive (OAuth, mismo mecanismo que sync_all.js/sync_obras_aceptadas.js) —
@@ -80,6 +109,24 @@ async function crearCarpeta(drive, parentId, nombre) {
 async function obtenerOCrearSubcarpeta(drive, parentId, nombre, patron) {
   const existente = await buscarSubcarpeta(drive, parentId, patron);
   if (existente) return existente;
+  return crearCarpeta(drive, parentId, nombre);
+}
+
+// Como obtenerOCrearSubcarpeta, pero respeta el modo simulación (no crea
+// nada real sin --aplicar, solo dice qué haría) y propaga esa simulación
+// hacia abajo: si el padre ya es una carpeta simulada (id que arranca con
+// "(simulado", porque a su vez no existía y tampoco se creó de verdad), no
+// hace falta ni intentar buscar/crear adentro — se devuelve otro id
+// simulado directamente, sin llamar a la API con un parentId inválido.
+async function obtenerOCrearSubcarpetaSimulable(drive, parentId, nombre, patron, resultados) {
+  if (String(parentId).startsWith('(simulado')) {
+    resultados.push(`  crear subcarpeta "${nombre}"`);
+    return { id: `(simulado:${nombre})` };
+  }
+  const existente = await buscarSubcarpeta(drive, parentId, patron);
+  if (existente) return existente;
+  resultados.push(`  crear subcarpeta "${nombre}"`);
+  if (!APLICAR) return { id: `(simulado:${nombre})` };
   return crearCarpeta(drive, parentId, nombre);
 }
 
@@ -176,6 +223,36 @@ async function localizarOrganizacion(drive, obraFolderId) {
   return { carpeta: dir };
 }
 
+// "Doc" es opcional y de ubicación inconsistente (no todas las obras la
+// tienen — ver extract_ofertas_proveedor.js) — se busca solo como hijo
+// directo de la carpeta de la obra, igual profundidad que "1.Organización".
+async function localizarCarpetaDoc(drive, obraFolderId) {
+  const dir = await buscarSubcarpeta(drive, obraFolderId, /^docs?$/i);
+  if (!dir) return { error: 'no se encontró la carpeta "Doc"' };
+  return { carpeta: dir };
+}
+
+// Mueve lo que "Doc" tenga suelto (todo lo que no sea ya la propia
+// subcarpeta "Origen") adentro de una subcarpeta "Origen" — así, cuando
+// "Doc" se traspasa entera al destino, queda claro que ese contenido es lo
+// que Geraldinne ya tenía ahí desde el presupuesto, distinto de lo que se
+// vaya agregando de acá en más.
+async function reorganizarDocEnOrigen(drive, docFolderId, resultados) {
+  const hijos = await listarHijos(drive, docFolderId, false);
+  const yaOrigen = hijos.find((h) => /^origen$/i.test(h.name));
+  const aMover = hijos.filter((h) => !yaOrigen || h.id !== yaOrigen.id).filter((h) => !/^origen$/i.test(h.name));
+  if (aMover.length === 0) return;
+
+  let carpetaOrigen = yaOrigen;
+  if (!carpetaOrigen) {
+    resultados.push(`  crear subcarpeta "Origen" dentro de "Doc"`);
+    carpetaOrigen = APLICAR ? await crearCarpeta(drive, docFolderId, 'Origen') : { id: '(simulado:Origen)' };
+  }
+  for (const item of aMover) {
+    await mover(drive, item.id, carpetaOrigen.id, docFolderId, `"${item.name}" -> Doc/Origen`, resultados);
+  }
+}
+
 async function localizarPlantillaMedyseg(drive) {
   const rootId = process.env.GOOGLE_DRIVE_OBRAS_ACEPTADAS_FOLDER_ID;
   const res = await drive.files.list({
@@ -242,8 +319,10 @@ async function procesarObra(drive, plantillaMedysegId, p) {
 
   const organizacion = await localizarOrganizacion(drive, origen.id);
   if (organizacion.error) {
-    console.log(`  AVISO: ${organizacion.error} — se traspasa igual sin ella`);
+    console.log(`  AVISO: ${organizacion.error} — se crea una "1.Organización" nueva en el destino`);
   }
+
+  const doc = await localizarCarpetaDoc(drive, origen.id);
 
   const destino = await obtenerOCrearCarpetaDestino(drive, origen.categoriaFolderName, origen.contactoFolderName, p.obra);
   if (destino.error) {
@@ -254,31 +333,41 @@ async function procesarObra(drive, plantillaMedysegId, p) {
   console.log(`  Origen: ${origen.categoriaFolderName}${origen.contactoFolderName ? '/' + origen.contactoFolderName : ''}/${p.obra}`);
   console.log(`  Destino: mismo camino en "SEGUIMIENTO DE OBRAS (Aceptadas)"`);
 
-  const idsMovidosDeOrigen = [excel.archivo.id];
   await mover(drive, excel.archivo.id, destino.id, origen.id, `Excel "${excel.archivo.name}"`, resultados);
   // El PDF vive dentro de "Enviados" (no es hijo directo de la carpeta de
-  // obra) — su carpeta contenedora sigue el flujo normal de "sobrante" más
-  // abajo, así que archivar Enviados con lo que le quede es automático.
+  // obra) — esa carpeta contenedora se queda en el origen y se va entera a
+  // la papelera con el resto (ver más abajo), ya no se archiva aparte.
   await mover(drive, pdf.archivo.id, destino.id, pdf.carpetaEnviadosId, `PDF "${pdf.archivo.name}"`, resultados);
+
+  // "1.Organización": se mueve la que ya existía en el origen, o se crea
+  // una nueva vacía en el destino si el origen no tenía ninguna — de
+  // cualquier manera, el destino termina siempre con una.
+  let organizacionDestinoId;
   if (!organizacion.error) {
-    idsMovidosDeOrigen.push(organizacion.carpeta.id);
     await mover(drive, organizacion.carpeta.id, destino.id, origen.id, `carpeta "${organizacion.carpeta.name}"`, resultados);
+    organizacionDestinoId = organizacion.carpeta.id;
+  } else {
+    const nueva = await obtenerOCrearSubcarpetaSimulable(drive, destino.id, '1.Organización', /^\d*\.?\s*organizaci[oó]n/i, resultados);
+    organizacionDestinoId = nueva.id;
   }
 
-  // Lo que sobra en el origen (carpeta "Enviados" con lo que le quede,
-  // otros archivos sueltos) se archiva junto, no se borra nada. Al mover
-  // afuera también "Enviados" por nombre, la carpeta de origen deja de
-  // tener ninguna marca de "carpeta de obra" (Enviados/Organización/
-  // Valoración) y sync_all.js ya no la vuelve a descubrir.
-  const hijosRestantes = await listarHijos(drive, origen.id, false);
-  const sobrantes = hijosRestantes.filter((h) => !idsMovidosDeOrigen.includes(h.id) && h.name !== '_Archivo');
-  if (sobrantes.length > 0) {
-    const carpetaArchivo = await (APLICAR
-      ? obtenerOCrearSubcarpeta(drive, origen.id, '_Archivo', /^_archivo$/i)
-      : Promise.resolve({ id: '(simulado)' }));
-    for (const item of sobrantes) {
-      await mover(drive, item.id, carpetaArchivo.id, origen.id, `sobrante "${item.name}" -> _Archivo`, resultados);
-    }
+  // Estructura fija dentro de "1.Organización" (a pedido de Álvaro):
+  // Planos, Fabricación, Vidrios y Medición — esta última con Chapas y
+  // Carpintería adentro (Carpintería es donde enviar_medidas_taller.js
+  // sube las medidas que Álvaro manda desde el panel).
+  await obtenerOCrearSubcarpetaSimulable(drive, organizacionDestinoId, 'Planos', /^planos?$/i, resultados);
+  await obtenerOCrearSubcarpetaSimulable(drive, organizacionDestinoId, 'Fabricación', /fabricaci[oó]n/i, resultados);
+  await obtenerOCrearSubcarpetaSimulable(drive, organizacionDestinoId, 'Vidrios', /^vidrios?$/i, resultados);
+  const medicion = await obtenerOCrearSubcarpetaSimulable(drive, organizacionDestinoId, 'Medición', /medici[oó]n/i, resultados);
+  await obtenerOCrearSubcarpetaSimulable(drive, medicion.id, 'Chapas', /^chapas?$/i, resultados);
+  await obtenerOCrearSubcarpetaSimulable(drive, medicion.id, 'Carpintería', /carpinter[ií]a/i, resultados);
+
+  // "Doc" (opcional): si existe en el origen, primero se reorganiza lo que
+  // tenga suelto dentro de una subcarpeta "Origen", y recién ahí se
+  // traspasa entera al destino — igual que "1.Organización".
+  if (!doc.error) {
+    await reorganizarDocEnOrigen(drive, doc.carpeta.id, resultados);
+    await mover(drive, doc.carpeta.id, destino.id, origen.id, `carpeta "${doc.carpeta.name}" (con "Origen" adentro)`, resultados);
   }
 
   const nombreMedyseg = `${p.obra} MEDYSEG.xlsx`;
@@ -295,13 +384,21 @@ async function procesarObra(drive, plantillaMedysegId, p) {
     }
   }
 
+  // Una vez movido todo lo necesario, la carpeta de origen (con lo que le
+  // haya quedado adentro: "Enviados" con el resto de PDFs, archivos
+  // sueltos) se manda a la papelera de Drive — no un borrado permanente,
+  // sigue recuperable ahí por un tiempo. El panel sigue mostrando la obra
+  // igual, como "Aceptado" (ver comentario de cabecera).
+  resultados.push(`  eliminar (papelera de Drive) la carpeta de origen completa`);
+
   resultados.forEach((r) => console.log(r));
 
   if (APLICAR) {
+    await drive.files.update({ fileId: origen.id, resource: { trashed: true }, fields: 'id, trashed' });
     await marcarProcesado(p.obra);
     console.log('  OK — avisado al panel.');
   } else {
-    console.log('  (simulado, nada se movió — correr con --aplicar para ejecutar)');
+    console.log('  (simulado, nada se movió/creó/eliminó — correr con --aplicar para ejecutar)');
   }
 
   return { ok: true };

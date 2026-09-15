@@ -1,7 +1,10 @@
 // Procesa los pedidos de "Enviar medidas" hechos desde el panel (botón en
 // Planos, ver medidas_obra.php) — arma un Excel con las medidas confirmadas
-// en obra y lo sube a la carpeta "medición" de esa obra en Drive, para que
-// Alfredo lo revise y se mande al taller. A diferencia de
+// en obra y lo sube a la subcarpeta "medición/Carpintería" de esa obra en
+// Drive (a pedido de Álvaro, 2026-09-15 — antes subía directo a "medición";
+// "Chapas", la otra subcarpeta que arma traspasar_obras_aceptadas.js ahí
+// mismo, no la toca este script), para que Alfredo lo revise y se mande al
+// taller. A diferencia de
 // escribir_confirmaciones_aceptadas.js / escribir_ubicacion_diario_general.js,
 // este SÍ corre en el cron de la nube: no edita un Excel existente con
 // fórmulas, arma uno nuevo desde cero, así que no hace falta Excel
@@ -75,6 +78,25 @@ async function buscarOCrearCarpetaMedicion(drive, obraFolderId) {
 
   const creada = await drive.files.create({
     resource: { name: 'medición', mimeType: CARPETA_FOLDER, parents: [organizacion.id] },
+    fields: 'id, name',
+  });
+  return creada.data;
+}
+
+// Desde que traspasar_obras_aceptadas.js arma la estructura fija (a pedido
+// de Álvaro), "medición" ya trae "Chapas" y "Carpintería" adentro — acá se
+// sube siempre a "Carpintería" (Chapas es para otra cosa, no automatizada
+// todavía). Para obras traspasadas ANTES de ese cambio, "medición" puede no
+// tener ninguna subcarpeta todavía — se crea "Carpintería" ahí mismo la
+// primera vez que hace falta, sin tocar a Chapas.
+async function buscarOCrearCarpetaMedicionCarpinteria(drive, obraFolderId) {
+  const medicion = await buscarOCrearCarpetaMedicion(drive, obraFolderId);
+  const hijos = await listarHijos(drive, medicion.id, true);
+  const carpinteria = hijos.find((f) => /carpinter[ií]a/i.test(f.name));
+  if (carpinteria) return carpinteria;
+
+  const creada = await drive.files.create({
+    resource: { name: 'Carpintería', mimeType: CARPETA_FOLDER, parents: [medicion.id] },
     fields: 'id, name',
   });
   return creada.data;
@@ -216,10 +238,10 @@ async function main() {
         continue;
       }
 
-      const carpetaMedicion = await buscarOCrearCarpetaMedicion(drive, info.folderId);
+      const carpetaCarpinteria = await buscarOCrearCarpetaMedicionCarpinteria(drive, info.folderId);
       const buffer = await armarExcel(obra, medidas);
       const nombreArchivo = `Medidas confirmadas - ${obra} - ${fechaHoyDDMMYYYY()}.xlsx`;
-      await subirExcel(drive, carpetaMedicion.id, nombreArchivo, buffer);
+      await subirExcel(drive, carpetaCarpinteria.id, nombreArchivo, buffer);
       await marcarEnviado(obra);
       console.log(`  OK: subido "${nombreArchivo}" (${medidas.length} posiciones).`);
     } catch (err) {
