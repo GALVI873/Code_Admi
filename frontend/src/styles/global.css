@@ -1041,9 +1041,21 @@ body {
   white-space: nowrap;
 }
 
+/* Antes era solo el emoji suelto (💬 se ve blanco/apagado en varios
+   sistemas, se perdía en la tarjeta) — a pedido de Álvaro, ahora va sobre
+   un círculo rojo sólido para que salte a la vista de una las obras con
+   chat sin leer. */
 .obra-item-compacto-mensaje {
   font-size: 12px;
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--rojo);
+  box-shadow: 0 0 0 3px rgba(192, 57, 43, .2);
 }
 
 .obra-item-compacto-alerta {
