@@ -253,6 +253,14 @@ export function archivarComentarioObra(accessToken, id, archivado) {
   })
 }
 
+export function categorizarComentarioObra(accessToken, id, categoria) {
+  return request('/comentarios_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ id, categoria }),
+  })
+}
+
 export function agregarRespuestaNota(accessToken, obra, comentarioId, mensaje) {
   return request('/comentarios_obra.php', {
     method: 'POST',

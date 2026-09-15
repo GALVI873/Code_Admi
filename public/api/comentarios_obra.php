@@ -48,13 +48,18 @@ declare(strict_types=1);
 // para que deje de aparecer en la lista sin borrarla. GET la excluye por
 // defecto; ?incluir_archivadas=1 las vuelve a traer (por si hace falta
 // revisar o desarchivar alguna).
+// "categoria" (columna nueva, 'tarea' | 'recordatorio'): a pedido de
+// Álvaro, Alfredo separa sus notas en dos paneles (arrastrando la
+// burbuja de uno a otro) — toda nota nueva arranca en 'tarea' (valor por
+// defecto de la columna), tanto en la pestaña "Notas" de una obra como en
+// la vista general "Pendientes".
 // comentarios_obra_respuestas: hilo corto de respuestas colgado de una nota
 // puntual (comentario_id) — a diferencia de la nota en sí, que es de
 // Álvaro, acá cualquiera de los dos puede escribir (típicamente Alfredo
 // contestando esa nota puntual, sin abrir una nota nueva aparte).
-// PATCH {id, hecho} y/o {id, archivado}: requiere sesión + rol
-// gestion_obras (hecho, específicamente Alfredo) o gestion_obras/admin
-// (archivado, cualquiera de los dos).
+// PATCH {id, hecho} y/o {id, archivado} y/o {id, categoria}: requiere
+// sesión + rol gestion_obras (hecho, específicamente Alfredo) o
+// gestion_obras/admin (archivado y categoria, cualquiera de los dos).
 // POST {obra, mensaje, comentario_id?}: sin comentario_id crea una nota
 // nueva (comportamiento de siempre); con comentario_id agrega una
 // respuesta a esa nota puntual en comentarios_obra_respuestas.
@@ -108,6 +113,9 @@ try {
     }
     if (!in_array('archivado', $columnasComentarios, true)) {
         $db->exec('ALTER TABLE comentarios_obra ADD COLUMN archivado INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!in_array('categoria', $columnasComentarios, true)) {
+        $db->exec("ALTER TABLE comentarios_obra ADD COLUMN categoria TEXT NOT NULL DEFAULT 'tarea'");
     }
     $db->exec("
         CREATE TABLE IF NOT EXISTS comentarios_obra_leido (
@@ -224,8 +232,9 @@ try {
     if ($_SERVER['REQUEST_METHOD'] === 'PATCH') {
         $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
         $id = (int) ($body['id'] ?? 0);
-        if ($id <= 0 || (!array_key_exists('hecho', $body) && !array_key_exists('archivado', $body))) {
-            Response::error('Falta "id" y "hecho" y/o "archivado"', 422);
+        $tieneAlgunCambio = array_key_exists('hecho', $body) || array_key_exists('archivado', $body) || array_key_exists('categoria', $body);
+        if ($id <= 0 || !$tieneAlgunCambio) {
+            Response::error('Falta "id" y "hecho" y/o "archivado" y/o "categoria"', 422);
         }
 
         if (array_key_exists('hecho', $body)) {
@@ -242,6 +251,18 @@ try {
             }
             $db->prepare('UPDATE comentarios_obra SET archivado = ? WHERE id = ?')
                 ->execute([$body['archivado'] ? 1 : 0, $id]);
+        }
+
+        if (array_key_exists('categoria', $body)) {
+            if (!tieneRol($usuario, 'gestion_obras') && !tieneRol($usuario, 'admin')) {
+                Response::error('No tenés permiso para categorizar esta nota', 403);
+            }
+            $categoria = (string) $body['categoria'];
+            if (!in_array($categoria, ['tarea', 'recordatorio'], true)) {
+                Response::error('"categoria" tiene que ser "tarea" o "recordatorio"', 422);
+            }
+            $db->prepare('UPDATE comentarios_obra SET categoria = ? WHERE id = ?')
+                ->execute([$categoria, $id]);
         }
 
         Response::json(['ok' => true]);

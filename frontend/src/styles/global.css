@@ -1644,6 +1644,46 @@ select.celda-editable-material {
   background: #f4f6f9;
 }
 
+/* Tablero de dos columnas (Tareas/Recordatorios) — a pedido de Álvaro,
+   Alfredo arrastra la burbuja de una a otra para categorizarla. */
+.notas-obra-columnas {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.notas-obra-columna {
+  flex: 1;
+  min-width: 0;
+  border: 1px dashed transparent;
+  border-radius: 10px;
+  padding: 4px;
+  transition: background-color .12s, border-color .12s;
+}
+
+.notas-obra-columna-sobrevuelo {
+  background: #eef3fb;
+  border-color: #9fb7e0;
+}
+
+.notas-obra-columna-titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #3a4757;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+}
+
+.notas-obra-columna-vacia {
+  font-size: 12.5px;
+  padding: 10px 4px;
+}
+
 .notas-obra-lista {
   list-style: none;
   margin: 0 0 14px;
@@ -1661,6 +1701,14 @@ select.celda-editable-material {
   border: 1px solid #e3e8f0;
   border-radius: 8px;
   padding: 12px 16px;
+}
+
+.notas-obra-item-arrastrable {
+  cursor: grab;
+}
+
+.notas-obra-item-arrastrable:active {
+  cursor: grabbing;
 }
 
 .notas-obra-item-archivado {
@@ -2329,6 +2377,10 @@ select.celda-editable-material {
   .seguimiento-oferta-form {
     flex-direction: column;
     align-items: stretch;
+  }
+  .notas-obra-columnas,
+  .pendientes-columnas {
+    flex-direction: column;
   }
 }
 

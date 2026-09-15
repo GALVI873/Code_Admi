@@ -5,6 +5,7 @@ import {
   agregarRespuestaNota,
   marcarComentarioHecho,
   archivarComentarioObra,
+  categorizarComentarioObra,
   eliminarConversacionObra,
 } from '../api/client.js'
 
@@ -23,6 +24,12 @@ import {
 // y un estatus de "archivado", para que una nota ya resuelta deje de
 // aparecer en la lista sin borrarla (Alfredo o Álvaro pueden archivar y
 // desarchivar).
+//
+// "categoria" ('tarea' | 'recordatorio'): a pedido de Álvaro, Alfredo
+// separa sus notas en dos paneles arrastrando la burbuja de uno a otro
+// (drag & drop nativo, sin librería — un solo nivel de "soltar en esta
+// columna", no hace falta reordenar adentro). Toda nota nueva arranca en
+// "tarea" (default de la columna en el backend).
 function nombreBaseObra(obra) {
   return (obra || '').replace(/\s*—\s*Opci[oó]n\s+\w+\s*$/i, '').trim()
 }
@@ -37,7 +44,7 @@ function formatoFechaHora(iso) {
   return `${dia}/${mes}/${fecha.getFullYear()} ${horas}:${minutos}`
 }
 
-function NotaItem({ nota, obraBase, accessToken, puedeMarcarHecho, puedeArchivar, onToggleHecho, onArchivar, onNuevaRespuesta }) {
+function NotaItem({ nota, obraBase, accessToken, puedeMarcarHecho, puedeArchivar, puedeCategorizar, onToggleHecho, onArchivar, onNuevaRespuesta }) {
   const [respuesta, setRespuesta] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
@@ -60,7 +67,15 @@ function NotaItem({ nota, obraBase, accessToken, puedeMarcarHecho, puedeArchivar
   }
 
   return (
-    <li className={`notas-obra-item ${nota.hecho ? 'notas-obra-item-hecho' : ''} ${nota.archivado ? 'notas-obra-item-archivado' : ''}`}>
+    <li
+      className={`notas-obra-item ${nota.hecho ? 'notas-obra-item-hecho' : ''} ${nota.archivado ? 'notas-obra-item-archivado' : ''} ${puedeCategorizar ? 'notas-obra-item-arrastrable' : ''}`}
+      draggable={puedeCategorizar}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', String(nota.id))
+        e.dataTransfer.effectAllowed = 'move'
+      }}
+      title={puedeCategorizar ? 'Arrastrá esta nota a Tareas o Recordatorios para categorizarla' : undefined}
+    >
       <input
         type="checkbox"
         className="notas-obra-checkbox"
@@ -116,10 +131,46 @@ function NotaItem({ nota, obraBase, accessToken, puedeMarcarHecho, puedeArchivar
   )
 }
 
+// Una columna del tablero (Tareas o Recordatorios) — acepta que se suelte
+// encima una nota arrastrada desde cualquiera de las dos columnas.
+function ColumnaNotas({ titulo, categoria, notas, puedeCategorizar, onSoltarNota, ...propsNota }) {
+  const [sobrevuelo, setSobrevuelo] = useState(false)
+
+  return (
+    <div
+      className={`notas-obra-columna ${sobrevuelo ? 'notas-obra-columna-sobrevuelo' : ''}`}
+      onDragOver={(e) => {
+        if (!puedeCategorizar) return
+        e.preventDefault()
+        setSobrevuelo(true)
+      }}
+      onDragLeave={() => setSobrevuelo(false)}
+      onDrop={(e) => {
+        if (!puedeCategorizar) return
+        e.preventDefault()
+        setSobrevuelo(false)
+        const id = Number(e.dataTransfer.getData('text/plain'))
+        if (id) onSoltarNota(id, categoria)
+      }}
+    >
+      <h3 className="notas-obra-columna-titulo">
+        {titulo} <span className="obras-seccion-contador">{notas.length}</span>
+      </h3>
+      {notas.length === 0 && <p className="dashboard-nota notas-obra-columna-vacia">Sin notas acá.</p>}
+      <ul className="notas-obra-lista">
+        {notas.map((n) => (
+          <NotaItem key={n.id} nota={n} puedeCategorizar={puedeCategorizar} {...propsNota} />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido }) {
   const obraBase = nombreBaseObra(obra)
   const puedeMarcarHecho = usuario?.roles?.includes('gestion_obras')
   const puedeArchivar = usuario?.roles?.includes('gestion_obras') || usuario?.roles?.includes('admin')
+  const puedeCategorizar = puedeArchivar
   const puedeEliminar = usuario?.roles?.includes('admin')
 
   const [notas, setNotas] = useState([])
@@ -214,6 +265,20 @@ export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido 
     }
   }
 
+  async function handleSoltarNota(id, categoria) {
+    if (!puedeCategorizar) return
+    const nota = notas.find((n) => n.id === id)
+    if (!nota || nota.categoria === categoria) return
+    const anteriores = notas
+    setNotas((prev) => prev.map((n) => (n.id === id ? { ...n, categoria } : n)))
+    try {
+      await categorizarComentarioObra(accessToken, id, categoria)
+    } catch (err) {
+      setNotas(anteriores)
+      setError(err.message)
+    }
+  }
+
   function handleNuevaRespuesta(notaId, respuesta) {
     setNotas((prev) => prev.map((n) => (n.id === notaId ? { ...n, respuestas: [...(n.respuestas || []), respuesta] } : n)))
   }
@@ -234,6 +299,18 @@ export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido 
 
   const archivadas = notas.filter((n) => n.archivado)
   const notasVisibles = verArchivadas ? notas : notas.filter((n) => !n.archivado)
+  const tareas = notasVisibles.filter((n) => (n.categoria || 'tarea') !== 'recordatorio')
+  const recordatorios = notasVisibles.filter((n) => n.categoria === 'recordatorio')
+
+  const propsNota = {
+    obraBase,
+    accessToken,
+    puedeMarcarHecho,
+    puedeArchivar,
+    onToggleHecho: handleToggleHecho,
+    onArchivar: handleArchivar,
+    onNuevaRespuesta: handleNuevaRespuesta,
+  }
 
   return (
     <div className="notas-obra">
@@ -258,27 +335,18 @@ export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido 
         <p className="dashboard-nota">Todavía no hay notas en esta obra.</p>
       )}
 
-      <ul className="notas-obra-lista">
-        {notasVisibles.map((n) => (
-          <NotaItem
-            key={n.id}
-            nota={n}
-            obraBase={obraBase}
-            accessToken={accessToken}
-            puedeMarcarHecho={puedeMarcarHecho}
-            puedeArchivar={puedeArchivar}
-            onToggleHecho={handleToggleHecho}
-            onArchivar={handleArchivar}
-            onNuevaRespuesta={handleNuevaRespuesta}
-          />
-        ))}
-      </ul>
+      {!cargando && notasVisibles.length > 0 && (
+        <div className="notas-obra-columnas">
+          <ColumnaNotas titulo="Tareas" categoria="tarea" notas={tareas} puedeCategorizar={puedeCategorizar} onSoltarNota={handleSoltarNota} {...propsNota} />
+          <ColumnaNotas titulo="Recordatorios" categoria="recordatorio" notas={recordatorios} puedeCategorizar={puedeCategorizar} onSoltarNota={handleSoltarNota} {...propsNota} />
+        </div>
+      )}
 
       {error && <div className="auth-error">{error}</div>}
       <form className="notas-obra-form" onSubmit={enviar}>
         <textarea
           className="input-filtro notas-obra-textarea"
-          placeholder={'Agregar una o más notas… una tarea por línea\n(Ctrl+Enter para agregar)'}
+          placeholder={'Agregar una o más notas… una tarea por línea\n(Ctrl+Enter para agregar — arranca en "Tareas", arrastrala a Recordatorios si hace falta)'}
           rows={2}
           value={mensaje}
           onChange={(e) => setMensaje(e.target.value)}

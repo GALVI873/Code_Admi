@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import { pendientesObrasAceptadas, marcarComentarioHecho } from '../api/client.js'
+import { pendientesObrasAceptadas, marcarComentarioHecho, categorizarComentarioObra } from '../api/client.js'
 
 // Control general de pendientes para Alfredo — junta, de TODAS las obras
 // aceptadas, las notas que Álvaro dejó en la pestaña "Notas" de cada obra
@@ -11,6 +11,11 @@ import { pendientesObrasAceptadas, marcarComentarioHecho } from '../api/client.j
 // visual que Diario General. Se puede tildar directo desde acá (mismo
 // PATCH que en la pestaña Notas) — desaparece de la lista al toque, ya no
 // está pendiente.
+//
+// A pedido de Álvaro: mismo tablero de dos columnas (Tareas/Recordatorios)
+// que la pestaña Notas de cada obra (ver NotasObraAceptada.jsx) — Alfredo
+// arrastra la burbuja de una columna a otra para categorizarla, acá se ven
+// todas las obras juntas en vez de una por una.
 function formatoFechaHora(iso) {
   if (!iso) return ''
   const fecha = new Date(iso.replace(' ', 'T') + 'Z')
@@ -79,10 +84,83 @@ function FiltroObrasMultiple({ obrasDisponibles, seleccionadas, onCambiar }) {
   )
 }
 
+function NotaPendiente({ nota, puedeMarcarHecho, puedeCategorizar, onMarcarHecho, onAbrir }) {
+  return (
+    <li
+      className={`notas-obra-item ${puedeCategorizar ? 'notas-obra-item-arrastrable' : ''}`}
+      draggable={puedeCategorizar}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', String(nota.id))
+        e.dataTransfer.effectAllowed = 'move'
+      }}
+      title={puedeCategorizar ? 'Arrastrá esta nota a Tareas o Recordatorios para categorizarla' : undefined}
+    >
+      <input
+        type="checkbox"
+        className="notas-obra-checkbox"
+        checked={false}
+        disabled={!puedeMarcarHecho}
+        onChange={() => onMarcarHecho(nota)}
+        title={puedeMarcarHecho ? 'Marcar como hecho' : 'Solo Alfredo puede marcar esto como hecho'}
+      />
+      <div className="notas-obra-item-cuerpo" role="button" tabIndex={0} onClick={() => onAbrir(nota)}>
+        <p className="notas-obra-item-texto">{nota.mensaje}</p>
+        <span className="notas-obra-item-meta">{nota.autor_nombre} · {formatoFechaHora(nota.creado_en)}</span>
+      </div>
+    </li>
+  )
+}
+
+// Una columna del tablero (Tareas o Recordatorios), con las notas ya
+// agrupadas por obra adentro — el drop target es la columna entera, no
+// hace falta soltar sobre una obra puntual.
+function ColumnaPendientes({ titulo, categoria, gruposPorObra, puedeMarcarHecho, puedeCategorizar, onMarcarHecho, onAbrir, onSoltarNota }) {
+  const [sobrevuelo, setSobrevuelo] = useState(false)
+  const total = gruposPorObra.reduce((acc, g) => acc + g.items.length, 0)
+
+  return (
+    <div
+      className={`notas-obra-columna ${sobrevuelo ? 'notas-obra-columna-sobrevuelo' : ''}`}
+      onDragOver={(e) => {
+        if (!puedeCategorizar) return
+        e.preventDefault()
+        setSobrevuelo(true)
+      }}
+      onDragLeave={() => setSobrevuelo(false)}
+      onDrop={(e) => {
+        if (!puedeCategorizar) return
+        e.preventDefault()
+        setSobrevuelo(false)
+        const id = Number(e.dataTransfer.getData('text/plain'))
+        if (id) onSoltarNota(id, categoria)
+      }}
+    >
+      <h3 className="notas-obra-columna-titulo">
+        {titulo} <span className="obras-seccion-contador">{total}</span>
+      </h3>
+      {total === 0 && <p className="dashboard-nota notas-obra-columna-vacia">Sin notas acá.</p>}
+      {gruposPorObra.map((grupo) => (
+        <section key={grupo.obra} className="obras-seccion">
+          <h2 className="obras-seccion-titulo">
+            {grupo.obra}
+            <span className="obras-seccion-contador">{grupo.items.length}</span>
+          </h2>
+          <ul className="notas-obra-lista">
+            {grupo.items.map((n) => (
+              <NotaPendiente key={n.id} nota={n} puedeMarcarHecho={puedeMarcarHecho} puedeCategorizar={puedeCategorizar} onMarcarHecho={onMarcarHecho} onAbrir={onAbrir} />
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  )
+}
+
 export default function PendientesObrasPage() {
   const { accessToken, usuario } = useAuth()
   const navigate = useNavigate()
   const puedeMarcarHecho = usuario?.roles?.includes('gestion_obras')
+  const puedeCategorizar = usuario?.roles?.includes('gestion_obras') || usuario?.roles?.includes('admin')
 
   const [pendientes, setPendientes] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -100,17 +178,30 @@ export default function PendientesObrasPage() {
     return Array.from(new Set(pendientes.map((p) => p.obra))).sort((a, b) => a.localeCompare(b, 'es'))
   }, [pendientes])
 
-  const gruposPorObra = useMemo(() => {
-    const visibles = obrasFiltradas.length === 0 ? pendientes : pendientes.filter((p) => obrasFiltradas.includes(p.obra))
+  function agruparPorObra(items) {
     const mapa = new Map()
-    for (const p of visibles) {
+    for (const p of items) {
       if (!mapa.has(p.obra)) mapa.set(p.obra, [])
       mapa.get(p.obra).push(p)
     }
     return Array.from(mapa.entries())
       .sort(([a], [b]) => a.localeCompare(b, 'es'))
       .map(([obra, items]) => ({ obra, items }))
-  }, [pendientes, obrasFiltradas])
+  }
+
+  const visibles = useMemo(
+    () => (obrasFiltradas.length === 0 ? pendientes : pendientes.filter((p) => obrasFiltradas.includes(p.obra))),
+    [pendientes, obrasFiltradas],
+  )
+
+  const gruposTareas = useMemo(
+    () => agruparPorObra(visibles.filter((p) => (p.categoria || 'tarea') !== 'recordatorio')),
+    [visibles],
+  )
+  const gruposRecordatorios = useMemo(
+    () => agruparPorObra(visibles.filter((p) => p.categoria === 'recordatorio')),
+    [visibles],
+  )
 
   async function handleMarcarHecho(nota) {
     if (!puedeMarcarHecho) return
@@ -122,6 +213,24 @@ export default function PendientesObrasPage() {
       setPendientes(anteriores)
       setError(err.message)
     }
+  }
+
+  async function handleSoltarNota(id, categoria) {
+    if (!puedeCategorizar) return
+    const nota = pendientes.find((n) => n.id === id)
+    if (!nota || (nota.categoria || 'tarea') === categoria) return
+    const anteriores = pendientes
+    setPendientes((prev) => prev.map((n) => (n.id === id ? { ...n, categoria } : n)))
+    try {
+      await categorizarComentarioObra(accessToken, id, categoria)
+    } catch (err) {
+      setPendientes(anteriores)
+      setError(err.message)
+    }
+  }
+
+  function handleAbrir(nota) {
+    navigate(`/obras-aceptadas/${nota.obra_id}?pestana=Notas`)
   }
 
   return (
@@ -151,41 +260,34 @@ export default function PendientesObrasPage() {
       {!cargando && !error && pendientes.length === 0 && (
         <p className="dashboard-nota">No hay pendientes — está todo al día.</p>
       )}
-      {!cargando && !error && pendientes.length > 0 && gruposPorObra.length === 0 && (
+      {!cargando && !error && pendientes.length > 0 && visibles.length === 0 && (
         <p className="dashboard-nota">Ninguna obra seleccionada tiene pendientes.</p>
       )}
 
-      {!cargando && !error && gruposPorObra.map((grupo) => (
-        <section key={grupo.obra} className="obras-seccion">
-          <h2 className="obras-seccion-titulo">
-            {grupo.obra}
-            <span className="obras-seccion-contador">{grupo.items.length}</span>
-          </h2>
-          <ul className="notas-obra-lista">
-            {grupo.items.map((n) => (
-              <li key={n.id} className="notas-obra-item">
-                <input
-                  type="checkbox"
-                  className="notas-obra-checkbox"
-                  checked={false}
-                  disabled={!puedeMarcarHecho}
-                  onChange={() => handleMarcarHecho(n)}
-                  title={puedeMarcarHecho ? 'Marcar como hecho' : 'Solo Alfredo puede marcar esto como hecho'}
-                />
-                <div
-                  className="notas-obra-item-cuerpo"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => navigate(`/obras-aceptadas/${n.obra_id}?pestana=Notas`)}
-                >
-                  <p className="notas-obra-item-texto">{n.mensaje}</p>
-                  <span className="notas-obra-item-meta">{n.autor_nombre} · {formatoFechaHora(n.creado_en)}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+      {!cargando && !error && visibles.length > 0 && (
+        <div className="notas-obra-columnas pendientes-columnas">
+          <ColumnaPendientes
+            titulo="Tareas"
+            categoria="tarea"
+            gruposPorObra={gruposTareas}
+            puedeMarcarHecho={puedeMarcarHecho}
+            puedeCategorizar={puedeCategorizar}
+            onMarcarHecho={handleMarcarHecho}
+            onAbrir={handleAbrir}
+            onSoltarNota={handleSoltarNota}
+          />
+          <ColumnaPendientes
+            titulo="Recordatorios"
+            categoria="recordatorio"
+            gruposPorObra={gruposRecordatorios}
+            puedeMarcarHecho={puedeMarcarHecho}
+            puedeCategorizar={puedeCategorizar}
+            onMarcarHecho={handleMarcarHecho}
+            onAbrir={handleAbrir}
+            onSoltarNota={handleSoltarNota}
+          />
+        </div>
+      )}
     </div>
   )
 }
