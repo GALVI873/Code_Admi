@@ -12,10 +12,15 @@ import { pendientesObrasAceptadas, marcarComentarioHecho, categorizarComentarioO
 // PATCH que en la pestaña Notas) — desaparece de la lista al toque, ya no
 // está pendiente.
 //
-// A pedido de Álvaro: mismo tablero de dos columnas (Tareas/Recordatorios)
-// que la pestaña Notas de cada obra (ver NotasObraAceptada.jsx) — Alfredo
-// arrastra la burbuja de una columna a otra para categorizarla, acá se ven
-// todas las obras juntas en vez de una por una.
+// A pedido de Álvaro: tablero de Tareas/Recordatorios (ver
+// NotasObraAceptada.jsx) — Alfredo arrastra la burbuja de un lado a otro
+// para categorizarla. A diferencia de esa pestaña (una obra a la vez), acá
+// se ven todas juntas — por eso cada obra es su propia fila con las dos
+// columnas adentro (en vez de dos columnas globales, cada una agrupada por
+// obra por separado): así "Tareas" y "Recordatorios" de la MISMA obra
+// quedan a la misma altura, uno al lado del otro, en vez de desalinearse
+// según cuántos ítems tenga cada obra en cada lado (2026-09-15, reportado
+// con "Avutarda, 38" desalineada entre las dos columnas).
 function formatoFechaHora(iso) {
   if (!iso) return ''
   const fecha = new Date(iso.replace(' ', 'T') + 'Z')
@@ -111,16 +116,17 @@ function NotaPendiente({ nota, puedeMarcarHecho, puedeCategorizar, onMarcarHecho
   )
 }
 
-// Una columna del tablero (Tareas o Recordatorios), con las notas ya
-// agrupadas por obra adentro — el drop target es la columna entera, no
-// hace falta soltar sobre una obra puntual.
-function ColumnaPendientes({ titulo, categoria, gruposPorObra, puedeMarcarHecho, puedeCategorizar, onMarcarHecho, onAbrir, onSoltarNota }) {
+// Una celda (Tareas o Recordatorios) DENTRO de la fila de una obra puntual
+// — el drop target es esta celda nomás, no toda la columna: soltar acá
+// categoriza la nota sin importar de qué obra sea (la obra no cambia,
+// nunca se mueve de fila, solo su categoría).
+function CeldaPendientes({ categoria, items, puedeMarcarHecho, puedeCategorizar, onMarcarHecho, onAbrir, onSoltarNota }) {
   const [sobrevuelo, setSobrevuelo] = useState(false)
-  const total = gruposPorObra.reduce((acc, g) => acc + g.items.length, 0)
+  const etiquetaVacia = categoria === 'recordatorio' ? 'Sin recordatorios.' : 'Sin tareas.'
 
   return (
     <div
-      className={`notas-obra-columna ${sobrevuelo ? 'notas-obra-columna-sobrevuelo' : ''}`}
+      className={`notas-obra-columna pendientes-celda ${sobrevuelo ? 'notas-obra-columna-sobrevuelo' : ''}`}
       onDragOver={(e) => {
         if (!puedeCategorizar) return
         e.preventDefault()
@@ -135,24 +141,33 @@ function ColumnaPendientes({ titulo, categoria, gruposPorObra, puedeMarcarHecho,
         if (id) onSoltarNota(id, categoria)
       }}
     >
-      <h3 className="notas-obra-columna-titulo">
-        {titulo} <span className="obras-seccion-contador">{total}</span>
-      </h3>
-      {total === 0 && <p className="dashboard-nota notas-obra-columna-vacia">Sin notas acá.</p>}
-      {gruposPorObra.map((grupo) => (
-        <section key={grupo.obra} className="obras-seccion">
-          <h2 className="obras-seccion-titulo">
-            {grupo.obra}
-            <span className="obras-seccion-contador">{grupo.items.length}</span>
-          </h2>
-          <ul className="notas-obra-lista">
-            {grupo.items.map((n) => (
-              <NotaPendiente key={n.id} nota={n} puedeMarcarHecho={puedeMarcarHecho} puedeCategorizar={puedeCategorizar} onMarcarHecho={onMarcarHecho} onAbrir={onAbrir} />
-            ))}
-          </ul>
-        </section>
-      ))}
+      {items.length === 0 ? (
+        <p className="dashboard-nota pendientes-celda-vacia">{etiquetaVacia}</p>
+      ) : (
+        <ul className="notas-obra-lista">
+          {items.map((n) => (
+            <NotaPendiente key={n.id} nota={n} puedeMarcarHecho={puedeMarcarHecho} puedeCategorizar={puedeCategorizar} onMarcarHecho={onMarcarHecho} onAbrir={onAbrir} />
+          ))}
+        </ul>
+      )}
     </div>
+  )
+}
+
+// Fila de una obra: título con el total, y las dos celdas (Tareas |
+// Recordatorios) de esa obra una al lado de la otra.
+function FilaObraPendientes({ grupo, puedeMarcarHecho, puedeCategorizar, onMarcarHecho, onAbrir, onSoltarNota }) {
+  return (
+    <section className="obras-seccion pendientes-fila-obra">
+      <h2 className="obras-seccion-titulo">
+        {grupo.obra}
+        <span className="obras-seccion-contador">{grupo.tareas.length + grupo.recordatorios.length}</span>
+      </h2>
+      <div className="notas-obra-columnas pendientes-columnas">
+        <CeldaPendientes categoria="tarea" items={grupo.tareas} puedeMarcarHecho={puedeMarcarHecho} puedeCategorizar={puedeCategorizar} onMarcarHecho={onMarcarHecho} onAbrir={onAbrir} onSoltarNota={onSoltarNota} />
+        <CeldaPendientes categoria="recordatorio" items={grupo.recordatorios} puedeMarcarHecho={puedeMarcarHecho} puedeCategorizar={puedeCategorizar} onMarcarHecho={onMarcarHecho} onAbrir={onAbrir} onSoltarNota={onSoltarNota} />
+      </div>
+    </section>
   )
 }
 
@@ -178,30 +193,27 @@ export default function PendientesObrasPage() {
     return Array.from(new Set(pendientes.map((p) => p.obra))).sort((a, b) => a.localeCompare(b, 'es'))
   }, [pendientes])
 
-  function agruparPorObra(items) {
-    const mapa = new Map()
-    for (const p of items) {
-      if (!mapa.has(p.obra)) mapa.set(p.obra, [])
-      mapa.get(p.obra).push(p)
-    }
-    return Array.from(mapa.entries())
-      .sort(([a], [b]) => a.localeCompare(b, 'es'))
-      .map(([obra, items]) => ({ obra, items }))
-  }
-
   const visibles = useMemo(
     () => (obrasFiltradas.length === 0 ? pendientes : pendientes.filter((p) => obrasFiltradas.includes(p.obra))),
     [pendientes, obrasFiltradas],
   )
 
-  const gruposTareas = useMemo(
-    () => agruparPorObra(visibles.filter((p) => (p.categoria || 'tarea') !== 'recordatorio')),
-    [visibles],
-  )
-  const gruposRecordatorios = useMemo(
-    () => agruparPorObra(visibles.filter((p) => p.categoria === 'recordatorio')),
-    [visibles],
-  )
+  // Una fila por obra, con sus tareas y recordatorios ya separados adentro
+  // — así las dos columnas quedan alineadas por obra en vez de por
+  // posición (ver comentario de cabecera).
+  const gruposObra = useMemo(() => {
+    const mapa = new Map()
+    for (const p of visibles) {
+      if (!mapa.has(p.obra)) mapa.set(p.obra, { obra: p.obra, tareas: [], recordatorios: [] })
+      const grupo = mapa.get(p.obra)
+      if (p.categoria === 'recordatorio') grupo.recordatorios.push(p)
+      else grupo.tareas.push(p)
+    }
+    return Array.from(mapa.values()).sort((a, b) => a.obra.localeCompare(b.obra, 'es'))
+  }, [visibles])
+
+  const totalTareas = useMemo(() => gruposObra.reduce((acc, g) => acc + g.tareas.length, 0), [gruposObra])
+  const totalRecordatorios = useMemo(() => gruposObra.reduce((acc, g) => acc + g.recordatorios.length, 0), [gruposObra])
 
   async function handleMarcarHecho(nota) {
     if (!puedeMarcarHecho) return
@@ -264,29 +276,24 @@ export default function PendientesObrasPage() {
         <p className="dashboard-nota">Ninguna obra seleccionada tiene pendientes.</p>
       )}
 
-      {!cargando && !error && visibles.length > 0 && (
-        <div className="notas-obra-columnas pendientes-columnas">
-          <ColumnaPendientes
-            titulo="Tareas"
-            categoria="tarea"
-            gruposPorObra={gruposTareas}
-            puedeMarcarHecho={puedeMarcarHecho}
-            puedeCategorizar={puedeCategorizar}
-            onMarcarHecho={handleMarcarHecho}
-            onAbrir={handleAbrir}
-            onSoltarNota={handleSoltarNota}
-          />
-          <ColumnaPendientes
-            titulo="Recordatorios"
-            categoria="recordatorio"
-            gruposPorObra={gruposRecordatorios}
-            puedeMarcarHecho={puedeMarcarHecho}
-            puedeCategorizar={puedeCategorizar}
-            onMarcarHecho={handleMarcarHecho}
-            onAbrir={handleAbrir}
-            onSoltarNota={handleSoltarNota}
-          />
-        </div>
+      {!cargando && !error && gruposObra.length > 0 && (
+        <>
+          <div className="notas-obra-columnas pendientes-columnas pendientes-encabezados">
+            <h3 className="notas-obra-columna-titulo">Tareas <span className="obras-seccion-contador">{totalTareas}</span></h3>
+            <h3 className="notas-obra-columna-titulo">Recordatorios <span className="obras-seccion-contador">{totalRecordatorios}</span></h3>
+          </div>
+          {gruposObra.map((grupo) => (
+            <FilaObraPendientes
+              key={grupo.obra}
+              grupo={grupo}
+              puedeMarcarHecho={puedeMarcarHecho}
+              puedeCategorizar={puedeCategorizar}
+              onMarcarHecho={handleMarcarHecho}
+              onAbrir={handleAbrir}
+              onSoltarNota={handleSoltarNota}
+            />
+          ))}
+        </>
       )}
     </div>
   )
