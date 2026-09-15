@@ -120,9 +120,43 @@ function extraerCampos(filePath) {
   };
 }
 
+// Desglose de "Total Presupuesto"/"Beneficio" por categoría (2026-09-15, a
+// pedido de Álvaro, para la vista de Costes) — la hoja "Comparativa" trae
+// una fila por cada categoría ("1.Material", "2.Vidrio", ... "9.Variable")
+// DENTRO de cada bloque de Producto/Oferta, así que una obra con varios
+// productos/ofertas repite las mismas categorías en varios bloques — se
+// suman todas las filas que matcheen cada categoría (sin importar de qué
+// bloque vengan) para tener el total real por categoría de la obra entera,
+// no de un solo producto. Filas de subtotal/total ("Total Oferta 1", "Total
+// general", etc.) no tienen el prefijo numérico en la columna Categoria, así
+// que el regex /^\d+\./ ya las descarta solas.
+function extraerCategoriasComparativa(filePath) {
+  const wb = XLSX.readFile(filePath);
+  const rows = sheetToRows(wb, 'Comparativa');
+  const porCategoria = new Map();
+  for (const row of rows) {
+    const celda = String(row[2] || '').trim();
+    const m = celda.match(/^\d+\.(.+)$/);
+    if (!m) continue;
+    const categoria = m[1].trim();
+    const precioPresupuesto = parseNumeroEs(row[5]);
+    if (precioPresupuesto === null) continue;
+    const beneficio = parseNumeroEs(row[7]) || 0;
+    const actual = porCategoria.get(categoria) || { precioPresupuesto: 0, beneficio: 0 };
+    actual.precioPresupuesto += precioPresupuesto;
+    actual.beneficio += beneficio;
+    porCategoria.set(categoria, actual);
+  }
+  return Array.from(porCategoria.entries()).map(([categoria, v]) => ({
+    categoria,
+    precio_presupuesto: Math.round(v.precioPresupuesto * 100) / 100,
+    costo_inicial: Math.round((v.precioPresupuesto - v.beneficio) * 100) / 100,
+  }));
+}
+
 if (require.main === module) {
   const filePath = process.argv[2];
   console.log(JSON.stringify(extraerCampos(filePath), null, 2));
 }
 
-module.exports = { extraerCampos };
+module.exports = { extraerCampos, extraerCategoriasComparativa };

@@ -333,6 +333,56 @@ body {
   background: #fdf6f5;
 }
 
+.tabla-costes-fila-clicable {
+  cursor: pointer;
+}
+
+.tabla-costes-fila-clicable:hover {
+  background: #f4f6f9;
+}
+
+.tabla-costes-fila-clicable.tabla-costes-fila-pasada:hover {
+  background: #fbe7e4;
+}
+
+.tabla-costes-fila-abierta {
+  background: #eaf0fb;
+}
+
+.tabla-costes-flecha {
+  width: 18px;
+  color: #a3adb8;
+  font-size: 11px;
+}
+
+.tabla-costes-fila-detalle td {
+  padding: 14px 14px 18px 34px;
+  background: #fbfcfe;
+  cursor: default;
+}
+
+.tabla-costes-chica {
+  max-width: 640px;
+  background: white;
+  border: 1px solid #e3e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tabla-costes-chica th,
+.tabla-costes-chica td {
+  white-space: normal;
+}
+
+.costes-detalle-vacio {
+  margin: 0;
+}
+
+.costes-sin-categorizar {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+
 .tabla-costes-diferencia-mala {
   color: var(--rojo);
   font-weight: 700;

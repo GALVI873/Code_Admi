@@ -20,11 +20,24 @@ declare(strict_types=1);
 // un gasto real quede invisible por un typo, pero también evita
 // adjudicárselo a la obra equivocada por error).
 //
+// costes_reales_categoria: mismo total real, pero desglosado por categoría
+// (Material/Vidrio/Chapas/Transporte/Persianas/Composite/Comision/
+// Ingenieria/Colocacion/Variable) — sync_costes_paf.js mapea la columna
+// "Categoría" del PAF a las categorías de la Comparativa (mapeo dado por
+// Álvaro el 2026-09-15: M.O.→Colocacion, Fabricación→Colocacion,
+// Fabricación y Suministro→Material, Ferretería→Variable, Persianas/
+// Composite/Comision/Ingenieria quedan con su propio nombre porque no
+// existen como categoría en la Comparativa). "Varios" del PAF queda
+// deliberadamente AFUERA de este desglose (informativo, no se le adjudica
+// a ninguna categoría) — por eso la suma de costes_reales_categoria de una
+// obra puede ser menor que su total en costes_reales_obra.
+//
 // GET: requiere sesión + rol admin. Devuelve obras_aceptadas (con
-// precio_presupuesto/costo_inicial) + costes_reales_obra + lo sin asignar.
-// POST: {accion:"reemplazar_costes_reales", costes:[...], sin_asignar:[...]}
-// protegido por SYNC_TOKEN — reemplaza las dos tablas completas en cada
-// corrida (mismo criterio que reemplazar_materiales en
+// precio_presupuesto/costo_inicial) + costes_reales_obra + costes por
+// categoría (iniciales y reales) + lo sin asignar.
+// POST: {accion:"reemplazar_costes_reales", costes:[...], costes_categoria:
+// [...], sin_asignar:[...]} protegido por SYNC_TOKEN — reemplaza las tablas
+// completas en cada corrida (mismo criterio que reemplazar_materiales en
 // seguimiento_materiales.php: la sincronización es la única fuente de
 // verdad de estos datos, no hay edición manual que proteger).
 
@@ -54,6 +67,28 @@ try {
           actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
     ");
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS costes_reales_categoria (
+          obra TEXT NOT NULL,
+          categoria TEXT NOT NULL,
+          costo_real REAL NOT NULL,
+          cantidad_filas INTEGER NOT NULL,
+          actualizado_en TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (obra, categoria)
+        )
+    ");
+    // Definida también acá (no solo en obras_aceptadas.php, que es quien la
+    // escribe) porque el GET de abajo la lee — mismo criterio del resto del
+    // proyecto: cada archivo asegura las tablas que toca.
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS costes_iniciales_categoria (
+          obra TEXT NOT NULL,
+          categoria TEXT NOT NULL,
+          costo_inicial REAL NOT NULL,
+          actualizado_en TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (obra, categoria)
+        )
+    ");
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
@@ -68,8 +103,16 @@ try {
         ")->fetchAll();
         $costesReales = $db->query('SELECT * FROM costes_reales_obra')->fetchAll();
         $sinAsignar = $db->query('SELECT * FROM costes_reales_sin_asignar ORDER BY total DESC')->fetchAll();
+        $categoriasIniciales = $db->query('SELECT * FROM costes_iniciales_categoria')->fetchAll();
+        $categoriasReales = $db->query('SELECT * FROM costes_reales_categoria')->fetchAll();
 
-        Response::json(['obras' => $obras, 'costes_reales' => $costesReales, 'sin_asignar' => $sinAsignar]);
+        Response::json([
+            'obras' => $obras,
+            'costes_reales' => $costesReales,
+            'sin_asignar' => $sinAsignar,
+            'categorias_iniciales' => $categoriasIniciales,
+            'categorias_reales' => $categoriasReales,
+        ]);
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -85,8 +128,9 @@ try {
 
         $costes = $body['costes'] ?? null;
         $sinAsignar = $body['sin_asignar'] ?? null;
-        if (!is_array($costes) || !is_array($sinAsignar)) {
-            Response::error('Faltan "costes" y/o "sin_asignar" (arrays)', 422);
+        $costesCategoria = $body['costes_categoria'] ?? [];
+        if (!is_array($costes) || !is_array($sinAsignar) || !is_array($costesCategoria)) {
+            Response::error('Faltan "costes", "sin_asignar" y/o "costes_categoria" (arrays)', 422);
         }
 
         $db->beginTransaction();
@@ -110,13 +154,24 @@ try {
                 }
                 $stmtSinAsignar->execute([$obraTexto, $s['total'] ?? 0, $s['cantidad_filas'] ?? 0]);
             }
+
+            $db->exec('DELETE FROM costes_reales_categoria');
+            $stmtCat = $db->prepare('INSERT INTO costes_reales_categoria (obra, categoria, costo_real, cantidad_filas) VALUES (?, ?, ?, ?)');
+            foreach ($costesCategoria as $c) {
+                $obra = trim((string) ($c['obra'] ?? ''));
+                $categoria = trim((string) ($c['categoria'] ?? ''));
+                if ($obra === '' || $categoria === '') {
+                    continue;
+                }
+                $stmtCat->execute([$obra, $categoria, $c['costo_real'] ?? 0, $c['cantidad_filas'] ?? 0]);
+            }
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
             throw $e;
         }
 
-        Response::json(['ok' => true, 'obras' => count($costes), 'sin_asignar' => count($sinAsignar)]);
+        Response::json(['ok' => true, 'obras' => count($costes), 'sin_asignar' => count($sinAsignar), 'categorias' => count($costesCategoria)]);
     }
 
     Response::error('Método no permitido', 405);

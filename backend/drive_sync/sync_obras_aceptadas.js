@@ -27,7 +27,7 @@
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
-const { extraerCampos } = require('./extract_fields.js');
+const { extraerCampos, extraerCategoriasComparativa } = require('./extract_fields.js');
 const { leerFichaConfirmable } = require('./extract_ficha_aceptada.js');
 const { extraerMateriales } = require('./extract_seguimiento_materiales.js');
 const { getDrive, descargarComoBuffer } = require('./drive_client.js');
@@ -116,7 +116,7 @@ function borrarSiExiste(rutaTmp) {
   if (rutaTmp && fs.existsSync(rutaTmp)) fs.unlinkSync(rutaTmp);
 }
 
-async function subirObra(info, campos, confirmables) {
+async function subirObra(info, campos, confirmables, categoriasComparativa) {
   const url = `${process.env.PANEL_API_URL}/obras_aceptadas.php?token=${process.env.SYNC_TOKEN}`;
   const res = await fetch(url, {
     method: 'POST',
@@ -155,6 +155,10 @@ async function subirObra(info, campos, confirmables) {
       modelo_lamas: confirmables.modelo_lamas,
       motor_radio: confirmables.motor_radio,
       motor_mecanico: confirmables.motor_mecanico,
+      // Desglose de costo_inicial por categoría (Material/Vidrio/Chapas/
+      // etc., ver extraerCategoriasComparativa) — detalle por categoría de
+      // la vista de Costes.
+      categorias_iniciales: categoriasComparativa.map((c) => ({ categoria: c.categoria, costo_inicial: c.costo_inicial })),
     }),
   });
   const data = await res.json();
@@ -209,7 +213,8 @@ async function main() {
       tmpCalculo = await descargarATemporal(drive, archivoCalc);
       const campos = extraerCampos(tmpCalculo);
       const confirmables = leerFichaConfirmable(tmpCalculo);
-      await subirObra(info, campos, confirmables);
+      const categoriasComparativa = extraerCategoriasComparativa(tmpCalculo);
+      await subirObra(info, campos, confirmables, categoriasComparativa);
       nombresActivos.push(info.nombre);
       resumen.obras++;
 

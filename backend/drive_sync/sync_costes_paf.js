@@ -38,6 +38,30 @@ const { getDrive, descargarComoBuffer } = require('./drive_client.js');
 
 const NOMBRE_HOJA = 'Pedido-Albaran-Factura';
 
+// Mapeo Categoría (PAF) -> categoría de la Comparativa del Excel (dado por
+// Álvaro, 2026-09-15) — clave normalizada (ver normalizar()) para no
+// depender de tildes/mayúsculas exactas. Persianas/Composite/Comision/
+// Ingenieria no existen como categoría en la Comparativa, quedan con su
+// propio nombre (esas obras van a mostrar costo real ahí sin costo inicial
+// para comparar, y está bien así). "Varios" queda deliberadamente FUERA de
+// este mapa — a pedido de Álvaro, informativo, no se categoriza (sigue
+// sumando al total de la obra en costes_reales_obra, pero no entra en el
+// desglose por categoría).
+const CATEGORIA_PAF_A_COMPARATIVA = {
+  material: 'Material',
+  transporte: 'Transporte',
+  vidrio: 'Vidrio',
+  chapas: 'Chapas',
+  mo: 'Colocacion',
+  fabricacion: 'Colocacion',
+  fabricacionysumninistro: 'Material',
+  ferreteria: 'Variable',
+  persianas: 'Persianas',
+  composite: 'Composite',
+  comision: 'Comision',
+  ingenieria: 'Ingenieria',
+};
+
 function normalizar(s) {
   return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
 }
@@ -106,12 +130,12 @@ async function listarObrasAceptadas() {
   return data.obras;
 }
 
-async function subirCostes(costes, sinAsignar) {
+async function subirCostes(costes, sinAsignar, costesCategoria) {
   const url = `${process.env.PANEL_API_URL}/costes_obra.php?token=${process.env.SYNC_TOKEN}`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ accion: 'reemplazar_costes_reales', costes, sin_asignar: sinAsignar }),
+    body: JSON.stringify({ accion: 'reemplazar_costes_reales', costes, sin_asignar: sinAsignar, costes_categoria: costesCategoria }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(JSON.stringify(data));
@@ -147,12 +171,14 @@ async function main() {
   const encabezados = rows[idxEncabezados];
   const idxObra = encabezados.findIndex((h) => String(h).trim() === 'Obra');
   const idxImporte = encabezados.findIndex((h) => String(h).trim() === 'Importe obra');
+  const idxCategoria = encabezados.findIndex((h) => String(h).trim() === 'Categoría');
   if (idxObra === -1 || idxImporte === -1) {
     throw new Error(`No se encontraron las columnas esperadas (Obra=${idxObra}, Importe obra=${idxImporte})`);
   }
 
   const costesPorObra = new Map(); // obra real -> { total, filas }
   const sinAsignarPorTexto = new Map(); // texto libre tal cual -> { total, filas }
+  const costesPorObraCategoria = new Map(); // "obra||categoria" -> { obra, categoria, total, filas }
 
   for (let i = idxEncabezados + 1; i < rows.length; i++) {
     const fila = rows[i];
@@ -167,6 +193,16 @@ async function main() {
       actual.total += importe;
       actual.filas += 1;
       costesPorObra.set(obraReal, actual);
+
+      const categoriaTexto = idxCategoria === -1 ? '' : String(fila[idxCategoria] || '').trim();
+      const categoriaComparativa = CATEGORIA_PAF_A_COMPARATIVA[normalizar(categoriaTexto)];
+      if (categoriaComparativa) {
+        const clave = `${obraReal}||${categoriaComparativa}`;
+        const actualCat = costesPorObraCategoria.get(clave) || { obra: obraReal, categoria: categoriaComparativa, total: 0, filas: 0 };
+        actualCat.total += importe;
+        actualCat.filas += 1;
+        costesPorObraCategoria.set(clave, actualCat);
+      }
     } else {
       const actual = sinAsignarPorTexto.get(textoObra) || { total: 0, filas: 0 };
       actual.total += importe;
@@ -185,13 +221,20 @@ async function main() {
     total: Math.round(v.total * 100) / 100,
     cantidad_filas: v.filas,
   }));
+  const costesCategoria = Array.from(costesPorObraCategoria.values()).map((v) => ({
+    obra: v.obra,
+    categoria: v.categoria,
+    costo_real: Math.round(v.total * 100) / 100,
+    cantidad_filas: v.filas,
+  }));
 
-  await subirCostes(costes, sinAsignar);
+  await subirCostes(costes, sinAsignar, costesCategoria);
 
   console.log(`\n=== Resumen ===`);
   console.log(`Filas del PAF procesadas: ${rows.length - idxEncabezados - 1}`);
   console.log(`Obras con costo real emparejado: ${costes.length}`);
   console.log(`Textos de obra sin emparejar: ${sinAsignar.length} (suma: ${sinAsignar.reduce((a, s) => a + s.total, 0).toFixed(2)})`);
+  console.log(`Filas obra+categoría: ${costesCategoria.length}`);
 }
 
 main().catch((err) => {

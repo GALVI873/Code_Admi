@@ -143,6 +143,22 @@ try {
             $db->exec("ALTER TABLE obras_aceptadas ADD COLUMN $columna REAL");
         }
     }
+
+    // Desglose de costo_inicial por categoría (Material/Vidrio/Chapas/
+    // Fabricar/Colocacion/Comunes/Extra/Transporte/Variable — las filas de
+    // la hoja "Comparativa", ver extraerCategoriasComparativa en
+    // extract_fields.js) — alimenta el detalle por categoría de la vista de
+    // Costes. Se reemplaza entera por obra en cada sincronización (borrar +
+    // insertar), no hay edición manual que proteger acá.
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS costes_iniciales_categoria (
+          obra TEXT NOT NULL,
+          categoria TEXT NOT NULL,
+          costo_inicial REAL NOT NULL,
+          actualizado_en TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (obra, categoria)
+        )
+    ");
     // Obras que ya existían antes de agregar esta columna (ALTER TABLE no
     // puede poner un default distinto de NULL sobre filas existentes en
     // SQLite) — se las deja en "Activo" igual que las nuevas, no en blanco.
@@ -434,6 +450,22 @@ try {
             $body['precio_presupuesto'] ?? null,
             $body['costo_inicial'] ?? null,
         ]);
+
+        // "categorias_iniciales": [{categoria, costo_inicial}] — se
+        // reemplaza entero para esta obra (borrar + insertar), así una
+        // categoría que desaparezca entre corridas (ej. ya no hay Chapas en
+        // el último Excel) no queda con un valor viejo colgado.
+        if (isset($body['categorias_iniciales']) && is_array($body['categorias_iniciales'])) {
+            $db->prepare('DELETE FROM costes_iniciales_categoria WHERE obra = ?')->execute([$obra]);
+            $stmtCat = $db->prepare('INSERT INTO costes_iniciales_categoria (obra, categoria, costo_inicial) VALUES (?, ?, ?)');
+            foreach ($body['categorias_iniciales'] as $c) {
+                $categoria = trim((string) ($c['categoria'] ?? ''));
+                if ($categoria === '') {
+                    continue;
+                }
+                $stmtCat->execute([$obra, $categoria, $c['costo_inicial'] ?? 0]);
+            }
+        }
 
         Response::json(['ok' => true]);
     }
