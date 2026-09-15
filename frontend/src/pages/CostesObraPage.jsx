@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { costesObra } from '../api/client.js'
+import { costesObra, asignarAliasObraPaf } from '../api/client.js'
 
 // Vista "Costes" (2026-09-15, a pedido de Álvaro, exclusiva de admin) — por
 // cada obra aceptada, compara el costo con el que se armó el presupuesto
@@ -101,6 +101,51 @@ function FilasDetalleCategorias({ obra, categoriasIniciales, categoriasReales, c
   )
 }
 
+// Fila de "sin asignar" con el selector para corregirla a mano — a pedido
+// de Álvaro (ver "Los Cerezos, 543-A / Urb. El clavín" vs la obra real "Los
+// Cerezos - Urb. El Clavín": el número de parcela metido en el medio rompe
+// la coincidencia de texto, y no hay forma automática segura de resolver
+// eso sin arriesgar falsos positivos en otras obras).
+function FilaSinAsignar({ item, obras, onAsignar }) {
+  const [obraSeleccionada, setObraSeleccionada] = useState('')
+  const [asignando, setAsignando] = useState(false)
+  const [error, setError] = useState('')
+
+  async function asignar() {
+    if (!obraSeleccionada || asignando) return
+    setAsignando(true)
+    setError('')
+    try {
+      await onAsignar(item.obra_texto, obraSeleccionada)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setAsignando(false)
+    }
+  }
+
+  return (
+    <tr>
+      <td>{item.obra_texto}</td>
+      <td>{formatoMoneda(Number(item.total))}</td>
+      <td>
+        <div className="costes-asignar">
+          <select className="select-inline" value={obraSeleccionada} onChange={(e) => setObraSeleccionada(e.target.value)}>
+            <option value="">Elegir obra…</option>
+            {obras.map((o) => (
+              <option key={o.obra} value={o.obra}>{o.obra}</option>
+            ))}
+          </select>
+          <button type="button" className="btn-secundario" disabled={!obraSeleccionada || asignando} onClick={asignar}>
+            {asignando ? 'Asignando…' : 'Asignar'}
+          </button>
+        </div>
+        {error && <span className="costes-asignar-error">{error}</span>}
+      </td>
+    </tr>
+  )
+}
+
 export default function CostesObraPage() {
   const { accessToken } = useAuth()
   const [obras, setObras] = useState([])
@@ -197,6 +242,26 @@ export default function CostesObraPage() {
 
   function alternarObra(obra) {
     setObraAbierta((actual) => (actual === obra ? null : obra))
+  }
+
+  // Asigna a mano un texto del PAF a una obra (ver FilaSinAsignar) — guarda
+  // el alias en el servidor y refleja el cambio al toque acá (lo saca de
+  // "sin asignar" y lo suma al costo real de la obra elegida) sin esperar a
+  // la próxima sincronización del PAF.
+  async function handleAsignarAlias(textoPaf, obra) {
+    await asignarAliasObraPaf(accessToken, textoPaf, obra)
+    const item = sinAsignar.find((s) => s.obra_texto === textoPaf)
+    if (!item) return
+    setSinAsignar((prev) => prev.filter((s) => s.obra_texto !== textoPaf))
+    setCostesReales((prev) => {
+      const existente = prev.find((c) => c.obra === obra)
+      if (existente) {
+        return prev.map((c) => (c.obra === obra
+          ? { ...c, costo_real: Number(c.costo_real) + Number(item.total), cantidad_filas: c.cantidad_filas + item.cantidad_filas }
+          : c))
+      }
+      return [...prev, { obra, costo_real: item.total, cantidad_filas: item.cantidad_filas }]
+    })
   }
 
   return (
@@ -313,16 +378,12 @@ export default function CostesObraPage() {
                       <tr>
                         <th>Texto de obra en el PAF</th>
                         <th>Total</th>
-                        <th>Filas</th>
+                        <th>Asignar a obra</th>
                       </tr>
                     </thead>
                     <tbody>
                       {sinAsignar.map((s) => (
-                        <tr key={s.obra_texto}>
-                          <td>{s.obra_texto}</td>
-                          <td>{formatoMoneda(Number(s.total))}</td>
-                          <td>{s.cantidad_filas}</td>
-                        </tr>
+                        <FilaSinAsignar key={s.obra_texto} item={s} obras={obras} onAsignar={handleAsignarAlias} />
                       ))}
                     </tbody>
                   </table>

@@ -32,14 +32,36 @@ declare(strict_types=1);
 // a ninguna categoría) — por eso la suma de costes_reales_categoria de una
 // obra puede ser menor que su total en costes_reales_obra.
 //
+// costes_alias_obra: correcciones manuales de un admin para textos del PAF
+// que nunca van a cruzar solos contra ninguna obra conocida (ej. "Los
+// Cerezos, 543-A / Urb. El clavín" trae el número de parcela METIDO en el
+// medio, entre "Los Cerezos" y "Urb. El Clavín" — rompe la coincidencia de
+// texto aunque sea, a simple vista, obviamente la misma obra). En vez de
+// tocar PAF.xlsx (archivo compartido, lo editan varias personas) o renombrar
+// la carpeta de Drive de la obra (rompería otras cosas que dependen de ese
+// nombre exacto), un admin asigna el texto tal cual aparece en el PAF a la
+// obra correcta UNA vez — sync_costes_paf.js consulta esta tabla primero
+// (texto exacto, sin pasar por el emparejamiento automático) antes de
+// intentar el resto, así queda resuelto para siempre.
+//
 // GET: requiere sesión + rol admin. Devuelve obras_aceptadas (con
 // precio_presupuesto/costo_inicial) + costes_reales_obra + costes por
-// categoría (iniciales y reales) + lo sin asignar.
+// categoría (iniciales y reales) + lo sin asignar + los alias ya cargados.
+// PATCH {accion:"asignar_alias", texto_paf, obra}: requiere sesión + rol
+// admin — guarda el alias y migra al toque lo que ya estaba en "sin
+// asignar" para ese texto hacia costes_reales_obra (no hace falta esperar a
+// la próxima sincronización para verlo reflejado; el desglose por
+// categoría sí espera a la próxima corrida de sync_costes_paf.js, que
+// vuelve a leer el PAF completo).
+// PATCH {accion:"quitar_alias", texto_paf}: deshace un alias por si se
+// asignó mal.
 // POST: {accion:"reemplazar_costes_reales", costes:[...], costes_categoria:
 // [...], sin_asignar:[...]} protegido por SYNC_TOKEN — reemplaza las tablas
 // completas en cada corrida (mismo criterio que reemplazar_materiales en
 // seguimiento_materiales.php: la sincronización es la única fuente de
-// verdad de estos datos, no hay edición manual que proteger).
+// verdad de estos datos, no hay edición manual que proteger). {accion:
+// "listar_alias"} (también SYNC_TOKEN) — lee la tabla de alias para que
+// sync_costes_paf.js la consulte antes de emparejar.
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
 
@@ -89,6 +111,13 @@ try {
           PRIMARY KEY (obra, categoria)
         )
     ");
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS costes_alias_obra (
+          texto_paf TEXT PRIMARY KEY,
+          obra TEXT NOT NULL,
+          creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    ");
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
@@ -105,6 +134,7 @@ try {
         $sinAsignar = $db->query('SELECT * FROM costes_reales_sin_asignar ORDER BY total DESC')->fetchAll();
         $categoriasIniciales = $db->query('SELECT * FROM costes_iniciales_categoria')->fetchAll();
         $categoriasReales = $db->query('SELECT * FROM costes_reales_categoria')->fetchAll();
+        $alias = $db->query('SELECT * FROM costes_alias_obra ORDER BY creado_en DESC')->fetchAll();
 
         Response::json([
             'obras' => $obras,
@@ -112,7 +142,60 @@ try {
             'sin_asignar' => $sinAsignar,
             'categorias_iniciales' => $categoriasIniciales,
             'categorias_reales' => $categoriasReales,
+            'alias' => $alias,
         ]);
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'PATCH') {
+        $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
+        if (!tieneRolCostes($usuario, 'admin')) {
+            Response::error('No autorizado para esta acción', 403);
+        }
+
+        $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
+        $textoPaf = trim((string) ($body['texto_paf'] ?? ''));
+        if ($textoPaf === '') {
+            Response::error('Falta "texto_paf"', 422);
+        }
+
+        if (($body['accion'] ?? '') === 'asignar_alias') {
+            $obra = trim((string) ($body['obra'] ?? ''));
+            if ($obra === '') {
+                Response::error('Falta "obra"', 422);
+            }
+
+            $db->prepare("
+                INSERT INTO costes_alias_obra (texto_paf, obra) VALUES (?, ?)
+                ON CONFLICT(texto_paf) DO UPDATE SET obra = excluded.obra, creado_en = datetime('now')
+            ")->execute([$textoPaf, $obra]);
+
+            // Migra al toque lo que ya estaba en "sin asignar" para este
+            // texto — no hace falta esperar a la próxima corrida del PAF
+            // para verlo reflejado en el total de la obra (el desglose por
+            // categoría sí espera, ver comentario de cabecera).
+            $stmtSinAsignar = $db->prepare('SELECT * FROM costes_reales_sin_asignar WHERE obra_texto = ?');
+            $stmtSinAsignar->execute([$textoPaf]);
+            $filaSinAsignar = $stmtSinAsignar->fetch();
+            if ($filaSinAsignar) {
+                $db->prepare("
+                    INSERT INTO costes_reales_obra (obra, costo_real, cantidad_filas) VALUES (?, ?, ?)
+                    ON CONFLICT(obra) DO UPDATE SET
+                        costo_real = costo_real + excluded.costo_real,
+                        cantidad_filas = cantidad_filas + excluded.cantidad_filas,
+                        actualizado_en = datetime('now')
+                ")->execute([$obra, $filaSinAsignar['total'], $filaSinAsignar['cantidad_filas']]);
+                $db->prepare('DELETE FROM costes_reales_sin_asignar WHERE obra_texto = ?')->execute([$textoPaf]);
+            }
+
+            Response::json(['ok' => true]);
+        }
+
+        if (($body['accion'] ?? '') === 'quitar_alias') {
+            $db->prepare('DELETE FROM costes_alias_obra WHERE texto_paf = ?')->execute([$textoPaf]);
+            Response::json(['ok' => true]);
+        }
+
+        Response::error('Falta accion "asignar_alias" o "quitar_alias"', 422);
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -122,8 +205,14 @@ try {
         }
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
+
+        if (($body['accion'] ?? '') === 'listar_alias') {
+            $alias = $db->query('SELECT texto_paf, obra FROM costes_alias_obra')->fetchAll();
+            Response::json(['alias' => $alias]);
+        }
+
         if (($body['accion'] ?? '') !== 'reemplazar_costes_reales') {
-            Response::error('Falta accion "reemplazar_costes_reales"', 422);
+            Response::error('Falta accion "reemplazar_costes_reales" o "listar_alias"', 422);
         }
 
         $costes = $body['costes'] ?? null;

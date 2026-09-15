@@ -122,6 +122,14 @@ export function costesObra(accessToken) {
   })
 }
 
+export function asignarAliasObraPaf(accessToken, textoPaf, obra) {
+  return request('/costes_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'asignar_alias', texto_paf: textoPaf, obra }),
+  })
+}
+
 export function confirmarCampoObraAceptada(accessToken, obra, campo, valor) {
   return request('/obras_aceptadas.php', {
     method: 'PATCH',

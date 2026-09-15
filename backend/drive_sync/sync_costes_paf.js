@@ -118,6 +118,24 @@ function emparejarObra(textoLibre, obrasNormalizadas) {
   return mejor;
 }
 
+// Correcciones manuales de un admin (botón "Asignar" en la vista de Costes,
+// ver costes_obra.php) para textos del PAF que nunca van a cruzar solos
+// contra ninguna obra conocida — se consultan ANTES de intentar el
+// emparejamiento automático, por texto EXACTO (no normalizado: si el texto
+// del PAF cambia aunque sea una coma, el alias viejo no aplica más y esa
+// fila vuelve a "sin asignar" para que se re-asigne).
+async function listarAlias() {
+  const url = `${process.env.PANEL_API_URL}/costes_obra.php?token=${process.env.SYNC_TOKEN}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accion: 'listar_alias' }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(JSON.stringify(data));
+  return data.alias;
+}
+
 async function listarObrasAceptadas() {
   const url = `${process.env.PANEL_API_URL}/obras_aceptadas.php?token=${process.env.SYNC_TOKEN}`;
   const res = await fetch(url, {
@@ -153,6 +171,10 @@ async function main() {
   }
   console.log(`Obras aceptadas conocidas: ${obrasNormalizadas.size}`);
 
+  const alias = await listarAlias();
+  const aliasPorTexto = new Map(alias.map((a) => [a.texto_paf, a.obra]));
+  console.log(`Alias cargados a mano: ${aliasPorTexto.size}`);
+
   const buffer = await descargarComoBuffer(drive, process.env.GOOGLE_DRIVE_PAF_FILE_ID);
   const tmpPath = path.join(__dirname, 'tmp_PAF.xlsx');
   fs.writeFileSync(tmpPath, buffer);
@@ -187,7 +209,10 @@ async function main() {
     const importe = parsearNumero(fila[idxImporte]);
     if (importe === 0) continue;
 
-    const obraReal = emparejarObra(textoObra, obrasNormalizadas);
+    // Alias cargado a mano por un admin (ver costes_obra.php) tiene
+    // prioridad sobre el emparejamiento automático — texto exacto, no
+    // normalizado.
+    const obraReal = aliasPorTexto.get(textoObra) || emparejarObra(textoObra, obrasNormalizadas);
     if (obraReal) {
       const actual = costesPorObra.get(obraReal) || { total: 0, filas: 0 };
       actual.total += importe;
