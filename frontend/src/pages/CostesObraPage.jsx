@@ -34,7 +34,12 @@ function formatoPorcentaje(valor) {
   return `${signo}${valor.toFixed(1)}%`
 }
 
-function DetalleCategoriasObra({ obra, categoriasIniciales, categoriasReales, costoRealTotal }) {
+// Devuelve filas <tr> DENTRO de la misma tabla/columnas que la fila
+// general (no una tabla anidada aparte) — así cada valor por categoría cae
+// exactamente debajo de su columna general (Costo inicial/Costo real/
+// Diferencia), sin depender de que dos tablas distintas midan sus columnas
+// igual.
+function FilasDetalleCategorias({ obra, categoriasIniciales, categoriasReales, costoRealTotal }) {
   const filas = useMemo(() => {
     const claves = new Set([...categoriasIniciales.keys(), ...categoriasReales.keys()])
     return Array.from(claves)
@@ -62,39 +67,37 @@ function DetalleCategoriasObra({ obra, categoriasIniciales, categoriasReales, co
   const sinCategorizar = costoRealTotal != null ? costoRealTotal - categorizado : null
 
   if (filas.length === 0) {
-    return <p className="dashboard-nota costes-detalle-vacio">Sin desglose por categoría para "{obra}" todavía.</p>
+    return (
+      <tr className="tabla-costes-fila-detalle">
+        <td colSpan={6}><p className="dashboard-nota costes-detalle-vacio">Sin desglose por categoría para "{obra}" todavía.</p></td>
+      </tr>
+    )
   }
 
   return (
-    <div className="costes-detalle-categorias">
-      <table className="tabla-costes tabla-costes-chica">
-        <thead>
-          <tr>
-            <th>Categoría</th>
-            <th>Costo inicial</th>
-            <th>Costo real</th>
-            <th>Diferencia</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filas.map((f) => (
-            <tr key={f.categoria}>
-              <td>{f.categoria}</td>
-              <td>{formatoMoneda(f.costoInicial)}</td>
-              <td>{formatoMoneda(f.costoReal)}</td>
-              <td className={f.diferencia > 0 ? 'tabla-costes-diferencia-mala' : f.diferencia < 0 ? 'tabla-costes-diferencia-buena' : ''}>
-                {f.diferencia != null ? formatoMoneda(f.diferencia) : '—'}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <>
+      {filas.map((f) => (
+        <tr key={f.categoria} className="tabla-costes-fila-detalle-categoria">
+          <td></td>
+          <td className="tabla-costes-categoria">↳ {f.categoria}</td>
+          <td></td>
+          <td>{formatoMoneda(f.costoInicial)}</td>
+          <td>{formatoMoneda(f.costoReal)}</td>
+          <td className={f.diferencia > 0 ? 'tabla-costes-diferencia-mala' : f.diferencia < 0 ? 'tabla-costes-diferencia-buena' : ''}>
+            {f.diferencia != null ? formatoMoneda(f.diferencia) : '—'}
+          </td>
+        </tr>
+      ))}
       {sinCategorizar != null && sinCategorizar > 0.01 && (
-        <p className="dashboard-nota costes-sin-categorizar">
-          Sin categorizar (gastos "Varios" del PAF, no entran en ninguna categoría arriba): {formatoMoneda(sinCategorizar)}
-        </p>
+        <tr className="tabla-costes-fila-detalle">
+          <td colSpan={6}>
+            <p className="dashboard-nota costes-sin-categorizar">
+              Sin categorizar (gastos "Varios" del PAF, no entran en ninguna categoría arriba): {formatoMoneda(sinCategorizar)}
+            </p>
+          </td>
+        </tr>
       )}
-    </div>
+    </>
   )
 }
 
@@ -263,7 +266,6 @@ export default function CostesObraPage() {
                   <th>Costo inicial</th>
                   <th>Costo real</th>
                   <th>Diferencia</th>
-                  <th>Filas PAF</th>
                 </tr>
               </thead>
               <tbody>
@@ -281,19 +283,14 @@ export default function CostesObraPage() {
                       <td className={f.diferencia > 0 ? 'tabla-costes-diferencia-mala' : f.diferencia < 0 ? 'tabla-costes-diferencia-buena' : ''}>
                         {f.diferencia != null ? `${formatoMoneda(f.diferencia)} (${formatoPorcentaje(f.porcentaje)})` : '—'}
                       </td>
-                      <td>{f.cantidadFilas || '—'}</td>
                     </tr>
                     {obraAbierta === f.obra && (
-                      <tr className="tabla-costes-fila-detalle">
-                        <td colSpan={7}>
-                          <DetalleCategoriasObra
-                            obra={f.obra}
-                            categoriasIniciales={categoriasInicialesPorObra.get(f.obra) || new Map()}
-                            categoriasReales={categoriasRealesPorObra.get(f.obra) || new Map()}
-                            costoRealTotal={f.costoReal}
-                          />
-                        </td>
-                      </tr>
+                      <FilasDetalleCategorias
+                        obra={f.obra}
+                        categoriasIniciales={categoriasInicialesPorObra.get(f.obra) || new Map()}
+                        categoriasReales={categoriasRealesPorObra.get(f.obra) || new Map()}
+                        costoRealTotal={f.costoReal}
+                      />
                     )}
                   </Fragment>
                 ))}

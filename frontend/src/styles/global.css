@@ -356,22 +356,24 @@ body {
 }
 
 .tabla-costes-fila-detalle td {
-  padding: 14px 14px 18px 34px;
+  padding: 10px 14px;
   background: #fbfcfe;
   cursor: default;
 }
 
-.tabla-costes-chica {
-  max-width: 640px;
-  background: white;
-  border: 1px solid #e3e8f0;
-  border-radius: 8px;
-  overflow: hidden;
+.tabla-costes-fila-detalle-categoria {
+  background: #fbfcfe;
 }
 
-.tabla-costes-chica th,
-.tabla-costes-chica td {
-  white-space: normal;
+.tabla-costes-fila-detalle-categoria td {
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #5a6472;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.tabla-costes-categoria {
+  padding-left: 26px !important;
 }
 
 .costes-detalle-vacio {
