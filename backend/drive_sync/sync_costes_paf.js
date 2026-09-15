@@ -10,11 +10,16 @@
 // "Pedido-Albaran-Factura" (año actual — hay una hoja "... 2025" aparte,
 // para el histórico del año anterior, que no se toca acá): cada fila es un
 // pedido/albarán/factura suelto, con una columna "Obra" de TEXTO LIBRE
-// (escrito a mano, sin estandarizar) y una "Importe Fra. sin IVA" (el
-// importe SIN IVA, a pedido de Álvaro — se compara contra el costo del
-// presupuesto, que tampoco lleva IVA). Se suma TODO lo que matchea cada
-// obra, sin filtrar por la columna "Estado" — a pedido explícito de Álvaro,
-// "incluir todos los gastos, no excluir nada".
+// (escrito a mano, sin estandarizar). Se suma "Importe obra" — NO "Importe
+// Fra. sin IVA"/"Importe Fra TOTAL" (bug real, detectado 2026-09-15
+// comparando contra una suma manual de Álvaro): esas dos son el total de
+// la FACTURA completa, repetido tal cual en cada fila que compartió esa
+// misma factura (varios pedidos facturados juntos) — sumarlas fila por
+// fila multiplica el costo real varias veces. "Importe obra" en cambio es
+// el importe puntual de ESA línea, no se repite, es la que corresponde
+// sumar. Se suma TODO lo que matchea cada obra, sin filtrar por la columna
+// "Estado" — a pedido explícito de Álvaro, "incluir todos los gastos, no
+// excluir nada".
 //
 // El emparejamiento obra-real -> obra-del-panel es por normalización +
 // "empieza con" (ver emparejarObra): "Duque de Tamames 3, 4ºA" en el PAF
@@ -141,9 +146,9 @@ async function main() {
   if (idxEncabezados === -1) throw new Error('No se encontró la fila de encabezados ("Solicitante"/"Obra") en PAF.xlsx');
   const encabezados = rows[idxEncabezados];
   const idxObra = encabezados.findIndex((h) => String(h).trim() === 'Obra');
-  const idxImporte = encabezados.findIndex((h) => /importe fra\.?\s*sin iva/i.test(String(h)));
+  const idxImporte = encabezados.findIndex((h) => String(h).trim() === 'Importe obra');
   if (idxObra === -1 || idxImporte === -1) {
-    throw new Error(`No se encontraron las columnas esperadas (Obra=${idxObra}, Importe Fra. sin IVA=${idxImporte})`);
+    throw new Error(`No se encontraron las columnas esperadas (Obra=${idxObra}, Importe obra=${idxImporte})`);
   }
 
   const costesPorObra = new Map(); // obra real -> { total, filas }
