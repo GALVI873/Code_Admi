@@ -3,6 +3,20 @@
 // extraer_ofertas_proveedor.js para poder correr en el cron nocturno
 // (ver .github/workflows/sync_drive.yml).
 //
+// OCR (2026-09-15, a pedido de Álvaro): varios proveedores mandan el
+// presupuesto como PDF ESCANEADO (una imagen, sin texto real adentro) —
+// pdf-parse en esos casos devuelve texto vacío o casi vacío, así que la
+// oferta quedaba invisible aunque el archivo estuviera ahí (caso real:
+// "Presupuesto Alumespa.pdf"). Cuando pasa eso, se cae a OCR: pdftoppm
+// (poppler-utils) rasteriza cada página del PDF a PNG, y tesseract (con el
+// paquete de idioma español) le saca el texto a esas imágenes — el
+// resultado se le pasa a las mismas funciones de siempre
+// (esDocumentoDeOferta/extraerValorTotal/etc, ver extract_ofertas_
+// proveedor.js), que no saben ni les importa si el texto vino de pdf-parse
+// o de OCR. Ambos binarios se instalan en el runner con apt-get (ver
+// sync_drive.yml) — no dependen de nada de la máquina de Valentina, así que
+// esto sigue corriendo solo en el cron igual que el resto.
+//
 // extraer_ofertas_proveedor.js leía los PDF directo del mount Z:\ de Drive
 // Desktop (fs.readdirSync sobre "Z:/DRIVE GALVI/.../HOJAS DE CALCULO
 // (PPTOS)/2026"), así que solo podía correrlo alguien a mano desde una
@@ -27,7 +41,9 @@
 // Uso:
 //   node sync_ofertas_proveedor.js
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { getDrive, descargarComoBuffer } = require('./drive_client.js');
 const {
@@ -39,6 +55,43 @@ const {
 } = require('./extract_ofertas_proveedor.js');
 
 const CARPETA_FOLDER = 'application/vnd.google-apps.folder';
+
+// Un PDF con texto real casi nunca tiene menos de esto por página — un
+// resultado más corto que ${UMBRAL_TEXTO_VACIO} es la señal de que
+// pdf-parse no sacó nada útil (PDF escaneado) y conviene probar con OCR.
+const UMBRAL_TEXTO_VACIO = 30;
+
+// Rasteriza cada página del PDF a PNG (pdftoppm, poppler-utils) y le saca
+// el texto a cada imagen con tesseract (idioma español) — devuelve todo
+// concatenado. Si cualquiera de los dos binarios no está instalado o el PDF
+// falla, devuelve '' en vez de tirar error: OCR es un intento best-effort,
+// no debe tumbar la sincronización de toda la obra por un PDF raro.
+function ocrPdfComoTexto(rutaPdf) {
+  const prefijo = path.join(os.tmpdir(), `ocr_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+  const nombreBase = path.basename(prefijo);
+  let paginasGeneradas = [];
+  try {
+    execFileSync('pdftoppm', ['-png', '-r', '200', rutaPdf, prefijo], { stdio: 'pipe' });
+    paginasGeneradas = fs.readdirSync(os.tmpdir())
+      .filter((n) => n.startsWith(nombreBase) && n.endsWith('.png'))
+      .sort((a, b) => {
+        const na = parseInt(a.match(/-(\d+)\.png$/)?.[1] || '0', 10);
+        const nb = parseInt(b.match(/-(\d+)\.png$/)?.[1] || '0', 10);
+        return na - nb;
+      })
+      .map((n) => path.join(os.tmpdir(), n));
+
+    let texto = '';
+    for (const rutaPagina of paginasGeneradas) {
+      texto += execFileSync('tesseract', [rutaPagina, 'stdout', '-l', 'spa'], { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }) + '\n';
+    }
+    return texto;
+  } catch {
+    return '';
+  } finally {
+    for (const rutaPagina of paginasGeneradas) fs.rmSync(rutaPagina, { force: true });
+  }
+}
 
 async function listarHijos(drive, folderId, soloCarpetas) {
   const filtroTipo = soloCarpetas ? ` and mimeType = '${CARPETA_FOLDER}'` : '';
@@ -109,7 +162,13 @@ async function extraerOfertasDeObra(drive, obraFolderId) {
       try {
         text = parsearPdfAislado(tmpPath);
       } catch {
-        continue;
+        text = '';
+      }
+      // pdf-parse casi no sacó nada -> probablemente un PDF escaneado, se
+      // intenta con OCR antes de descartarlo (ver ocrPdfComoTexto).
+      if (!text || text.trim().length < UMBRAL_TEXTO_VACIO) {
+        const textoOcr = ocrPdfComoTexto(tmpPath);
+        if (textoOcr && textoOcr.trim().length >= UMBRAL_TEXTO_VACIO) text = textoOcr;
       }
       if (!text || !esDocumentoDeOferta(text)) continue;
 

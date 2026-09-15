@@ -1,11 +1,13 @@
 name: Sincronizar Drive (programado)
 
-# Actualiza automáticamente las tres bases del panel (Presupuestos en
-# Estudio, Obras Aceptadas, Diario General) todos los días antes de que
-# empiece la jornada, sin depender de que alguien lo corra a mano desde su
-# computadora. Los tres scripts leen Drive por su API (OAuth), no por el
-# mount Z:\ de Drive Desktop, así que pueden correr en un runner de GitHub
-# sin ningún acceso especial a ninguna máquina.
+# Actualiza automáticamente las bases del panel (Presupuestos en Estudio,
+# ofertas de proveedor, Obras Aceptadas, Diario General) todos los días
+# antes de que empiece la jornada, sin depender de que alguien lo corra a
+# mano desde su computadora. Todos los scripts leen Drive por su API
+# (OAuth), no por el mount Z:\ de Drive Desktop, así que pueden correr en un
+# runner de GitHub sin ningún acceso especial a ninguna máquina — poppler-
+# utils/tesseract (para OCR de PDF escaneados) se instalan solos con
+# apt-get, son paquetes estándar de Ubuntu.
 #
 # 05:00 UTC = 6:00 (CET, invierno) u 7:00 (CEST, verano) hora de Madrid —
 # ajustar el cron si se necesita otro horario.
@@ -41,6 +43,14 @@ jobs:
 
       - name: Instalar dependencias
         run: npm ci
+
+      # poppler-utils (pdftoppm) y tesseract-ocr (con el paquete de idioma
+      # español): solo los usa "Sincronizar ofertas de proveedor" para leer
+      # por OCR los PDF de oferta que vienen escaneados (sin texto real) —
+      # ver el comentario de cabecera de sync_ofertas_proveedor.js. Paquetes
+      # livianos de Ubuntu, no requieren nada especial del runner.
+      - name: Instalar OCR (poppler-utils + tesseract)
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr tesseract-ocr-spa
 
       # continue-on-error en cada paso: que falle una sincronización (ej. un
       # Excel raro, la API de Drive lenta un rato) no debe impedir que las
