@@ -1883,6 +1883,8 @@ select.celda-editable-material {
 }
 
 .pendientes-encabezados .notas-obra-columna-titulo {
+  flex: 1;
+  min-width: 0;
   margin: 0;
 }
 
