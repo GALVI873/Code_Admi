@@ -1594,7 +1594,7 @@ select.celda-editable-material {
    disponible, cada nota es un renglón con casillero en vez de una burbuja
    de conversación. */
 .notas-obra {
-  max-width: 900px;
+  max-width: none;
 }
 
 .notas-obra-encabezado {
