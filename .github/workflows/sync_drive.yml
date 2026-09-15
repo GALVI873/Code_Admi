@@ -49,6 +49,15 @@ jobs:
         run: node sync_all.js
         continue-on-error: true
 
+      # Ofertas de proveedor detectadas en la carpeta "Valoración" de cada
+      # obra — antes era manual (extraer_ofertas_proveedor.js, necesitaba el
+      # mount Z:\ de Drive Desktop, nadie lo corría con regularidad). Va
+      # después de "Sincronizar Presupuestos en Estudio" porque empareja
+      # contra las solicitudes que ya estén cargadas en el panel.
+      - name: Sincronizar ofertas de proveedor
+        run: node sync_ofertas_proveedor.js
+        continue-on-error: true
+
       # Antes de sincronizar Obras Aceptadas: mueve la carpeta de cualquier
       # obra recién marcada "Aceptado" desde el panel — así, si hubo un
       # traspaso, la sincronización de abajo ya la encuentra en su carpeta

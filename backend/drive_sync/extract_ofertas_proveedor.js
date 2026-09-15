@@ -247,4 +247,8 @@ module.exports = {
   extraerProveedor,
   carpetaValoracion,
   extraerOfertasDeObra,
+  // Usada directo por sync_ofertas_proveedor.js (variante por API de Drive,
+  // corre en el cron nocturno) para parsear los PDF que va descargando a
+  // temporales, en vez de los que ya están en el mount Z:\.
+  parsearPdfAislado,
 };
