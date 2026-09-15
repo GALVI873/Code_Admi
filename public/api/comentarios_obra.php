@@ -136,6 +136,36 @@ try {
         )
     ");
 
+    // TEMPORAL — a pedido de Álvaro (2026-09-15): se les borró sin querer
+    // la marca de "sin leer" de lo que Alfredo contestó hoy mientras
+    // buscaban algo en el panel. Sin sesión, protegido por SYNC_TOKEN.
+    // Sacar cuando ya no haga falta.
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $bodyDebug = json_decode((string) file_get_contents('php://input'), true) ?? [];
+        if (($bodyDebug['accion'] ?? '') === 'debug_resetear_no_leido_hoy') {
+            $tokenDebug = $_GET['token'] ?? $bodyDebug['token'] ?? '';
+            if ($config['sync_token'] === '' || !hash_equals($config['sync_token'], (string) $tokenDebug)) {
+                Response::error('No autorizado', 403);
+            }
+            $obrasDirectas = array_column($db->query("
+                SELECT DISTINCT obra FROM comentarios_obra
+                WHERE LOWER(autor_nombre) = 'alfredo' AND date(creado_en) = date('now')
+            ")->fetchAll(), 'obra');
+            $obrasRespuestas = array_column($db->query("
+                SELECT DISTINCT co.obra
+                FROM comentarios_obra_respuestas r
+                INNER JOIN comentarios_obra co ON co.id = r.comentario_id
+                WHERE LOWER(r.autor_nombre) = 'alfredo' AND date(r.creado_en) = date('now')
+            ")->fetchAll(), 'obra');
+            $obrasAfectadas = array_values(array_unique(array_merge($obrasDirectas, $obrasRespuestas)));
+            if (count($obrasAfectadas) > 0) {
+                $marcadores = implode(',', array_fill(0, count($obrasAfectadas), '?'));
+                $db->prepare("DELETE FROM comentarios_obra_leido WHERE obra IN ($marcadores)")->execute($obrasAfectadas);
+            }
+            Response::json(['obras' => $obrasAfectadas]);
+        }
+    }
+
     $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
     AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento', 'obras.ver_aceptadas']);
 
