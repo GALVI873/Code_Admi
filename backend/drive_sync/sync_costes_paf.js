@@ -63,10 +63,15 @@ function parsearNumero(valor) {
 }
 
 // Empareja el texto libre de la columna "Obra" del PAF contra una obra real
-// del panel: primero exacto (normalizado), si no encuentra, la obra
-// conocida más larga tal que el texto libre EMPIEZA con ella (así "Duque de
-// Tamames 3, 4ºA" matchea "Duque de Tamames" pero no una obra de 2-3
-// letras que casualmente aparezca al principio de cualquier cosa).
+// del panel: primero exacto (normalizado); si no, la obra conocida más
+// larga tal que UNA CONTIENE A LA OTRA (en cualquier sentido) — hace falta
+// en los dos sentidos porque el texto del PAF a veces trae menos que el
+// nombre real ("Jose Abascal,57" -> obra real "8 Viv. Jose Abascal, 57") y
+// a veces más, incluso con algo antepuesto ("Ronda de la Avutarda, 38 -
+// Persianas" -> obra real "Avutarda, 38"). "length >= 4" para no matchear
+// por una obra de 2-3 letras que casualmente aparezca en cualquier lado; de
+// haber varios candidatos, se prefiere el nombre de obra MÁS LARGO (más
+// específico, menos chance de ser una coincidencia de casualidad).
 function emparejarObra(textoLibre, obrasNormalizadas) {
   const norm = normalizar(textoLibre);
   if (!norm) return null;
@@ -75,7 +80,8 @@ function emparejarObra(textoLibre, obrasNormalizadas) {
   let mejor = null;
   let mejorLargo = 0;
   for (const [obraNorm, obraOriginal] of obrasNormalizadas) {
-    if (obraNorm.length >= 4 && norm.startsWith(obraNorm) && obraNorm.length > mejorLargo) {
+    const contiene = obraNorm.length >= 4 && (norm.includes(obraNorm) || obraNorm.includes(norm));
+    if (contiene && obraNorm.length > mejorLargo) {
       mejor = obraOriginal;
       mejorLargo = obraNorm.length;
     }
