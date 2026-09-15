@@ -116,6 +116,12 @@ export function obrasAceptadas(accessToken) {
   })
 }
 
+export function costesObra(accessToken) {
+  return request('/costes_obra.php', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
 export function confirmarCampoObraAceptada(accessToken, obra, campo, valor) {
   return request('/obras_aceptadas.php', {
     method: 'PATCH',

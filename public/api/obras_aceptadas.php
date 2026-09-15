@@ -5,6 +5,13 @@ declare(strict_types=1);
 // trabajo de Alfredo (Gestión de Obras) — ver
 // backend/drive_sync/sync_obras_aceptadas.js.
 //
+// "precio_presupuesto"/"costo_inicial" (2026-09-15, a pedido de Álvaro):
+// vienen de la hoja "Comparativa" del mismo Excel — precio_presupuesto es el
+// precio de venta al cliente, costo_inicial es precio_presupuesto menos el
+// Beneficio (el costo con el que se armó el presupuesto). Los usa la vista
+// de Costes (solo admin, ver costes_obra.php) para compararlos contra el
+// gasto real acumulado en PAF.xlsx.
+//
 // Independiente de presupuestos_en_estudio a propósito: se confirmó que esa
 // tabla NO sigue a la obra una vez que Geraldinne la mueve fuera de "en
 // estudio" — esta es su propia fuente de verdad, leída directo del Excel de
@@ -122,6 +129,18 @@ try {
     foreach (['fecha_ppto', 'color_carpinteria', 'correderas', 'abatibles', 'color_persiana', 'modelo_lamas', 'motor_radio', 'motor_mecanico', 'estatus'] as $columna) {
         if (!in_array($columna, $columnas, true)) {
             $db->exec("ALTER TABLE obras_aceptadas ADD COLUMN $columna TEXT");
+        }
+    }
+    // "precio_presupuesto" (precio de venta al cliente) y "costo_inicial"
+    // (precio_presupuesto menos el Beneficio de la hoja "Comparativa" del
+    // Excel — el costo con el que se armó el presupuesto, no lo que se le
+    // cobró al cliente) — alimenta la vista de Costes (solo admin, ver
+    // costes_obra.php), comparando esto contra el gasto real acumulado en
+    // PAF.xlsx. Vienen de extraerCampos() en sync_obras_aceptadas.js, que ya
+    // descarga y lee este mismo Excel para el resto de los campos de acá.
+    foreach (['precio_presupuesto', 'costo_inicial'] as $columna) {
+        if (!in_array($columna, $columnas, true)) {
+            $db->exec("ALTER TABLE obras_aceptadas ADD COLUMN $columna REAL");
         }
     }
     // Obras que ya existían antes de agregar esta columna (ALTER TABLE no
@@ -369,8 +388,8 @@ try {
         // sincronización ni toca.
         $stmt = $db->prepare("
             INSERT INTO obras_aceptadas
-                (obra, categoria, contacto, cliente, no_ventanas, numero_ppto, fecha_ppto, proveedor, color_carpinteria, correderas, abatibles, vidrio, ral, persiana, color_persiana, modelo_lamas, motor_radio, motor_mecanico, es_nueva, actualizado_en)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
+                (obra, categoria, contacto, cliente, no_ventanas, numero_ppto, fecha_ppto, proveedor, color_carpinteria, correderas, abatibles, vidrio, ral, persiana, color_persiana, modelo_lamas, motor_radio, motor_mecanico, precio_presupuesto, costo_inicial, es_nueva, actualizado_en)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
             ON CONFLICT(obra) DO UPDATE SET
                 categoria = excluded.categoria,
                 contacto = excluded.contacto,
@@ -389,6 +408,8 @@ try {
                 modelo_lamas = excluded.modelo_lamas,
                 motor_radio = excluded.motor_radio,
                 motor_mecanico = excluded.motor_mecanico,
+                precio_presupuesto = excluded.precio_presupuesto,
+                costo_inicial = excluded.costo_inicial,
                 actualizado_en = datetime('now')
         ");
         $stmt->execute([
@@ -410,6 +431,8 @@ try {
             $body['modelo_lamas'] ?? null,
             $body['motor_radio'] ?? null,
             $body['motor_mecanico'] ?? null,
+            $body['precio_presupuesto'] ?? null,
+            $body['costo_inicial'] ?? null,
         ]);
 
         Response::json(['ok' => true]);

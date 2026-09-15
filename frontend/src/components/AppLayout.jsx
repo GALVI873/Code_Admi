@@ -57,6 +57,16 @@ const NAV_ITEMS = [
     permiso: 'contabilidad.ver',
     soloRol: 'admin',
   },
+  // Costo del presupuesto vs gasto real (PAF.xlsx) — exclusivo de admin, a
+  // pedido de Álvaro (2026-09-15). soloRol en vez de un permiso nuevo: es
+  // información financiera sensible, no tiene sentido otorgársela a otro
+  // rol sin decidirlo a propósito (ver costes_obra.php).
+  {
+    to: '/costes',
+    label: 'Costes',
+    icono: '📊',
+    soloRol: 'admin',
+  },
 ]
 
 export default function AppLayout() {

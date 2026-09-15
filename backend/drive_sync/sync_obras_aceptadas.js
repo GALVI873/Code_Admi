@@ -134,6 +134,15 @@ async function subirObra(info, campos, confirmables) {
       cliente: campos.cliente || info.contacto,
       no_ventanas: campos.no_ventanas,
       numero_ppto: campos.numero_ppto,
+      // "Comparativa": precio de venta al cliente y el costo con el que se
+      // armó el presupuesto (precio menos Beneficio) — alimenta la vista de
+      // Costes (solo admin). Si no hay porcentaje de ganancia detectado
+      // (ver extraerCampos en extract_fields.js), no hay forma de derivar
+      // el costo, queda null.
+      precio_presupuesto: campos.precio_ultimo_presupuesto,
+      costo_inicial: campos.precio_ultimo_presupuesto != null && campos.porcentaje_ganancia != null
+        ? campos.precio_ultimo_presupuesto * (1 - campos.porcentaje_ganancia / 100)
+        : null,
       fecha_ppto: confirmables.fecha_ppto,
       proveedor: confirmables.proveedor,
       color_carpinteria: confirmables.color_carpinteria,

@@ -30,6 +30,7 @@ jobs:
       GOOGLE_DRIVE_ENVIADOS_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_ENVIADOS_FOLDER_ID }}
       GOOGLE_DRIVE_OBRAS_ACEPTADAS_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_OBRAS_ACEPTADAS_FOLDER_ID }}
       GOOGLE_DRIVE_DIARIO_GENERAL_FILE_ID: ${{ secrets.GOOGLE_DRIVE_DIARIO_GENERAL_FILE_ID }}
+      GOOGLE_DRIVE_PAF_FILE_ID: ${{ secrets.GOOGLE_DRIVE_PAF_FILE_ID }}
       PANEL_API_URL: ${{ secrets.PANEL_API_URL }}
       SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
     steps:
@@ -80,6 +81,14 @@ jobs:
 
       - name: Sincronizar Obras Aceptadas
         run: node sync_obras_aceptadas.js
+        continue-on-error: true
+
+      # Costo real por obra desde PAF.xlsx, para la vista de Costes (solo
+      # admin) — va después de "Sincronizar Obras Aceptadas" porque necesita
+      # la lista de obras aceptadas ya actualizada para emparejar contra
+      # ella (ver sync_costes_paf.js).
+      - name: Sincronizar costes reales (PAF)
+        run: node sync_costes_paf.js
         continue-on-error: true
 
       - name: Sincronizar Diario General
