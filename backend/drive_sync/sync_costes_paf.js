@@ -21,12 +21,20 @@
 // "Estado" — a pedido explícito de Álvaro, "incluir todos los gastos, no
 // excluir nada".
 //
-// El emparejamiento obra-real -> obra-del-panel es por normalización +
-// "empieza con" (ver emparejarObra): "Duque de Tamames 3, 4ºA" en el PAF
-// matchea contra la obra real "Duque de Tamames". Lo que no logra
-// emparejar con ninguna obra aceptada conocida NO se descarta — se sube
-// aparte como "sin_asignar" (agrupado por el texto tal cual aparece en el
-// PAF) para que un admin lo revise a mano en el panel.
+// El emparejamiento obra-real -> obra-del-panel es por PALABRAS (tokens),
+// no por texto completo (ver emparejarObra/tokenizar, 2026-09-15 — la
+// primera versión comparaba el texto entero y se perdía casos donde algo
+// queda METIDO EN EL MEDIO, ej. "Los Cerezos, 543-A / Urb. El clavín" vs la
+// obra real "Los Cerezos - Urb. El Clavín": el número de parcela corta
+// cualquier coincidencia de texto continuo aunque sea obviamente la misma
+// obra). Comparando palabra por palabra, alcanza con que todas las palabras
+// del lado más corto estén en el más largo, en cualquier posición.
+// Alias cargados a mano (ver costes_alias_obra en costes_obra.php) tienen
+// prioridad sobre esto — para los casos puntuales que ni así se resuelven
+// (ej. "Fernando el Santo" vs una obra guardada como "Fernado el Santo",
+// typo real). Lo que no logra emparejar de ninguna manera NO se descarta —
+// se sube aparte como "sin_asignar" (agrupado por el texto tal cual aparece
+// en el PAF) para que un admin lo revise a mano en el panel.
 //
 // Uso:
 //   node sync_costes_paf.js
@@ -91,28 +99,53 @@ function parsearNumero(valor) {
   return Number.isNaN(n) ? 0 : n;
 }
 
+// Como normalizar(), pero sin juntar todo en un solo bloque — separa por
+// palabra. Necesario para emparejarObra() de abajo: comparar texto entero
+// (normalizar) se rompe apenas hay algo METIDO EN EL MEDIO (ej. "Los
+// Cerezos, 543-A / Urb. El clavín" vs la obra real "Los Cerezos - Urb. El
+// Clavín" — el número de parcela corta la coincidencia de texto continuo
+// aunque, a simple vista, sea obviamente la misma obra); comparando por
+// palabra sueltas, la posición ya no importa.
+function tokenizar(texto) {
+  return String(texto || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
 // Empareja el texto libre de la columna "Obra" del PAF contra una obra real
-// del panel: primero exacto (normalizado); si no, la obra conocida más
-// larga tal que UNA CONTIENE A LA OTRA (en cualquier sentido) — hace falta
-// en los dos sentidos porque el texto del PAF a veces trae menos que el
-// nombre real ("Jose Abascal,57" -> obra real "8 Viv. Jose Abascal, 57") y
-// a veces más, incluso con algo antepuesto ("Ronda de la Avutarda, 38 -
-// Persianas" -> obra real "Avutarda, 38"). "length >= 4" para no matchear
-// por una obra de 2-3 letras que casualmente aparezca en cualquier lado; de
-// haber varios candidatos, se prefiere el nombre de obra MÁS LARGO (más
-// específico, menos chance de ser una coincidencia de casualidad).
-function emparejarObra(textoLibre, obrasNormalizadas) {
-  const norm = normalizar(textoLibre);
-  if (!norm) return null;
-  if (obrasNormalizadas.has(norm)) return obrasNormalizadas.get(norm);
+// del panel comparando PALABRAS (tokens), no el texto entero — se pide que
+// TODAS las palabras del lado más corto (la obra o el texto del PAF, el que
+// tenga menos palabras) aparezcan en el lado más largo, sin importar el
+// orden ni qué haya metido en el medio. Entre varios candidatos que
+// cumplan, se prefiere el que tenga más letras en común (más específico,
+// menos chance de ser casualidad). Un mínimo de 4 caracteres en total
+// evita matchear por una sola palabra cortísima (ej. "de", "el").
+function emparejarObra(textoLibre, obrasTokenizadas) {
+  const tokensLibres = new Set(tokenizar(textoLibre));
+  if (tokensLibres.size === 0) return null;
 
   let mejor = null;
-  let mejorLargo = 0;
-  for (const [obraNorm, obraOriginal] of obrasNormalizadas) {
-    const contiene = obraNorm.length >= 4 && (norm.includes(obraNorm) || obraNorm.includes(norm));
-    if (contiene && obraNorm.length > mejorLargo) {
+  let mejorPuntaje = 0;
+  for (const [obraOriginal, tokensObra] of obrasTokenizadas) {
+    if (tokensObra.size === 0) continue;
+    const chico = tokensObra.size <= tokensLibres.size ? tokensObra : tokensLibres;
+    const grande = tokensObra.size <= tokensLibres.size ? tokensLibres : tokensObra;
+
+    let todasPresentes = true;
+    let largoChico = 0;
+    for (const t of chico) {
+      if (!grande.has(t)) {
+        todasPresentes = false;
+        break;
+      }
+      largoChico += t.length;
+    }
+    if (todasPresentes && largoChico >= 4 && largoChico > mejorPuntaje) {
       mejor = obraOriginal;
-      mejorLargo = obraNorm.length;
+      mejorPuntaje = largoChico;
     }
   }
   return mejor;
@@ -164,12 +197,12 @@ async function main() {
   const drive = getDrive();
 
   const obrasAceptadas = await listarObrasAceptadas();
-  const obrasNormalizadas = new Map();
+  const obrasTokenizadas = new Map();
   for (const o of obrasAceptadas) {
-    const norm = normalizar(o.obra);
-    if (norm && !obrasNormalizadas.has(norm)) obrasNormalizadas.set(norm, o.obra);
+    const tokens = new Set(tokenizar(o.obra));
+    if (tokens.size > 0 && !obrasTokenizadas.has(o.obra)) obrasTokenizadas.set(o.obra, tokens);
   }
-  console.log(`Obras aceptadas conocidas: ${obrasNormalizadas.size}`);
+  console.log(`Obras aceptadas conocidas: ${obrasTokenizadas.size}`);
 
   const alias = await listarAlias();
   const aliasPorTexto = new Map(alias.map((a) => [a.texto_paf, a.obra]));
@@ -212,7 +245,7 @@ async function main() {
     // Alias cargado a mano por un admin (ver costes_obra.php) tiene
     // prioridad sobre el emparejamiento automático — texto exacto, no
     // normalizado.
-    const obraReal = aliasPorTexto.get(textoObra) || emparejarObra(textoObra, obrasNormalizadas);
+    const obraReal = aliasPorTexto.get(textoObra) || emparejarObra(textoObra, obrasTokenizadas);
     if (obraReal) {
       const actual = costesPorObra.get(obraReal) || { total: 0, filas: 0 };
       actual.total += importe;
