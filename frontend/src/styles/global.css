@@ -847,6 +847,22 @@ body {
   box-shadow: 0 2px 6px rgba(0, 0, 0, .06);
 }
 
+/* Orden del día: arrastrar la obra a la posición que se quiera, además
+   de las flechas ▲▼ — mismo mecanismo de guardado (orden_agenda), solo
+   cambia cómo se arma el nuevo orden antes de guardarlo. */
+.obra-item-compacto-arrastrable {
+  cursor: grab;
+}
+
+.obra-item-compacto-arrastrable:active {
+  cursor: grabbing;
+}
+
+.obra-item-compacto-sobrevuelo {
+  border-color: var(--azul-med);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, .25);
+}
+
 .obra-item-compacto-numero {
   color: #a3adb8;
   font-weight: 700;

@@ -804,13 +804,30 @@ function DetalleSeguimiento({ base, opciones, ofertas, direccion, abrirEnNotas, 
 // Obras Aceptadas (lista vertical numerada), pero con flechas para mover el
 // orden a mano en vez de un badge de estatus fijo: acá el orden ES el dato,
 // no un detalle secundario.
-function ItemAgenda({ grupo, numero, deshabilitarArriba, deshabilitarAbajo, onAbrir, onMover, onCambio, puedeCambiarPrioridad }) {
+function ItemAgenda({ grupo, numero, deshabilitarArriba, deshabilitarAbajo, onAbrir, onMover, onCambio, puedeCambiarPrioridad, onSoltarSobre }) {
   const primero = grupo.opciones[0]
+  const [sobrevuelo, setSobrevuelo] = useState(false)
   return (
     <div
-      className="obra-item-compacto"
+      className={`obra-item-compacto obra-item-compacto-arrastrable ${sobrevuelo ? 'obra-item-compacto-sobrevuelo' : ''}`}
       role="button"
       tabIndex={0}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', grupo.base)
+        e.dataTransfer.effectAllowed = 'move'
+      }}
+      onDragOver={(e) => {
+        e.preventDefault()
+        setSobrevuelo(true)
+      }}
+      onDragLeave={() => setSobrevuelo(false)}
+      onDrop={(e) => {
+        e.preventDefault()
+        setSobrevuelo(false)
+        const claveArrastrada = e.dataTransfer.getData('text/plain')
+        onSoltarSobre(claveArrastrada, grupo.base)
+      }}
       onClick={() => onAbrir(grupo.base)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') onAbrir(grupo.base)
@@ -893,12 +910,30 @@ function SelectEstatusAdicional({ adicional, onCambio, puedeCambiar }) {
 // intercalar libremente con ellas dentro del mismo bloque de prioridad.
 // Clic lleva a la pestaña Adicionales de Obra, que es donde se gestiona el
 // resto (detalle, solicitante).
-function ItemAgendaAdicional({ adicional, numero, deshabilitarArriba, deshabilitarAbajo, onAbrir, onMover, onCambiarPrioridad, onCambiarEstatus, puedeCambiarPrioridad, puedeCambiarEstatus }) {
+function ItemAgendaAdicional({ adicional, numero, deshabilitarArriba, deshabilitarAbajo, onAbrir, onMover, onCambiarPrioridad, onCambiarEstatus, puedeCambiarPrioridad, puedeCambiarEstatus, onSoltarSobre }) {
+  const clave = `adicional:${adicional.id}`
+  const [sobrevuelo, setSobrevuelo] = useState(false)
   return (
     <div
-      className="obra-item-compacto"
+      className={`obra-item-compacto obra-item-compacto-arrastrable ${sobrevuelo ? 'obra-item-compacto-sobrevuelo' : ''}`}
       role="button"
       tabIndex={0}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', clave)
+        e.dataTransfer.effectAllowed = 'move'
+      }}
+      onDragOver={(e) => {
+        e.preventDefault()
+        setSobrevuelo(true)
+      }}
+      onDragLeave={() => setSobrevuelo(false)}
+      onDrop={(e) => {
+        e.preventDefault()
+        setSobrevuelo(false)
+        const claveArrastrada = e.dataTransfer.getData('text/plain')
+        onSoltarSobre(claveArrastrada, clave)
+      }}
       onClick={onAbrir}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') onAbrir()
@@ -1073,15 +1108,9 @@ export default function SeguimientoPage() {
   const itemsAgendaAlta = useMemo(() => construirItemsAgenda(true), [gruposAgenda, adicionalesPendientes])
   const itemsAgendaNormal = useMemo(() => construirItemsAgenda(false), [gruposAgenda, adicionalesPendientes])
 
-  async function handleMoverItemAgenda(items, clave, direccion) {
-    const idx = items.findIndex((it) => it.clave === clave)
-    const destino = idx + direccion
-    if (idx === -1 || destino < 0 || destino >= items.length) return
-
-    const reordenado = [...items]
-    ;[reordenado[idx], reordenado[destino]] = [reordenado[destino], reordenado[idx]]
-    const clavesEnOrden = reordenado.map((it) => it.clave)
-
+  // Guarda un nuevo orden ya armado (venga de las flechas o de arrastrar)
+  // — optimista, revierte los dos estados si el PATCH falla.
+  async function aplicarOrdenAgenda(clavesEnOrden) {
     const anterioresFilas = filas
     const anterioresAdicionales = adicionales
     setFilas((f) => f.map((p) => {
@@ -1099,6 +1128,32 @@ export default function SeguimientoPage() {
       setAdicionales(anterioresAdicionales)
       setError(err.message)
     }
+  }
+
+  async function handleMoverItemAgenda(items, clave, direccion) {
+    const idx = items.findIndex((it) => it.clave === clave)
+    const destino = idx + direccion
+    if (idx === -1 || destino < 0 || destino >= items.length) return
+
+    const reordenado = [...items]
+    ;[reordenado[idx], reordenado[destino]] = [reordenado[destino], reordenado[idx]]
+    await aplicarOrdenAgenda(reordenado.map((it) => it.clave))
+  }
+
+  // Arrastrar y soltar dentro del mismo bloque de prioridad (Alta o
+  // Normal) — mismo límite que ya tenían las flechas, que tampoco cruzan
+  // de un bloque al otro. Soltar fuera de ambas listas (claveDestino no
+  // encontrada ahí) no hace nada.
+  async function handleSoltarItemAgenda(items, claveArrastrada, claveDestino) {
+    if (claveArrastrada === claveDestino) return
+    const idxOrigen = items.findIndex((it) => it.clave === claveArrastrada)
+    const idxDestino = items.findIndex((it) => it.clave === claveDestino)
+    if (idxOrigen === -1 || idxDestino === -1) return
+
+    const reordenado = [...items]
+    const [movido] = reordenado.splice(idxOrigen, 1)
+    reordenado.splice(idxDestino, 0, movido)
+    await aplicarOrdenAgenda(reordenado.map((it) => it.clave))
   }
 
   async function handleCambiarPrioridadAdicional(id, prioridad) {
@@ -1383,7 +1438,7 @@ export default function SeguimientoPage() {
       {vista === 'orden_dia' && !cargando && !error && (
         <>
           <p className="dashboard-nota">
-            Todas las obras en estudio, valoración, revisión o Alvarada — las de prioridad Alta (Álvaro) van siempre arriba; dentro de cada bloque el orden es el que le vayas dando con las flechas.
+            Todas las obras en estudio, valoración, revisión o Alvarada — las de prioridad Alta (Álvaro) van siempre arriba; dentro de cada bloque el orden es el que le vayas dando con las flechas o arrastrando la obra a la posición que quieras.
           </p>
           {itemsAgendaAlta.length === 0 && itemsAgendaNormal.length === 0 ? (
             <p className="dashboard-nota">No hay ninguna obra en trabajo activo ahora mismo.</p>
@@ -1399,6 +1454,7 @@ export default function SeguimientoPage() {
                     deshabilitarAbajo={i === itemsAgendaAlta.length - 1}
                     onAbrir={abrirObra}
                     onMover={(clave, dir) => handleMoverItemAgenda(itemsAgendaAlta, clave, dir)}
+                    onSoltarSobre={(claveArrastrada, claveDestino) => handleSoltarItemAgenda(itemsAgendaAlta, claveArrastrada, claveDestino)}
                     onCambio={handleCambio}
                     puedeCambiarPrioridad={puedeCambiarPrioridad}
                   />
@@ -1411,6 +1467,7 @@ export default function SeguimientoPage() {
                     deshabilitarAbajo={i === itemsAgendaAlta.length - 1}
                     onAbrir={() => setVista('adicionales')}
                     onMover={(dir) => handleMoverItemAgenda(itemsAgendaAlta, item.clave, dir)}
+                    onSoltarSobre={(claveArrastrada, claveDestino) => handleSoltarItemAgenda(itemsAgendaAlta, claveArrastrada, claveDestino)}
                     onCambiarPrioridad={handleCambiarPrioridadAdicional}
                     onCambiarEstatus={handleCambiarEstatusAdicional}
                     puedeCambiarPrioridad={puedeCambiarPrioridad}
@@ -1428,6 +1485,7 @@ export default function SeguimientoPage() {
                     deshabilitarAbajo={i === itemsAgendaNormal.length - 1}
                     onAbrir={abrirObra}
                     onMover={(clave, dir) => handleMoverItemAgenda(itemsAgendaNormal, clave, dir)}
+                    onSoltarSobre={(claveArrastrada, claveDestino) => handleSoltarItemAgenda(itemsAgendaNormal, claveArrastrada, claveDestino)}
                     onCambio={handleCambio}
                     puedeCambiarPrioridad={puedeCambiarPrioridad}
                   />
@@ -1440,6 +1498,7 @@ export default function SeguimientoPage() {
                     deshabilitarAbajo={i === itemsAgendaNormal.length - 1}
                     onAbrir={() => setVista('adicionales')}
                     onMover={(dir) => handleMoverItemAgenda(itemsAgendaNormal, item.clave, dir)}
+                    onSoltarSobre={(claveArrastrada, claveDestino) => handleSoltarItemAgenda(itemsAgendaNormal, claveArrastrada, claveDestino)}
                     onCambiarPrioridad={handleCambiarPrioridadAdicional}
                     onCambiarEstatus={handleCambiarEstatusAdicional}
                     puedeCambiarPrioridad={puedeCambiarPrioridad}
