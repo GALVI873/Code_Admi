@@ -64,9 +64,11 @@ declare(strict_types=1);
 // nueva (comportamiento de siempre); con comentario_id agrega una
 // respuesta a esa nota puntual en comentarios_obra_respuestas.
 // GET ?pendientes=1 (sin "obra"): junta, de TODAS las obras que están en
-// obras_aceptadas, los mensajes que no son de Alfredo y siguen sin marcar
-// "hecho" — la vista "Pendientes" (control general de Alfredo, no tiene
-// que entrar obra por obra). Requiere sesión + obras.ver_aceptadas.
+// obras_aceptadas, los mensajes que no son de Alfredo — la vista
+// "Pendientes" (control general, no tiene que entrar obra por obra).
+// Devuelve tanto lo pendiente como lo ya marcado "hecho" (el frontend
+// separa en pestañas "Pendientes"/"Hechas"). Requiere sesión +
+// obras.ver_aceptadas.
 // DELETE ?obra=...: TEMPORAL, solo para pruebas — vacía la conversación
 // completa de una obra (borra todos sus mensajes y su registro de
 // lectura). Requiere sesión + rol admin. Se agregó a pedido explícito
@@ -141,15 +143,19 @@ try {
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         // Vista "Pendientes": todas las obras aceptadas juntas, no una en
-        // particular — Alfredo no tiene que entrar obra por obra.
+        // particular — Alfredo no tiene que entrar obra por obra. Trae
+        // tanto lo pendiente (hecho=0) como lo ya tachado (hecho=1) — a
+        // pedido de Álvaro (2026-09-21), quiere poder ver las hechas desde
+        // acá también, no solo las pendientes. El frontend filtra cuál de
+        // las dos mostrar (pestaña "Pendientes"/"Hechas"), por eso ya no se
+        // filtra por hecho acá.
         if (($_GET['pendientes'] ?? '') === '1') {
             AuthMiddleware::requierePermiso($usuario, 'obras.ver_aceptadas');
             $stmt = $db->query("
                 SELECT co.*, oa.id AS obra_id
                 FROM comentarios_obra co
                 INNER JOIN obras_aceptadas oa ON oa.obra = co.obra
-                WHERE co.hecho = 0
-                  AND co.archivado = 0
+                WHERE co.archivado = 0
                   AND co.autor_email NOT IN (
                     SELECT u.email FROM usuarios u
                     INNER JOIN usuario_roles ur ON ur.usuario_id = u.id

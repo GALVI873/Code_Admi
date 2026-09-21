@@ -92,7 +92,7 @@ function FiltroObrasMultiple({ obrasDisponibles, seleccionadas, onCambiar }) {
 function NotaPendiente({ nota, puedeMarcarHecho, puedeCategorizar, onMarcarHecho, onAbrir }) {
   return (
     <li
-      className={`notas-obra-item ${puedeCategorizar ? 'notas-obra-item-arrastrable' : ''}`}
+      className={`notas-obra-item ${nota.hecho ? 'notas-obra-item-hecho' : ''} ${puedeCategorizar ? 'notas-obra-item-arrastrable' : ''}`}
       draggable={puedeCategorizar}
       onDragStart={(e) => {
         e.dataTransfer.setData('text/plain', String(nota.id))
@@ -103,10 +103,10 @@ function NotaPendiente({ nota, puedeMarcarHecho, puedeCategorizar, onMarcarHecho
       <input
         type="checkbox"
         className="notas-obra-checkbox"
-        checked={false}
+        checked={!!nota.hecho}
         disabled={!puedeMarcarHecho}
         onChange={() => onMarcarHecho(nota)}
-        title={puedeMarcarHecho ? 'Marcar como hecho' : 'Solo Alfredo puede marcar esto como hecho'}
+        title={puedeMarcarHecho ? (nota.hecho ? 'Volver a pendiente' : 'Marcar como hecho') : 'Solo Alfredo puede marcar esto como hecho'}
       />
       <div className="notas-obra-item-cuerpo" role="button" tabIndex={0} onClick={() => onAbrir(nota)}>
         <p className="notas-obra-item-texto">{nota.mensaje}</p>
@@ -181,6 +181,9 @@ export default function PendientesObrasPage() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [obrasFiltradas, setObrasFiltradas] = useState([])
+  // Pestaña "Pendientes"/"Hechas" (a pedido de Álvaro) — el GET ya trae las
+  // dos, acá solo se filtra cuál mostrar.
+  const [vista, setVista] = useState('pendientes')
 
   useEffect(() => {
     pendientesObrasAceptadas(accessToken)
@@ -193,9 +196,14 @@ export default function PendientesObrasPage() {
     return Array.from(new Set(pendientes.map((p) => p.obra))).sort((a, b) => a.localeCompare(b, 'es'))
   }, [pendientes])
 
+  const segunVista = useMemo(
+    () => pendientes.filter((p) => (vista === 'hechas' ? p.hecho : !p.hecho)),
+    [pendientes, vista],
+  )
+
   const visibles = useMemo(
-    () => (obrasFiltradas.length === 0 ? pendientes : pendientes.filter((p) => obrasFiltradas.includes(p.obra))),
-    [pendientes, obrasFiltradas],
+    () => (obrasFiltradas.length === 0 ? segunVista : segunVista.filter((p) => obrasFiltradas.includes(p.obra))),
+    [segunVista, obrasFiltradas],
   )
 
   // Una fila por obra, con sus tareas y recordatorios ya separados adentro
@@ -217,10 +225,11 @@ export default function PendientesObrasPage() {
 
   async function handleMarcarHecho(nota) {
     if (!puedeMarcarHecho) return
+    const nuevoHecho = nota.hecho ? 0 : 1
     const anteriores = pendientes
-    setPendientes((prev) => prev.filter((n) => n.id !== nota.id))
+    setPendientes((prev) => prev.map((n) => (n.id === nota.id ? { ...n, hecho: nuevoHecho } : n)))
     try {
-      await marcarComentarioHecho(accessToken, nota.id, 1)
+      await marcarComentarioHecho(accessToken, nota.id, nuevoHecho)
     } catch (err) {
       setPendientes(anteriores)
       setError(err.message)
@@ -264,6 +273,22 @@ export default function PendientesObrasPage() {
               onCambiar={setObrasFiltradas}
             />
           </div>
+          <div className="pestanas-vista pendientes-pestanas-vista">
+            <button
+              type="button"
+              className={`pestanas-vista-boton ${vista === 'pendientes' ? 'pestanas-vista-boton-activa' : ''}`}
+              onClick={() => setVista('pendientes')}
+            >
+              Pendientes
+            </button>
+            <button
+              type="button"
+              className={`pestanas-vista-boton ${vista === 'hechas' ? 'pestanas-vista-boton-activa' : ''}`}
+              onClick={() => setVista('hechas')}
+            >
+              Hechas
+            </button>
+          </div>
         </div>
       )}
 
@@ -272,8 +297,11 @@ export default function PendientesObrasPage() {
       {!cargando && !error && pendientes.length === 0 && (
         <p className="dashboard-nota">No hay pendientes — está todo al día.</p>
       )}
-      {!cargando && !error && pendientes.length > 0 && visibles.length === 0 && (
-        <p className="dashboard-nota">Ninguna obra seleccionada tiene pendientes.</p>
+      {!cargando && !error && pendientes.length > 0 && segunVista.length === 0 && (
+        <p className="dashboard-nota">{vista === 'hechas' ? 'Todavía no se marcó nada como hecho.' : '¡Está todo al día! No hay pendientes.'}</p>
+      )}
+      {!cargando && !error && segunVista.length > 0 && visibles.length === 0 && (
+        <p className="dashboard-nota">Ninguna obra seleccionada tiene {vista === 'hechas' ? 'hechas' : 'pendientes'}.</p>
       )}
 
       {!cargando && !error && gruposObra.length > 0 && (

@@ -695,6 +695,10 @@ body {
   color: white;
 }
 
+.pendientes-pestanas-vista {
+  margin-bottom: 0;
+}
+
 .obra-item-agenda-flechas {
   display: flex;
   flex-direction: column;
