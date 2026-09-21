@@ -71,8 +71,12 @@ function formatoFecha(iso) {
 // puede marcarla él mismo con un botón puntual — significa que a él el
 // cliente ya se lo aceptó (de palabra), pero el trámite formal (mandar el
 // correo de aceptación y cargar el PDF, ver PdfAdicional) lo sigue llevando
-// Geraldinne. No tiene acceso al resto de los estatus.
-function SelectEstatusAdicional({ adicional, onCambio, puedeCambiar, puedeMarcarAlvarada, onMarcarAlvarada }) {
+// Geraldinne. No tiene acceso al resto de los estatus. Si se equivocó (o el
+// cliente se volvió atrás), puede "Deshacer" mientras siga en "Alvarada" —
+// vuelve al estatus que tenía justo antes de marcarla (estatus_antes_de_
+// alvarada, ver adicionales_obra.php); en cuanto Geraldinne avanza el
+// trámite, esa posibilidad se pierde (ya no aparece el botón).
+function SelectEstatusAdicional({ adicional, onCambio, puedeCambiar, puedeMarcarAlvarada, onMarcarAlvarada, onDeshacerAlvarada }) {
   if (puedeCambiar) {
     return (
       <select
@@ -90,19 +94,32 @@ function SelectEstatusAdicional({ adicional, onCambio, puedeCambiar, puedeMarcar
   const clase = CLASE_BADGE_ESTATUS_ADICIONAL[adicional.estatus] || 'en-valoracion'
   const badge = <span className={`badge-estatus-adicional badge-estatus-adicional-${clase}`}>{adicional.estatus}</span>
   const puedeMarcarAhora = puedeMarcarAlvarada && adicional.estatus !== 'Alvarada' && adicional.estatus !== 'Aceptado'
-  if (!puedeMarcarAhora) return badge
+  const puedeDeshacerAhora = puedeMarcarAlvarada && adicional.estatus === 'Alvarada' && !!adicional.estatus_antes_de_alvarada
+  if (!puedeMarcarAhora && !puedeDeshacerAhora) return badge
 
   return (
     <span className="adicionales-obra-estatus-con-alvarada">
       {badge}
-      <button
-        type="button"
-        className="adicionales-obra-pdf-boton"
-        onClick={() => onMarcarAlvarada(adicional.id)}
-        title="A vos el cliente ya te lo aceptó — Geraldinne se encarga del correo y del PDF"
-      >
-        Marcar Alvarada
-      </button>
+      {puedeMarcarAhora && (
+        <button
+          type="button"
+          className="adicionales-obra-pdf-boton"
+          onClick={() => onMarcarAlvarada(adicional.id)}
+          title="A vos el cliente ya te lo aceptó — Geraldinne se encarga del correo y del PDF"
+        >
+          Marcar Alvarada
+        </button>
+      )}
+      {puedeDeshacerAhora && (
+        <button
+          type="button"
+          className="adicionales-obra-pdf-boton"
+          onClick={() => onDeshacerAlvarada(adicional.id, adicional.estatus_antes_de_alvarada)}
+          title={`Volver a "${adicional.estatus_antes_de_alvarada}" — deshace la marca de Alvarada`}
+        >
+          Deshacer
+        </button>
+      )}
     </span>
   )
 }
@@ -238,9 +255,28 @@ export default function AdicionalesDeObra() {
   async function handleCambiarEstatus(id, estatus) {
     if (!puedeCambiarEstatus && !(puedeMarcarAlvarada && estatus === 'Alvarada')) return
     const anteriores = adicionales
-    setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, estatus } : a)))
+    setAdicionales((prev) => prev.map((a) => {
+      if (a.id !== id) return a
+      // Mismo criterio que el backend: al ENTRAR a "Alvarada" guarda el
+      // estatus anterior (para poder deshacerla); cualquier otro cambio lo
+      // limpia.
+      const estatusAntesDeAlvarada = estatus === 'Alvarada' && a.estatus !== 'Alvarada' ? a.estatus : null
+      return { ...a, estatus, estatus_antes_de_alvarada: estatusAntesDeAlvarada }
+    }))
     try {
       await cambiarEstatusAdicionalObra(accessToken, id, estatus)
+    } catch (err) {
+      setAdicionales(anteriores)
+      setError(err.message)
+    }
+  }
+
+  async function handleDeshacerAlvarada(id, estatusPrevio) {
+    if (!puedeMarcarAlvarada || !estatusPrevio) return
+    const anteriores = adicionales
+    setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, estatus: estatusPrevio, estatus_antes_de_alvarada: null } : a)))
+    try {
+      await cambiarEstatusAdicionalObra(accessToken, id, estatusPrevio)
     } catch (err) {
       setAdicionales(anteriores)
       setError(err.message)
@@ -379,6 +415,7 @@ export default function AdicionalesDeObra() {
                       puedeCambiar={puedeCambiarEstatus}
                       puedeMarcarAlvarada={puedeMarcarAlvarada}
                       onMarcarAlvarada={(id) => handleCambiarEstatus(id, 'Alvarada')}
+                      onDeshacerAlvarada={handleDeshacerAlvarada}
                     />
                   </td>
                   <td><SelectPrioridadAdicional adicional={a} onCambio={handleCambiarPrioridad} puedeCambiar={puedeCambiarPrioridad} /></td>

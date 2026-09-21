@@ -29,12 +29,18 @@ declare(strict_types=1);
 // ver_seguimiento) SOLO puede marcarlo "Alvarada" — a pedido de Álvaro,
 // 2026-09-21: significa que a él el cliente ya se lo aceptó (de palabra,
 // por teléfono, etc.), pero el trámite formal (el correo de aceptación y
-// cargar el PDF) lo sigue llevando Geraldinne — cualquier otro valor de
-// estatus mandado por alguien sin ver_seguimiento se rechaza. {id,
-// prioridad} cambia la prioridad ("Alta"/"Normal") — esa es exclusiva de
-// Álvaro/Valentina (requiere presupuestos.gestionar_prioridad), mismo
-// criterio que la prioridad de Presupuesto: decide si el adicional aparece
-// en el bloque de arriba de "Orden del día".
+// cargar el PDF) lo sigue llevando Geraldinne. Al marcarla se guarda el
+// estatus que tenía justo antes en estatus_antes_de_alvarada, así puede
+// deshacerla él mismo (a pedido de Álvaro, 2026-09-21: "devolver la acción
+// de Alvarada") volviendo a mandar ESE mismo valor como "estatus" — es el
+// único otro caso permitido sin ver_seguimiento, y solo mientras el
+// adicional siga en "Alvarada" (si Geraldinne ya lo movió para adelante, se
+// pierde la posibilidad de deshacer). Cualquier otro valor mandado por
+// alguien sin ver_seguimiento se rechaza. {id, prioridad} cambia la
+// prioridad ("Alta"/"Normal") — esa es exclusiva de Álvaro/Valentina
+// (requiere presupuestos.gestionar_prioridad), mismo criterio que la
+// prioridad de Presupuesto: decide si el adicional aparece en el bloque de
+// arriba de "Orden del día".
 // {id, pdf_base64, pdf_nombre_original} sube el PDF del adicional ya
 // aceptado por el cliente (a pedido de Álvaro, 2026-09-21: cuando un
 // adicional pasa a "Aceptado", Geraldinne carga acá el PDF firmado) —
@@ -87,6 +93,9 @@ try {
         $db->exec('ALTER TABLE adicionales_obra ADD COLUMN pdf_subido_por TEXT');
         $db->exec('ALTER TABLE adicionales_obra ADD COLUMN pdf_subido_en TEXT');
         $db->exec('ALTER TABLE adicionales_obra ADD COLUMN pdf_enviado_en TEXT');
+    }
+    if (!in_array('estatus_antes_de_alvarada', $columnasAdicionales, true)) {
+        $db->exec('ALTER TABLE adicionales_obra ADD COLUMN estatus_antes_de_alvarada TEXT');
     }
 
     // Misma tabla que usa "Orden del día" para el orden manual de las obras
@@ -235,13 +244,34 @@ try {
             if (!in_array($estatus, ESTATUS_ADICIONAL_VALIDOS, true)) {
                 Response::error('"estatus" debe ser una de: ' . implode(', ', ESTATUS_ADICIONAL_VALIDOS), 422);
             }
-            // Álvaro/Valentina (sin ver_seguimiento) solo puede marcar
-            // "Alvarada" — ver comentario de cabecera.
-            if (!$tieneVerSeguimiento && $estatus !== 'Alvarada') {
-                Response::error('Solo podés marcar un adicional como "Alvarada" — el resto del estatus lo maneja Geraldinne', 403);
+
+            $stmtActual = $db->prepare('SELECT estatus, estatus_antes_de_alvarada FROM adicionales_obra WHERE id = ?');
+            $stmtActual->execute([$id]);
+            $actual = $stmtActual->fetch();
+            if (!$actual) {
+                Response::error('Adicional no encontrado', 404);
             }
-            $db->prepare("UPDATE adicionales_obra SET estatus = ?, actualizado_en = datetime('now') WHERE id = ?")
-                ->execute([$estatus, $id]);
+
+            // Álvaro/Valentina (sin ver_seguimiento) solo puede marcar
+            // "Alvarada" o deshacerla — ver comentario de cabecera.
+            if (!$tieneVerSeguimiento) {
+                $esMarcar = $estatus === 'Alvarada' && $actual['estatus'] !== 'Alvarada';
+                $esDeshacer = $actual['estatus'] === 'Alvarada'
+                    && $actual['estatus_antes_de_alvarada'] !== null
+                    && $estatus === $actual['estatus_antes_de_alvarada'];
+                if (!$esMarcar && !$esDeshacer) {
+                    Response::error('Solo podés marcar o deshacer "Alvarada" — el resto del estatus lo maneja Geraldinne', 403);
+                }
+            }
+
+            // Guarda el estatus anterior solo al ENTRAR a "Alvarada" (para
+            // poder deshacerla después); cualquier otro cambio limpia ese
+            // rastro, ya sea porque se deshizo o porque Geraldinne siguió
+            // adelante con el trámite formal.
+            $estatusAntesDeAlvarada = ($estatus === 'Alvarada' && $actual['estatus'] !== 'Alvarada') ? $actual['estatus'] : null;
+
+            $db->prepare("UPDATE adicionales_obra SET estatus = ?, estatus_antes_de_alvarada = ?, actualizado_en = datetime('now') WHERE id = ?")
+                ->execute([$estatus, $estatusAntesDeAlvarada, $id]);
         }
 
         if (array_key_exists('prioridad', $body)) {
