@@ -18,9 +18,10 @@ import {
 // que la barra principal (seguimiento-pestanas), un solo GET a
 // montaje_obra.php trae todo y cada sub-pestaña opera sobre su parte:
 //   - Detalle de obra: montador/ayudante (de una lista que crece sola,
-//     no hay rol de usuario "montador"), tiempo estimado, si la
-//     carpintería viene acristalada, y fecha estimada de llegada por
-//     material (Vidrio/Carpintería/Precercos/Persianas/Composite).
+//     no hay rol de usuario "montador"), rango de fechas estimado del
+//     montaje, si la carpintería viene acristalada, y fecha estimada de
+//     llegada por material (Vidrio/Carpintería/Precercos/Persianas/
+//     Composite).
 //   - Documentación de montaje: archivos por categoría (PDF/Planos/
 //     Medición/Fotos) — el panel no sube a Drive al toque (igual que
 //     Adicionales de Obra): el archivo queda en base64 y
@@ -67,14 +68,9 @@ function SelectPersona({ valor, personas, onCambio, placeholder }) {
 }
 
 function DetalleDeObra({ obra, accessToken, detalle, materiales, personas, onCambiado }) {
-  const [tiempoEstimado, setTiempoEstimado] = useState(detalle?.tiempo_estimado || '')
   const [nuevaPersona, setNuevaPersona] = useState('')
   const [agregandoPersona, setAgregandoPersona] = useState(false)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    setTiempoEstimado(detalle?.tiempo_estimado || '')
-  }, [detalle?.tiempo_estimado])
 
   // Cada handler manda solo lo que cambió (nunca el "detalle"/"materiales"
   // completo capturado en este render) — así dos ediciones seguidas (ej.
@@ -131,17 +127,22 @@ function DetalleDeObra({ obra, accessToken, detalle, materiales, personas, onCam
           <label>Ayudante</label>
           <SelectPersona valor={detalle?.ayudante} personas={personas} placeholder="Sin asignar" onCambio={(v) => guardarDetalle({ ayudante: v })} />
         </div>
-        <div className="filtro-campo montaje-detalle-campo-tiempo">
-          <label>Tiempo estimado de montaje</label>
+        <div className="filtro-campo">
+          <label>Inicio estimado</label>
           <input
-            type="text"
-            className="input-filtro"
-            placeholder="Ej: 3 días"
-            value={tiempoEstimado}
-            onChange={(e) => setTiempoEstimado(e.target.value)}
-            onBlur={() => {
-              if (tiempoEstimado !== (detalle?.tiempo_estimado || '')) guardarDetalle({ tiempo_estimado: tiempoEstimado })
-            }}
+            type="date"
+            className="input-filtro input-fecha-limite"
+            value={detalle?.fecha_inicio_estimada || ''}
+            onChange={(e) => guardarDetalle({ fecha_inicio_estimada: e.target.value })}
+          />
+        </div>
+        <div className="filtro-campo">
+          <label>Fin estimado</label>
+          <input
+            type="date"
+            className="input-filtro input-fecha-limite"
+            value={detalle?.fecha_fin_estimada || ''}
+            onChange={(e) => guardarDetalle({ fecha_fin_estimada: e.target.value })}
           />
         </div>
       </div>

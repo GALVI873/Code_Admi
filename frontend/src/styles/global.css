@@ -3358,10 +3358,6 @@ select.celda-editable-material {
   margin-bottom: 14px;
 }
 
-.montaje-detalle-campo-tiempo {
-  min-width: 180px;
-}
-
 .montaje-detalle-agregar-persona {
   display: flex;
   gap: 8px;

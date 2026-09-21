@@ -13,8 +13,9 @@ declare(strict_types=1);
 //      — no hay rol de usuario "montador" en el sistema, es una lista
 //      simple que crece a medida que se escribe un nombre nuevo (no hace
 //      falta una pantalla de administración aparte).
-//    - tiempo_estimado: texto libre (ej. "3 días") — no se fuerza una
-//      unidad, cada obra puede necesitar describirlo distinto.
+//    - fecha_inicio_estimada / fecha_fin_estimada: rango de fechas del
+//      montaje (a pedido de Álvaro, 2026-09-21 — antes era texto libre tipo
+//      "3 días", ahora un rango real que se puede comparar/ordenar).
 //    - carpinteria_acristalada: si la carpintería llega ya acristalada de
 //      fábrica o no (booleano).
 //    - Fecha estimada de llegada por material (montaje_material_fecha, una
@@ -39,9 +40,9 @@ declare(strict_types=1);
 // cargó), personas (lista completa para el desplegable), documentos y
 // tareas.
 // PATCH {accion:"actualizar_detalle", obra, montador?, ayudante?,
-//   tiempo_estimado?, carpinteria_acristalada?}: upsert de
-//   montaje_detalle_obra — solo pisa los campos mandados, el resto queda
-//   como estaba.
+//   fecha_inicio_estimada?, fecha_fin_estimada?, carpinteria_acristalada?}:
+//   upsert de montaje_detalle_obra — solo pisa los campos mandados, el
+//   resto queda como estaba.
 // PATCH {accion:"actualizar_material", obra, material, fecha_estimada}:
 //   upsert de montaje_material_fecha.
 // PATCH {accion:"marcar_tarea", id, hecho}: tilda/destilda una tarea.
@@ -79,6 +80,13 @@ try {
           actualizado_por TEXT
         )
     ");
+    $columnasDetalle = array_column($db->query('PRAGMA table_info(montaje_detalle_obra)')->fetchAll(), 'name');
+    if (!in_array('fecha_inicio_estimada', $columnasDetalle, true)) {
+        // "tiempo_estimado" (texto libre) queda en la tabla sin usarse —
+        // a pedido de Álvaro pasó a ser un rango de fechas real.
+        $db->exec('ALTER TABLE montaje_detalle_obra ADD COLUMN fecha_inicio_estimada TEXT');
+        $db->exec('ALTER TABLE montaje_detalle_obra ADD COLUMN fecha_fin_estimada TEXT');
+    }
     $db->exec("
         CREATE TABLE IF NOT EXISTS montaje_material_fecha (
           obra TEXT NOT NULL,
@@ -162,7 +170,7 @@ try {
         $stmtDetalle->execute([$obra]);
         $detalle = $stmtDetalle->fetch() ?: [
             'obra' => $obra, 'montador' => null, 'ayudante' => null,
-            'tiempo_estimado' => null, 'carpinteria_acristalada' => 0,
+            'fecha_inicio_estimada' => null, 'fecha_fin_estimada' => null, 'carpinteria_acristalada' => 0,
         ];
 
         $stmtMateriales = $db->prepare('SELECT material, fecha_estimada FROM montaje_material_fecha WHERE obra = ?');
@@ -207,22 +215,32 @@ try {
 
             $stmtActual = $db->prepare('SELECT * FROM montaje_detalle_obra WHERE obra = ?');
             $stmtActual->execute([$obra]);
-            $actual = $stmtActual->fetch() ?: ['montador' => null, 'ayudante' => null, 'tiempo_estimado' => null, 'carpinteria_acristalada' => 0];
+            $actual = $stmtActual->fetch() ?: ['montador' => null, 'ayudante' => null, 'fecha_inicio_estimada' => null, 'fecha_fin_estimada' => null, 'carpinteria_acristalada' => 0];
 
             $montador = array_key_exists('montador', $body) ? trim((string) $body['montador']) : ($actual['montador'] ?? '');
             $ayudante = array_key_exists('ayudante', $body) ? trim((string) $body['ayudante']) : ($actual['ayudante'] ?? '');
-            $tiempoEstimado = array_key_exists('tiempo_estimado', $body) ? trim((string) $body['tiempo_estimado']) : ($actual['tiempo_estimado'] ?? '');
+            $fechaInicio = array_key_exists('fecha_inicio_estimada', $body) ? trim((string) $body['fecha_inicio_estimada']) : ($actual['fecha_inicio_estimada'] ?? '');
+            $fechaFin = array_key_exists('fecha_fin_estimada', $body) ? trim((string) $body['fecha_fin_estimada']) : ($actual['fecha_fin_estimada'] ?? '');
+            foreach (['fecha_inicio_estimada' => $fechaInicio, 'fecha_fin_estimada' => $fechaFin] as $campo => $valor) {
+                if ($valor !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $valor)) {
+                    Response::error("\"$campo\" debe tener formato AAAA-MM-DD", 422);
+                }
+            }
+            if ($fechaInicio !== '' && $fechaFin !== '' && $fechaFin < $fechaInicio) {
+                Response::error('"fecha_fin_estimada" no puede ser anterior a "fecha_inicio_estimada"', 422);
+            }
             $carpinteriaAcristalada = array_key_exists('carpinteria_acristalada', $body)
                 ? ($body['carpinteria_acristalada'] ? 1 : 0)
                 : (int) ($actual['carpinteria_acristalada'] ?? 0);
 
             $db->prepare("
-                INSERT INTO montaje_detalle_obra (obra, montador, ayudante, tiempo_estimado, carpinteria_acristalada, actualizado_en, actualizado_por)
-                VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
+                INSERT INTO montaje_detalle_obra (obra, montador, ayudante, fecha_inicio_estimada, fecha_fin_estimada, carpinteria_acristalada, actualizado_en, actualizado_por)
+                VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?)
                 ON CONFLICT(obra) DO UPDATE SET
                     montador = excluded.montador,
                     ayudante = excluded.ayudante,
-                    tiempo_estimado = excluded.tiempo_estimado,
+                    fecha_inicio_estimada = excluded.fecha_inicio_estimada,
+                    fecha_fin_estimada = excluded.fecha_fin_estimada,
                     carpinteria_acristalada = excluded.carpinteria_acristalada,
                     actualizado_en = datetime('now'),
                     actualizado_por = excluded.actualizado_por
@@ -230,7 +248,8 @@ try {
                 $obra,
                 $montador === '' ? null : $montador,
                 $ayudante === '' ? null : $ayudante,
-                $tiempoEstimado === '' ? null : $tiempoEstimado,
+                $fechaInicio === '' ? null : $fechaInicio,
+                $fechaFin === '' ? null : $fechaFin,
                 $carpinteriaAcristalada,
                 $usuario['nombre'] ?? null,
             ]);
