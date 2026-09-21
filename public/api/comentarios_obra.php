@@ -64,11 +64,11 @@ declare(strict_types=1);
 // nueva (comportamiento de siempre); con comentario_id agrega una
 // respuesta a esa nota puntual en comentarios_obra_respuestas.
 // GET ?pendientes=1 (sin "obra"): junta, de TODAS las obras que están en
-// obras_aceptadas, los mensajes que no son de Alfredo — la vista
-// "Pendientes" (control general, no tiene que entrar obra por obra).
-// Devuelve tanto lo pendiente como lo ya marcado "hecho" (el frontend
-// separa en pestañas "Pendientes"/"Hechas"). Requiere sesión +
-// obras.ver_aceptadas.
+// obras_aceptadas, las notas de nivel superior (no las respuestas) sin
+// archivar de cualquier autor — la vista "Pendientes" (control general, no
+// hace falta entrar obra por obra). Devuelve tanto lo pendiente como lo ya
+// marcado "hecho" (el frontend separa en pestañas "Pendientes"/"Hechas").
+// Requiere sesión + obras.ver_aceptadas.
 // DELETE ?obra=...: TEMPORAL, solo para pruebas — vacía la conversación
 // completa de una obra (borra todos sus mensajes y su registro de
 // lectura). Requiere sesión + rol admin. Se agregó a pedido explícito
@@ -138,65 +138,6 @@ try {
         )
     ");
 
-    // TEMPORAL — debug puntual (sacar después de usarlo). Ver por qué en
-    // Archanda salen 4 tareas en la pestaña Notas pero solo 3 en Pendientes.
-    if (($_GET['debug_obra'] ?? '') !== '') {
-        $token = $_GET['token'] ?? '';
-        if ($config['sync_token'] === '' || !hash_equals($config['sync_token'], (string) $token)) {
-            Response::error('No autorizado', 403);
-        }
-        $obraDebug = nombreBaseObra((string) $_GET['debug_obra']);
-        $stmt = $db->prepare('SELECT * FROM comentarios_obra WHERE obra = ? ORDER BY creado_en ASC, id ASC');
-        $stmt->execute([$obraDebug]);
-        $todas = $stmt->fetchAll();
-
-        $stmtOa = $db->prepare('SELECT id, obra FROM obras_aceptadas WHERE obra = ?');
-        $stmtOa->execute([$obraDebug]);
-        $obraAceptada = $stmtOa->fetch();
-
-        $stmtParecidas = $db->prepare("SELECT id, obra FROM obras_aceptadas WHERE obra LIKE ?");
-        $stmtParecidas->execute(['%' . $obraDebug . '%']);
-        $obrasParecidas = $stmtParecidas->fetchAll();
-
-        $stmtNotasParecidas = $db->prepare("SELECT * FROM comentarios_obra WHERE obra LIKE ? ORDER BY creado_en ASC, id ASC");
-        $stmtNotasParecidas->execute(['%' . $obraDebug . '%']);
-        $notasParecidas = $stmtNotasParecidas->fetchAll();
-
-        $stmtGestion = $db->query("
-            SELECT u.email FROM usuarios u
-            INNER JOIN usuario_roles ur ON ur.usuario_id = u.id
-            INNER JOIN roles r ON r.id = ur.rol_id
-            WHERE r.nombre = 'gestion_obras'
-        ");
-        $emailsGestion = array_column($stmtGestion->fetchAll(), 'email');
-
-        // Cuántas notas de nivel superior (no respuestas), no archivadas,
-        // quedan ocultas de Pendientes en TODO el sistema por ser de autor
-        // con rol gestion_obras — para saber si Archanda es un caso único
-        // o si pasa en más obras.
-        $marcadoresGestion = implode(',', array_fill(0, count($emailsGestion), '?'));
-        $stmtOcultas = $db->prepare("
-            SELECT co.obra, COUNT(*) AS cantidad
-            FROM comentarios_obra co
-            INNER JOIN obras_aceptadas oa ON oa.obra = co.obra
-            WHERE co.archivado = 0 AND co.autor_email IN ($marcadoresGestion)
-            GROUP BY co.obra
-            ORDER BY co.obra
-        ");
-        $stmtOcultas->execute($emailsGestion);
-        $ocultasPorObra = $stmtOcultas->fetchAll();
-
-        Response::json([
-            'obra_buscada' => $obraDebug,
-            'obra_aceptada_match' => $obraAceptada,
-            'obras_aceptadas_parecidas' => $obrasParecidas,
-            'emails_gestion_obras' => $emailsGestion,
-            'notas' => $todas,
-            'notas_parecidas' => $notasParecidas,
-            'notas_ocultas_de_pendientes_por_obra' => $ocultasPorObra,
-        ]);
-    }
-
     $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
     AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento', 'obras.ver_aceptadas']);
 
@@ -208,6 +149,14 @@ try {
         // acá también, no solo las pendientes. El frontend filtra cuál de
         // las dos mostrar (pestaña "Pendientes"/"Hechas"), por eso ya no se
         // filtra por hecho acá.
+        // Antes excluía las notas escritas por alguien con rol gestion_obras
+        // (la idea era que Pendientes solo mostrara lo que Álvaro le deja a
+        // Alfredo). Pero Alfredo también crea tareas/recordatorios propios
+        // directo en la pestaña Notas de una obra (no son respuestas) — con
+        // ese filtro esas notas quedaban invisibles en la vista agregada
+        // aunque siguieran sin archivar ni hechas (reportado 2026-09-21 con
+        // "Archanda" y "Apolonio Morales,17", 1 nota escondida en cada una).
+        // Ahora se muestran todas, sin importar quién las escribió.
         if (($_GET['pendientes'] ?? '') === '1') {
             AuthMiddleware::requierePermiso($usuario, 'obras.ver_aceptadas');
             $stmt = $db->query("
@@ -215,12 +164,6 @@ try {
                 FROM comentarios_obra co
                 INNER JOIN obras_aceptadas oa ON oa.obra = co.obra
                 WHERE co.archivado = 0
-                  AND co.autor_email NOT IN (
-                    SELECT u.email FROM usuarios u
-                    INNER JOIN usuario_roles ur ON ur.usuario_id = u.id
-                    INNER JOIN roles r ON r.id = ur.rol_id
-                    WHERE r.nombre = 'gestion_obras'
-                  )
                 ORDER BY co.creado_en ASC, co.id ASC
             ");
             $comentariosPendientes = $stmt->fetchAll();
