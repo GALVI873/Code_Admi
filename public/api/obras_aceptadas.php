@@ -406,6 +406,26 @@ try {
             Response::json(['obras' => $obras, 'confirmaciones' => $confirmaciones]);
         }
 
+        // TEMPORAL — verificar que el fix de "sin leer" con respuestas
+        // funcione contra datos reales. Sacar apenas se confirme.
+        if (($body['accion'] ?? '') === 'debug_ultimo_mensaje') {
+            $rows = $db->query("
+                SELECT obra, MAX(ultimo) AS ultimo FROM (
+                    SELECT obra, MAX(creado_en) AS ultimo FROM comentarios_obra GROUP BY obra
+                    UNION ALL
+                    SELECT co.obra, MAX(r.creado_en) AS ultimo
+                    FROM comentarios_obra_respuestas r
+                    INNER JOIN comentarios_obra co ON co.id = r.comentario_id
+                    GROUP BY co.obra
+                ) t
+                GROUP BY obra
+                ORDER BY ultimo DESC
+                LIMIT 10
+            ")->fetchAll();
+            $ultimasRespuestas = $db->query('SELECT * FROM comentarios_obra_respuestas ORDER BY creado_en DESC LIMIT 5')->fetchAll();
+            Response::json(['ultimo_mensaje_por_obra' => $rows, 'ultimas_respuestas' => $ultimasRespuestas]);
+        }
+
         if (($body['accion'] ?? '') === 'reconciliar') {
             $obras = $body['obras'] ?? null;
             if (!is_array($obras)) {
