@@ -138,6 +138,38 @@ try {
         )
     ");
 
+    // TEMPORAL — debug puntual (sacar después de usarlo). Ver por qué en
+    // Archanda salen 4 tareas en la pestaña Notas pero solo 3 en Pendientes.
+    if (($_GET['debug_obra'] ?? '') !== '') {
+        $token = $_GET['token'] ?? '';
+        if ($config['sync_token'] === '' || !hash_equals($config['sync_token'], (string) $token)) {
+            Response::error('No autorizado', 403);
+        }
+        $obraDebug = nombreBaseObra((string) $_GET['debug_obra']);
+        $stmt = $db->prepare('SELECT * FROM comentarios_obra WHERE obra = ? ORDER BY creado_en ASC, id ASC');
+        $stmt->execute([$obraDebug]);
+        $todas = $stmt->fetchAll();
+
+        $stmtOa = $db->prepare('SELECT id, obra FROM obras_aceptadas WHERE obra = ?');
+        $stmtOa->execute([$obraDebug]);
+        $obraAceptada = $stmtOa->fetch();
+
+        $stmtGestion = $db->query("
+            SELECT u.email FROM usuarios u
+            INNER JOIN usuario_roles ur ON ur.usuario_id = u.id
+            INNER JOIN roles r ON r.id = ur.rol_id
+            WHERE r.nombre = 'gestion_obras'
+        ");
+        $emailsGestion = array_column($stmtGestion->fetchAll(), 'email');
+
+        Response::json([
+            'obra_buscada' => $obraDebug,
+            'obra_aceptada_match' => $obraAceptada,
+            'emails_gestion_obras' => $emailsGestion,
+            'notas' => $todas,
+        ]);
+    }
+
     $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
     AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento', 'obras.ver_aceptadas']);
 
