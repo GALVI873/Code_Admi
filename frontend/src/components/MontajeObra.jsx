@@ -463,7 +463,7 @@ function DocumentoResumen({ documento }) {
 // esto, en el orden pedido: Detalle de obra, Planos (las páginas ya
 // cargadas en la pestaña Planos de esta obra — no hace falta volver a
 // subirlas), Medición, Tareas pendientes y Fotos de obra.
-function ResumenMontador({ obra, detalle, materiales, documentos, tareas, paginasPlanos }) {
+function ResumenMontador({ obra, detalle, materiales, documentos, tareas, paginasPlanos, posicionesPlanos }) {
   const medicion = documentos.filter((d) => d.categoria === 'Medición')
   const fotos = documentos.filter((d) => d.categoria === 'Fotos')
 
@@ -496,8 +496,25 @@ function ResumenMontador({ obra, detalle, materiales, documentos, tareas, pagina
       ) : paginasPlanos.length === 0 ? (
         <p className="dashboard-nota">Esta obra todavía no tiene planos cargados.</p>
       ) : (
+        // Una página por planta — se muestran TODAS, no solo la que
+        // estuviera activa en la pestaña Planos (ahí solo se ve una a la
+        // vez con pestañas "Página 1"/"Página 2"). Cada marca de posición
+        // (x_pct/y_pct, calibradas en Planos) se dibuja encima de SU
+        // página — a pedido de Álvaro, 2026-09-21: antes el resumen
+        // mostraba el plano pelado, sin las posiciones asignadas.
         paginasPlanos.map((p) => (
-          <img key={p.pagina} src={p.imagen_base64} alt={`Plano página ${p.pagina}`} className="montaje-resumen-imagen" />
+          <div key={p.pagina} className="montaje-resumen-plano-contenedor">
+            <img src={p.imagen_base64} alt={`Plano página ${p.pagina}`} className="montaje-resumen-imagen" />
+            {posicionesPlanos.filter((pos) => pos.pagina === p.pagina).map((pos) => (
+              <span
+                key={pos.posicion_base}
+                className="montaje-resumen-marca"
+                style={{ left: `${pos.x_pct}%`, top: `${pos.y_pct}%` }}
+              >
+                {pos.posicion_base}
+              </span>
+            ))}
+          </div>
         ))
       )}
 
@@ -544,6 +561,7 @@ export default function MontajeObra({ obra, accessToken }) {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [paginasPlanos, setPaginasPlanos] = useState(null)
+  const [posicionesPlanos, setPosicionesPlanos] = useState([])
   const [cargandoDescarga, setCargandoDescarga] = useState(false)
   const [quiereImprimir, setQuiereImprimir] = useState(false)
 
@@ -587,6 +605,7 @@ export default function MontajeObra({ obra, accessToken }) {
     try {
       const data = await planosObra(accessToken, obra)
       setPaginasPlanos(data.paginas || [])
+      setPosicionesPlanos(data.posiciones || [])
       setQuiereImprimir(true)
     } catch (err) {
       setError(err.message)
@@ -622,6 +641,7 @@ export default function MontajeObra({ obra, accessToken }) {
         documentos={datos.documentos}
         tareas={datos.tareas}
         paginasPlanos={paginasPlanos}
+        posicionesPlanos={posicionesPlanos}
       />
 
       <div className="montaje-pantalla">

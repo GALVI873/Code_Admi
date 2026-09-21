@@ -3717,6 +3717,34 @@ select.celda-editable-material {
     break-inside: avoid;
   }
 
+  /* Marcas de posición sobre cada página del plano (a pedido de Álvaro,
+     2026-09-21) — mismo x_pct/y_pct que calibra la pestaña Planos, pero acá
+     solo el número de posición (sin colores de estado de material: esta
+     vista es para el montador, no para seguimiento de fabricación). */
+  .montaje-resumen-plano-contenedor {
+    position: relative;
+    margin-bottom: 14px;
+    break-inside: avoid;
+  }
+
+  .montaje-resumen-plano-contenedor .montaje-resumen-imagen {
+    margin-bottom: 0;
+  }
+
+  .montaje-resumen-marca {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    background: var(--rojo);
+    color: white;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 8px;
+    border: 1px solid white;
+    white-space: nowrap;
+  }
+
   .montaje-resumen-doc-referencia {
     font-size: 11.5px;
     margin: 0 0 6px;
