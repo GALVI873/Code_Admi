@@ -945,41 +945,6 @@ body {
   overflow-y: auto;
 }
 
-/* "Descargar PDF" en Pendientes (a pedido de Álvaro, 2026-09-21) — dispara
-   window.print(), no hay librería de PDF propia. Deja en el papel solo lo
-   que tiene sentido ahí: se saca el menú, la franja de modo desarrollo, los
-   filtros/pestañas y cualquier control pensado para clickear en pantalla
-   (responder, archivar, el propio botón de descarga). Se fuerzan los
-   colores (algunos navegadores los sacan por default al imprimir) para que
-   las burbujas de "hecho" y las categorías Tareas/Recordatorios se sigan
-   distinguiendo en el PDF. Genérico a propósito (no específico de
-   Pendientes) por si otra vista suma su propio botón de imprimir más
-   adelante — reutiliza las mismas clases.*/
-@media print {
-  .app-sidebar,
-  .dev-banner,
-  .filtro-tabla,
-  .pendientes-boton-imprimir,
-  .notas-obra-archivar,
-  .notas-obra-respuesta-form {
-    display: none !important;
-  }
-
-  .app-content {
-    overflow: visible;
-  }
-
-  .dashboard {
-    max-width: none;
-    padding: 0;
-  }
-
-  * {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-}
-
 .obras-seccion + .obras-seccion {
   margin-top: 28px;
 }
@@ -3375,4 +3340,154 @@ select.celda-editable-material {
 .bitacora-obra-item-autor {
   font-size: 11.5px;
   color: #999;
+}
+
+/* "Descargar PDF" en Pendientes (a pedido de Álvaro, 2026-09-21) — dispara
+   window.print(), no hay librería de PDF propia. Deja en el papel solo lo
+   que tiene sentido ahí: se saca el menú, la franja de modo desarrollo, los
+   filtros/pestañas y cualquier control pensado para clickear en pantalla
+   (responder, archivar, el propio botón de descarga). Se fuerzan los
+   colores (algunos navegadores los sacan por default al imprimir) para que
+   las burbujas de "hecho" y las categorías Tareas/Recordatorios se sigan
+   distinguiendo en el PDF. Genérico a propósito (no específico de
+   Pendientes) por si otra vista suma su propio botón de imprimir más
+   adelante — reutiliza las mismas clases.
+   Formato compacto (a pedido de Álvaro, 2026-09-21: el primero salía muy
+   espaciado) — reduce paddings, tipografía y espacios entre obras SOLO acá
+   adentro, la pantalla queda igual.
+   IMPORTANTE: este bloque tiene que ir al FINAL del archivo — dentro de un
+   @media, una regla no gana por especificidad sino por orden en la hoja de
+   estilos, así que si un .notas-obra-item (u otra clase de acá) más abajo
+   en el archivo la volviera a definir sin @media, esa otra pisaría esto
+   silenciosamente (pasó una vez: el bloque vivía más arriba, junto a
+   .app-content, y el card con fondo/borde de pantalla se colaba igual en
+   la impresión). */
+@media print {
+  .app-sidebar,
+  .dev-banner,
+  .filtro-tabla,
+  .pendientes-boton-imprimir,
+  .notas-obra-archivar,
+  .notas-obra-respuesta-form {
+    display: none !important;
+  }
+
+  .app-content {
+    overflow: visible;
+  }
+
+  .dashboard {
+    max-width: none;
+    padding: 0;
+  }
+
+  .dashboard-header {
+    margin-bottom: 10px;
+  }
+
+  .dashboard-header h1 {
+    font-size: 16px;
+  }
+
+  .dashboard-header p {
+    font-size: 10.5px;
+  }
+
+  .obras-seccion + .obras-seccion {
+    margin-top: 10px;
+  }
+
+  .obras-seccion-titulo {
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+
+  .pendientes-encabezados {
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+  }
+
+  .notas-obra-columna-titulo {
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+
+  .notas-obra-columnas {
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+
+  .notas-obra-columna {
+    padding: 0;
+  }
+
+  .notas-obra-lista {
+    gap: 0;
+    margin-bottom: 4px;
+  }
+
+  .notas-obra-item {
+    gap: 6px;
+    padding: 3px 4px;
+    background: none;
+    border: none;
+    border-bottom: 1px solid #e3e8f0;
+    border-radius: 0;
+    break-inside: avoid;
+  }
+
+  .notas-obra-checkbox {
+    width: 11px;
+    height: 11px;
+    margin-top: 1px;
+  }
+
+  /* Texto y metadatos en el mismo renglón (en vez de uno debajo del otro)
+     — es lo que más espacio vertical ahorra. Las respuestas, si hay, pasan
+     a su propio renglón completo (flex-basis: 100%). */
+  .notas-obra-item-cuerpo {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    column-gap: 6px;
+  }
+
+  .notas-obra-item-texto {
+    font-size: 10.5px;
+    margin: 0;
+  }
+
+  .notas-obra-item-meta {
+    font-size: 9px;
+    white-space: nowrap;
+  }
+
+  .notas-obra-item-meta::before {
+    content: "— ";
+  }
+
+  .notas-obra-respuestas {
+    flex-basis: 100%;
+    margin-top: 2px;
+    gap: 2px;
+  }
+
+  .notas-obra-respuesta-texto {
+    font-size: 10.5px;
+  }
+
+  .notas-obra-respuesta-meta {
+    font-size: 9px;
+  }
+
+  .pendientes-celda-vacia,
+  .notas-obra-columna-vacia {
+    font-size: 9.5px;
+    padding: 2px 4px;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }
