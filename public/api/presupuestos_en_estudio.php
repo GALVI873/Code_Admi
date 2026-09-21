@@ -225,6 +225,20 @@ try {
           creado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
     ");
+    // También acá (no solo en comentarios_obra.php) por el mismo motivo que
+    // comentarios_obra: el cálculo de "mensajes sin leer" de más abajo tiene
+    // que contar también las respuestas colgadas de una nota puntual, no
+    // solo notas nuevas — si no, quedaban invisibles para la insignia.
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS comentarios_obra_respuestas (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          comentario_id INTEGER NOT NULL,
+          autor_nombre TEXT NOT NULL,
+          autor_email TEXT NOT NULL,
+          mensaje TEXT NOT NULL,
+          creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    ");
     $db->exec("
         CREATE TABLE IF NOT EXISTS comentarios_obra_leido (
           obra TEXT NOT NULL,
@@ -364,8 +378,22 @@ try {
         // sola en comentarios_obra.php al hacer GET/POST del hilo). Sin
         // registro de lectura para esa obra, cualquier mensaje cuenta como
         // no leído.
+        // Cuenta tanto notas/mensajes nuevos (comentarios_obra) como
+        // respuestas colgadas de una nota puntual (comentarios_obra_
+        // respuestas) — antes solo miraba lo primero, así que una respuesta
+        // dentro de una nota nunca marcaba nada como "sin leer".
         $ultimoMensajePorObra = [];
-        foreach ($db->query('SELECT obra, MAX(creado_en) AS ultimo FROM comentarios_obra GROUP BY obra')->fetchAll() as $r) {
+        foreach ($db->query("
+            SELECT obra, MAX(ultimo) AS ultimo FROM (
+                SELECT obra, MAX(creado_en) AS ultimo FROM comentarios_obra GROUP BY obra
+                UNION ALL
+                SELECT co.obra, MAX(r.creado_en) AS ultimo
+                FROM comentarios_obra_respuestas r
+                INNER JOIN comentarios_obra co ON co.id = r.comentario_id
+                GROUP BY co.obra
+            ) t
+            GROUP BY obra
+        ")->fetchAll() as $r) {
             $ultimoMensajePorObra[$r['obra']] = $r['ultimo'];
         }
         $lecturaPorObra = [];

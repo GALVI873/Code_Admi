@@ -201,6 +201,21 @@ try {
           creado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
     ");
+    // También acá (no solo en comentarios_obra.php) por el mismo motivo que
+    // comentarios_obra: el cálculo de "mensajes sin leer" de más abajo tiene
+    // que contar también las respuestas colgadas de una nota puntual (ej.
+    // Álvaro le contesta a Alfredo DENTRO de una nota), no solo notas
+    // nuevas — si no, esas respuestas quedaban invisibles para la insignia.
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS comentarios_obra_respuestas (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          comentario_id INTEGER NOT NULL,
+          autor_nombre TEXT NOT NULL,
+          autor_email TEXT NOT NULL,
+          mensaje TEXT NOT NULL,
+          creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    ");
     $db->exec("
         CREATE TABLE IF NOT EXISTS obra_direccion_contacto (
           obra TEXT PRIMARY KEY,
@@ -232,9 +247,23 @@ try {
 
         // Insignia de "hay mensajes sin leer" por obra — mismo criterio que
         // presupuestos_en_estudio.php: último mensaje de la conversación
-        // contra la última vez que ESTE usuario la abrió.
+        // contra la última vez que ESTE usuario la abrió. Cuenta tanto notas
+        // nuevas (comentarios_obra) como respuestas colgadas de una nota
+        // puntual (comentarios_obra_respuestas) — antes solo miraba lo
+        // primero, así que una respuesta de Álvaro dentro de una nota nunca
+        // marcaba nada como "sin leer" para Alfredo.
         $ultimoMensajePorObra = [];
-        foreach ($db->query('SELECT obra, MAX(creado_en) AS ultimo FROM comentarios_obra GROUP BY obra')->fetchAll() as $r) {
+        foreach ($db->query("
+            SELECT obra, MAX(ultimo) AS ultimo FROM (
+                SELECT obra, MAX(creado_en) AS ultimo FROM comentarios_obra GROUP BY obra
+                UNION ALL
+                SELECT co.obra, MAX(r.creado_en) AS ultimo
+                FROM comentarios_obra_respuestas r
+                INNER JOIN comentarios_obra co ON co.id = r.comentario_id
+                GROUP BY co.obra
+            ) t
+            GROUP BY obra
+        ")->fetchAll() as $r) {
             $ultimoMensajePorObra[$r['obra']] = $r['ultimo'];
         }
         $lecturaPorObra = [];
