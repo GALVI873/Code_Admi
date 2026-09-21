@@ -63,6 +63,22 @@ function leerArchivoComoBase64(archivo) {
   })
 }
 
+// Espera a que TODAS las imágenes del resumen para el montador (planos,
+// medición, fotos) terminen de decodificar antes de imprimir — un plano
+// real puede pesar varios MB en base64, y que el <img> ya esté en el DOM
+// no garantiza que el navegador ya lo haya pintado (ver comentario en el
+// useEffect que la usa). img.decode() espera la decodificación real, no
+// solo el evento "load" (que en un data: URI puede dispararse casi al
+// toque, antes de que la imagen esté lista para imprimirse).
+async function esperarImagenesResumen() {
+  const contenedor = document.querySelector('.montaje-resumen-imprimir')
+  if (!contenedor) return
+  const imagenes = Array.from(contenedor.querySelectorAll('img'))
+  await Promise.all(
+    imagenes.map((img) => (img.decode ? img.decode().catch(() => {}) : Promise.resolve())),
+  )
+}
+
 function SelectPersona({ valor, personas, rol, onCambio, placeholder }) {
   return (
     <select className="select-inline" value={valor || ''} onChange={(e) => onCambio(e.target.value)}>
@@ -587,21 +603,37 @@ export default function MontajeObra({ obra, accessToken }) {
   // se pidieron) y recién imprime cuando ya están en el DOM — window.print()
   // llamado antes de que React termine de pintar las imágenes las dejaría
   // afuera del PDF, por eso se espera al próximo render vía este efecto en
-  // vez de llamarlo justo después de setPaginasPlanos.
+  // vez de llamarlo justo después de setPaginasPlanos. Pero que el <img> ya
+  // esté en el DOM no alcanza: un plano real puede pesar varios MB en
+  // base64 y todavía estar decodificando cuando el navegador dispara la
+  // impresión — ahí sale la página del plano en blanco (solo se ven las
+  // marcas de posición, que son position:absolute y no dependen de que la
+  // imagen haya terminado de cargar). Por eso se espera explícitamente a
+  // que cada <img> del resumen termine de cargar/decodificar antes de
+  // llamar a window.print() (reportado 2026-09-21, obra "8 Viv. Jose
+  // Abascal, 57").
   useEffect(() => {
     if (quiereImprimir && paginasPlanos !== null) {
       setQuiereImprimir(false)
-      window.print()
+      esperarImagenesResumen()
+        .then(() => window.print())
+        .finally(() => setCargandoDescarga(false))
     }
   }, [quiereImprimir, paginasPlanos])
 
   async function handleDescargarMontador() {
-    if (paginasPlanos !== null) {
-      window.print()
-      return
-    }
     setCargandoDescarga(true)
     setError('')
+    if (paginasPlanos !== null) {
+      // Ya se habían traído los planos en una descarga anterior — igual se
+      // espera a que las imágenes estén decodificadas antes de imprimir de
+      // nuevo (deberían estar en caché del navegador, pero no cuesta nada
+      // asegurarse).
+      esperarImagenesResumen()
+        .then(() => window.print())
+        .finally(() => setCargandoDescarga(false))
+      return
+    }
     try {
       const data = await planosObra(accessToken, obra)
       setPaginasPlanos(data.paginas || [])
@@ -609,7 +641,6 @@ export default function MontajeObra({ obra, accessToken }) {
       setQuiereImprimir(true)
     } catch (err) {
       setError(err.message)
-    } finally {
       setCargandoDescarga(false)
     }
   }
