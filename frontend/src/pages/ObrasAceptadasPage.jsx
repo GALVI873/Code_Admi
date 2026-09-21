@@ -166,6 +166,9 @@ function ObraItemCompacto({ presupuesto, numero, onAbrir, onCambiarEstatus }) {
       {Boolean(presupuesto.es_nueva) && (
         <span className="badge-obra-nueva" title="Recién traspasada, todavía no la abriste">Nueva</span>
       )}
+      {Boolean(presupuesto.sin_medyseg) && (
+        <span className="badge-obra-sin-medyseg" title="Todavía no tiene el archivo MEDYSEG en Drive">Sin MEDYSEG</span>
+      )}
       {presupuesto.tiene_mensajes_sin_leer && (
         <span className="obra-item-compacto-mensaje" title="Tiene mensajes nuevos en la conversación">💬</span>
       )}
@@ -1742,6 +1745,11 @@ export default function ObrasAceptadasPage() {
   // nuevas) — botón aparte de los desplegables normales, mismo patrón que
   // "Prox. Descartar" en Presupuestos en Estudio/Seguimiento.
   const [soloConNotas, setSoloConNotas] = useState(false)
+  // A pedido de Alfredo (2026-09-15): mismo patrón que "con Notas" — ver de
+  // un vistazo en qué obras todavía falta crear el archivo MEDYSEG (ya no
+  // se copia una plantilla en blanco al aceptar la obra, lo arma él mismo
+  // a mano; ver sync_obras_aceptadas.js/obras_aceptadas.php).
+  const [soloSinMedyseg, setSoloSinMedyseg] = useState(false)
 
   useEffect(() => {
     Promise.all([obrasAceptadas(accessToken), seguimientoMateriales(accessToken)])
@@ -1801,6 +1809,7 @@ export default function ObrasAceptadasPage() {
   }, [aceptadas, filtroCategoria])
 
   const conNotas = useMemo(() => aceptadas.filter((p) => p.tiene_mensajes), [aceptadas])
+  const sinMedyseg = useMemo(() => aceptadas.filter((p) => p.sin_medyseg), [aceptadas])
 
   const filasFiltradas = useMemo(() => {
     const texto = busquedaObra.trim().toLowerCase()
@@ -1815,8 +1824,9 @@ export default function ObrasAceptadasPage() {
         return estatus === filtroEstatus
       })
       .filter((p) => !soloConNotas || p.tiene_mensajes)
+      .filter((p) => !soloSinMedyseg || p.sin_medyseg)
       .sort((a, b) => (a.obra || '').localeCompare(b.obra || '', 'es'))
-  }, [aceptadas, busquedaObra, filtroCategoria, filtroContacto, filtroEstatus, soloConNotas])
+  }, [aceptadas, busquedaObra, filtroCategoria, filtroContacto, filtroEstatus, soloConNotas, soloSinMedyseg])
 
   // Agrupado por Cliente a pedido de Alfredo — antes era una sola grilla
   // de tarjetas anchas, ahora cada cliente es un encabezado con sus obras
@@ -2032,6 +2042,15 @@ export default function ObrasAceptadasPage() {
               onClick={() => setSoloConNotas((v) => !v)}
             >
               💬 {conNotas.length} con Notas
+            </button>
+          )}
+          {sinMedyseg.length > 0 && (
+            <button
+              type="button"
+              className={`filtro-con-notas ${soloSinMedyseg ? 'filtro-con-notas-activo' : ''}`}
+              onClick={() => setSoloSinMedyseg((v) => !v)}
+            >
+              {sinMedyseg.length} Sin MEDYSEG
             </button>
           )}
           <span className="filtro-contador">

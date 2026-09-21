@@ -229,6 +229,18 @@ body {
   flex: none;
 }
 
+.badge-obra-sin-medyseg {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 10px;
+  background: #fdedec;
+  color: var(--rojo);
+  white-space: nowrap;
+  flex: none;
+}
+
 .dashboard-ancho {
   max-width: none;
   padding-left: 36px;

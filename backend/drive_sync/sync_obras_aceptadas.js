@@ -116,7 +116,7 @@ function borrarSiExiste(rutaTmp) {
   if (rutaTmp && fs.existsSync(rutaTmp)) fs.unlinkSync(rutaTmp);
 }
 
-async function subirObra(info, campos, confirmables, categoriasComparativa) {
+async function subirObra(info, campos, confirmables, categoriasComparativa, sinMedyseg) {
   const url = `${process.env.PANEL_API_URL}/obras_aceptadas.php?token=${process.env.SYNC_TOKEN}`;
   const res = await fetch(url, {
     method: 'POST',
@@ -125,6 +125,10 @@ async function subirObra(info, campos, confirmables, categoriasComparativa) {
       obra: info.nombre,
       categoria: info.categoria,
       contacto: info.contacto,
+      // A pedido de Alfredo (2026-09-15): insignia "Sin MEDYSEG" en Obras
+      // Aceptadas para las obras que todavía no tienen ese archivo (ya no
+      // se crea solo al aceptar la obra, ver traspasar_obras_aceptadas.js).
+      sin_medyseg: sinMedyseg,
       // Estas son las obras más viejas (las primeras que se aceptaron) —
       // varias nunca tuvieron el campo "CLIENTE" de la Ficha diligenciado.
       // Si está vacío, se usa el contacto (la carpeta en la que vive la
@@ -214,11 +218,16 @@ async function main() {
       const campos = extraerCampos(tmpCalculo);
       const confirmables = leerFichaConfirmable(tmpCalculo);
       const categoriasComparativa = extraerCategoriasComparativa(tmpCalculo);
-      await subirObra(info, campos, confirmables, categoriasComparativa);
+      // Se chequea ANTES de subirObra (no después) para poder mandar
+      // "sin_medyseg" en el mismo POST — a pedido de Alfredo, 2026-09-15:
+      // ya no se copia una plantilla en blanco al aceptar la obra (prefiere
+      // armar el archivo él mismo), así que el panel necesita poder avisar
+      // en qué obras todavía no existe ("Sin MEDYSEG" en Obras Aceptadas).
+      const archivoMed = await archivoMedyseg(drive, info.folderId);
+      await subirObra(info, campos, confirmables, categoriasComparativa, !archivoMed);
       nombresActivos.push(info.nombre);
       resumen.obras++;
 
-      const archivoMed = await archivoMedyseg(drive, info.folderId);
       if (!archivoMed) {
         resumen.sinMedyseg++;
         console.log(`OK sin MEDYSEG: ${info.nombre}`);

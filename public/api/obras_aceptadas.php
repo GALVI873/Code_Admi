@@ -176,6 +176,18 @@ try {
         $db->exec('ALTER TABLE obras_aceptadas ADD COLUMN es_nueva INTEGER NOT NULL DEFAULT 0');
     }
 
+    // "Sin MEDYSEG" — insignia para Alfredo (a pedido de él, 2026-09-15): el
+    // traspaso de una obra a Aceptadas ya no copia una plantilla MEDYSEG.xlsx
+    // en blanco (prefiere armar ese archivo él mismo a mano), así que hace
+    // falta poder ver de un vistazo en qué obras todavía no existe. La
+    // sincronización normal (sync_obras_aceptadas.js) la actualiza en cada
+    // corrida según encuentre o no el archivo en Drive — a diferencia de
+    // "es_nueva", esta SÍ se pisa en cada sincronización (se apaga sola en
+    // cuanto Alfredo crea el archivo).
+    if (!in_array('sin_medyseg', $columnas, true)) {
+        $db->exec('ALTER TABLE obras_aceptadas ADD COLUMN sin_medyseg INTEGER NOT NULL DEFAULT 0');
+    }
+
     $db->exec("
         CREATE TABLE IF NOT EXISTS obra_aceptada_confirmaciones (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -433,8 +445,8 @@ try {
         // sincronización ni toca.
         $stmt = $db->prepare("
             INSERT INTO obras_aceptadas
-                (obra, categoria, contacto, cliente, no_ventanas, numero_ppto, fecha_ppto, proveedor, color_carpinteria, correderas, abatibles, vidrio, ral, persiana, color_persiana, modelo_lamas, motor_radio, motor_mecanico, precio_presupuesto, costo_inicial, es_nueva, actualizado_en)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
+                (obra, categoria, contacto, cliente, no_ventanas, numero_ppto, fecha_ppto, proveedor, color_carpinteria, correderas, abatibles, vidrio, ral, persiana, color_persiana, modelo_lamas, motor_radio, motor_mecanico, precio_presupuesto, costo_inicial, sin_medyseg, es_nueva, actualizado_en)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
             ON CONFLICT(obra) DO UPDATE SET
                 categoria = excluded.categoria,
                 contacto = excluded.contacto,
@@ -455,6 +467,7 @@ try {
                 motor_mecanico = excluded.motor_mecanico,
                 precio_presupuesto = excluded.precio_presupuesto,
                 costo_inicial = excluded.costo_inicial,
+                sin_medyseg = excluded.sin_medyseg,
                 actualizado_en = datetime('now')
         ");
         $stmt->execute([
@@ -478,6 +491,7 @@ try {
             $body['motor_mecanico'] ?? null,
             $body['precio_presupuesto'] ?? null,
             $body['costo_inicial'] ?? null,
+            !empty($body['sin_medyseg']) ? 1 : 0,
         ]);
 
         // "categorias_iniciales": [{categoria, costo_inicial}] — se

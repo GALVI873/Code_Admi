@@ -4,9 +4,11 @@
 // reciente de "Enviados" (el presupuesto aprobado), la carpeta
 // "1.Organización" (con "Valoración" adentro, si el origen ya tenía una —
 // si no, se crea una nueva vacía) y la carpeta "Doc" del origen si existe
-// (ver más abajo). También copia la plantilla MEDYSEG.xlsx (vive directo en
-// la raíz de GOOGLE_DRIVE_OBRAS_ACEPTADAS_FOLDER_ID) a la carpeta nueva,
-// renombrada con el nombre de la obra.
+// (ver más abajo). Ya NO copia ninguna plantilla MEDYSEG.xlsx — a pedido de
+// Alfredo (2026-09-21), prefiere armar ese archivo él mismo a mano en vez de
+// que el traspaso le deje uno en blanco (ver "Sin MEDYSEG" en Obras
+// Aceptadas, sync_obras_aceptadas.js, para saber en qué obras todavía
+// falta).
 //
 // A pedido de Álvaro (2026-09-15), tres cambios sobre la versión anterior:
 //
@@ -253,15 +255,6 @@ async function reorganizarDocEnOrigen(drive, docFolderId, resultados) {
   }
 }
 
-async function localizarPlantillaMedyseg(drive) {
-  const rootId = process.env.GOOGLE_DRIVE_OBRAS_ACEPTADAS_FOLDER_ID;
-  const res = await drive.files.list({
-    q: `'${rootId}' in parents and name = 'MEDYSEG.xlsx' and trashed = false`,
-    fields: 'files(id, name)',
-  });
-  return res.data.files[0] || null;
-}
-
 async function mover(drive, fileId, nuevoParentId, viejoParentId, descripcion, resultados) {
   resultados.push(`  mover: ${descripcion}`);
   if (APLICAR) {
@@ -292,7 +285,7 @@ async function marcarProcesado(obra) {
   if (!res.ok) throw new Error(JSON.stringify(data));
 }
 
-async function procesarObra(drive, plantillaMedysegId, p) {
+async function procesarObra(drive, p) {
   const resultados = [];
   console.log(`\n=== ${p.obra} ===`);
 
@@ -370,19 +363,10 @@ async function procesarObra(drive, plantillaMedysegId, p) {
     await mover(drive, doc.carpeta.id, destino.id, origen.id, `carpeta "${doc.carpeta.name}" (con "Origen" adentro)`, resultados);
   }
 
-  const nombreMedyseg = `${p.obra} MEDYSEG.xlsx`;
-  resultados.push(`  copiar plantilla MEDYSEG como "${nombreMedyseg}"`);
-  if (APLICAR) {
-    if (!plantillaMedysegId) {
-      console.log('  AVISO: no se encontró la plantilla MEDYSEG.xlsx, no se copió.');
-    } else {
-      await drive.files.copy({
-        fileId: plantillaMedysegId,
-        resource: { name: nombreMedyseg, parents: [destino.id] },
-        fields: 'id, name',
-      });
-    }
-  }
+  // Antes acá se copiaba una plantilla MEDYSEG.xlsx al destino — a pedido
+  // de Alfredo, 2026-09-21: prefiere armarlo él mismo a mano, no que el
+  // traspaso le deje uno en blanco (ver "Sin MEDYSEG" en Obras Aceptadas,
+  // sync_obras_aceptadas.js, para saber en qué obras todavía falta).
 
   // Una vez movido todo lo necesario, la carpeta de origen (con lo que le
   // haya quedado adentro: "Enviados" con el resto de PDFs, archivos
@@ -412,15 +396,11 @@ async function main() {
   if (pendientes.length === 0) return;
 
   const drive = getDrive();
-  const plantilla = await localizarPlantillaMedyseg(drive);
-  if (!plantilla) {
-    console.log('AVISO: no se encontró "MEDYSEG.xlsx" en la raíz de SEGUIMIENTO DE OBRAS (Aceptadas)/2026 — se va a seguir igual, pero no se va a poder copiar la plantilla.');
-  }
 
   let ok = 0;
   let omitidas = 0;
   for (const p of pendientes) {
-    const resultado = await procesarObra(drive, plantilla ? plantilla.id : null, p);
+    const resultado = await procesarObra(drive, p);
     if (resultado.ok) ok++;
     else omitidas++;
   }
