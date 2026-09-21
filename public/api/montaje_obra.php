@@ -153,6 +153,21 @@ try {
                 Response::json(['ok' => true]);
             }
 
+            // TEMPORAL — carga inicial de la lista de montadores/ayudantes
+            // que pasó Álvaro (sacar después de usarlo una vez).
+            if (($bodyPost['accion'] ?? '') === 'seed_personas') {
+                $nombres = $bodyPost['nombres'] ?? [];
+                $stmt = $db->prepare('INSERT OR IGNORE INTO montaje_personas (nombre) VALUES (?)');
+                foreach ($nombres as $nombre) {
+                    $nombre = trim((string) $nombre);
+                    if ($nombre !== '') {
+                        $stmt->execute([$nombre]);
+                    }
+                }
+                $personas = $db->query('SELECT id, nombre FROM montaje_personas ORDER BY nombre')->fetchAll();
+                Response::json(['personas' => $personas]);
+            }
+
             Response::error('Acción no reconocida', 422);
         }
     }
