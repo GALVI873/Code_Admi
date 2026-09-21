@@ -109,3 +109,11 @@ jobs:
       - name: Enviar PDFs de adicionales aceptados
         run: node enviar_adicionales_aceptados.js
         continue-on-error: true
+
+      # Documentos adjuntados desde la pestaña "Montaje" de una obra
+      # aceptada (PDF/Planos/Medición/Fotos/Tareas) — se suben a
+      # "1.Organización/Montaje/<Categoría>" de esa obra (ver
+      # montaje_obra.php).
+      - name: Enviar documentos de Montaje
+        run: node enviar_documentos_montaje.js
+        continue-on-error: true

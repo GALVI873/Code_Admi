@@ -3342,6 +3342,133 @@ select.celda-editable-material {
   color: #999;
 }
 
+/* Pestaña "Montaje" de Obras Aceptadas (a pedido de Álvaro, 2026-09-21) —
+   ver MontajeObra.jsx. Reutiliza .seguimiento-pestanas para las tres
+   sub-pestañas, .tabla-adicionales para la tabla de materiales y
+   .notas-obra-item/.notas-obra-lista para el checklist de tareas — solo
+   estilos propios acá. */
+.montaje-subpestanas {
+  margin-bottom: 16px;
+}
+
+.montaje-detalle-fila {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.montaje-detalle-campo-tiempo {
+  min-width: 180px;
+}
+
+.montaje-detalle-agregar-persona {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.montaje-detalle-agregar-persona .input-filtro {
+  max-width: 260px;
+}
+
+.montaje-detalle-acristalada {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  margin-bottom: 22px;
+  cursor: pointer;
+}
+
+.montaje-subtitulo {
+  font-size: 13px;
+  font-weight: 700;
+  color: #3a4757;
+  margin: 0 0 8px;
+}
+
+.montaje-tabla-materiales td:first-child {
+  font-weight: 600;
+}
+
+.montaje-documentacion {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.montaje-doc-seccion-encabezado {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.montaje-doc-seccion-encabezado .montaje-subtitulo {
+  margin: 0;
+  flex: 1;
+}
+
+.montaje-doc-vacio {
+  font-size: 12px;
+}
+
+.montaje-doc-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.montaje-doc-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #f7f9fc;
+  border: 1px solid #e3e8f0;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.montaje-doc-nombre {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--azul-med);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.montaje-doc-nombre:hover {
+  text-decoration: underline;
+}
+
+.montaje-doc-meta {
+  font-size: 11px;
+  color: #999;
+  flex: 1;
+  white-space: nowrap;
+}
+
+.montaje-tareas-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.montaje-tareas-form .input-filtro {
+  flex: 1;
+}
+
+.montaje-tareas .notas-obra-lista {
+  margin-bottom: 24px;
+}
+
 /* "Descargar PDF" en Pendientes (a pedido de Álvaro, 2026-09-21) — dispara
    window.print(), no hay librería de PDF propia. Deja en el papel solo lo
    que tiene sentido ahí: se saca el menú, la franja de modo desarrollo, los

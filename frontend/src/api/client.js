@@ -365,3 +365,73 @@ export function subirPdfAdicionalObra(accessToken, id, pdfBase64, pdfNombreOrigi
     body: JSON.stringify({ id, pdf_base64: pdfBase64, pdf_nombre_original: pdfNombreOriginal }),
   })
 }
+
+export function montajeObra(accessToken, obra) {
+  return request(`/montaje_obra.php?obra=${encodeURIComponent(obra)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
+export function actualizarDetalleMontaje(accessToken, obra, campos) {
+  return request('/montaje_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'actualizar_detalle', obra, ...campos }),
+  })
+}
+
+export function actualizarMaterialMontaje(accessToken, obra, material, fechaEstimada) {
+  return request('/montaje_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'actualizar_material', obra, material, fecha_estimada: fechaEstimada }),
+  })
+}
+
+export function agregarPersonaMontaje(accessToken, nombre) {
+  return request('/montaje_obra.php', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'agregar_persona', nombre }),
+  })
+}
+
+export function agregarTareaMontaje(accessToken, obra, texto) {
+  return request('/montaje_obra.php', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'agregar_tarea', obra, texto }),
+  })
+}
+
+export function marcarTareaMontaje(accessToken, id, hecho) {
+  return request('/montaje_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'marcar_tarea', id, hecho }),
+  })
+}
+
+export function eliminarTareaMontaje(accessToken, id) {
+  return request('/montaje_obra.php', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'eliminar_tarea', id }),
+  })
+}
+
+export function agregarDocumentoMontaje(accessToken, obra, categoria, archivoBase64, nombreOriginal, tipoMime) {
+  return request('/montaje_obra.php', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'agregar_documento', obra, categoria, archivo_base64: archivoBase64, nombre_original: nombreOriginal, tipo_mime: tipoMime }),
+  })
+}
+
+export function eliminarDocumentoMontaje(accessToken, id) {
+  return request('/montaje_obra.php', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'eliminar_documento', id }),
+  })
+}
