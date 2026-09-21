@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import { pendientesObrasAceptadas, marcarComentarioHecho, categorizarComentarioObra } from '../api/client.js'
+import {
+  pendientesObrasAceptadas,
+  marcarComentarioHecho,
+  categorizarComentarioObra,
+  archivarComentarioObra,
+  agregarRespuestaNota,
+} from '../api/client.js'
 
 // Control general de pendientes para Alfredo — junta, de TODAS las obras
 // aceptadas, las notas que Álvaro dejó en la pestaña "Notas" de cada obra
@@ -21,6 +27,11 @@ import { pendientesObrasAceptadas, marcarComentarioHecho, categorizarComentarioO
 // quedan a la misma altura, uno al lado del otro, en vez de desalinearse
 // según cuántos ítems tenga cada obra en cada lado (2026-09-15, reportado
 // con "Avutarda, 38" desalineada entre las dos columnas).
+//
+// A pedido de Álvaro (2026-09-21): poder archivar una nota y responderla
+// directo desde acá, sin tener que entrar al detalle de la obra (pestaña
+// Notas) una por una — mismo botón de archivar y mismo hilo de respuestas
+// que ya existían en NotasObraAceptada.jsx, reutilizados tal cual.
 function formatoFechaHora(iso) {
   if (!iso) return ''
   const fecha = new Date(iso.replace(' ', 'T') + 'Z')
@@ -89,7 +100,28 @@ function FiltroObrasMultiple({ obrasDisponibles, seleccionadas, onCambiar }) {
   )
 }
 
-function NotaPendiente({ nota, puedeMarcarHecho, puedeCategorizar, onMarcarHecho, onAbrir }) {
+function NotaPendiente({ nota, accessToken, puedeMarcarHecho, puedeCategorizar, puedeArchivar, onMarcarHecho, onAbrir, onArchivar, onNuevaRespuesta }) {
+  const [respuesta, setRespuesta] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState('')
+
+  async function enviarRespuesta(e) {
+    e.preventDefault()
+    const texto = respuesta.trim()
+    if (!texto || enviando) return
+    setEnviando(true)
+    setError('')
+    try {
+      const data = await agregarRespuestaNota(accessToken, nota.obra, nota.id, texto)
+      onNuevaRespuesta(nota.id, data.respuesta)
+      setRespuesta('')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setEnviando(false)
+    }
+  }
+
   return (
     <li
       className={`notas-obra-item ${nota.hecho ? 'notas-obra-item-hecho' : ''} ${puedeCategorizar ? 'notas-obra-item-arrastrable' : ''}`}
@@ -111,7 +143,43 @@ function NotaPendiente({ nota, puedeMarcarHecho, puedeCategorizar, onMarcarHecho
       <div className="notas-obra-item-cuerpo" role="button" tabIndex={0} onClick={() => onAbrir(nota)}>
         <p className="notas-obra-item-texto">{nota.mensaje}</p>
         <span className="notas-obra-item-meta">{nota.autor_nombre} · {formatoFechaHora(nota.creado_en)}</span>
+
+        {nota.respuestas?.length > 0 && (
+          <ul className="notas-obra-respuestas">
+            {nota.respuestas.map((r) => (
+              <li key={r.id} className="notas-obra-respuesta">
+                <p className="notas-obra-respuesta-texto">{r.mensaje}</p>
+                <span className="notas-obra-respuesta-meta">{r.autor_nombre} · {formatoFechaHora(r.creado_en)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form className="notas-obra-respuesta-form" onSubmit={enviarRespuesta} onClick={(e) => e.stopPropagation()}>
+          <input
+            type="text"
+            className="input-filtro notas-obra-respuesta-input"
+            placeholder="Responder esta nota…"
+            value={respuesta}
+            onChange={(e) => setRespuesta(e.target.value)}
+          />
+          <button type="submit" className="notas-obra-respuesta-boton" disabled={enviando || !respuesta.trim()}>
+            Responder
+          </button>
+        </form>
+        {error && <div className="auth-error">{error}</div>}
       </div>
+
+      {puedeArchivar && (
+        <button
+          type="button"
+          className="notas-obra-archivar"
+          onClick={() => onArchivar(nota)}
+          title="Archivar — deja de aparecer en la lista"
+        >
+          🗄
+        </button>
+      )}
     </li>
   )
 }
@@ -120,7 +188,7 @@ function NotaPendiente({ nota, puedeMarcarHecho, puedeCategorizar, onMarcarHecho
 // — el drop target es esta celda nomás, no toda la columna: soltar acá
 // categoriza la nota sin importar de qué obra sea (la obra no cambia,
 // nunca se mueve de fila, solo su categoría).
-function CeldaPendientes({ categoria, items, puedeMarcarHecho, puedeCategorizar, onMarcarHecho, onAbrir, onSoltarNota }) {
+function CeldaPendientes({ categoria, items, puedeMarcarHecho, puedeCategorizar, onMarcarHecho, onAbrir, onSoltarNota, ...propsNota }) {
   const [sobrevuelo, setSobrevuelo] = useState(false)
   const etiquetaVacia = categoria === 'recordatorio' ? 'Sin recordatorios.' : 'Sin tareas.'
 
@@ -146,7 +214,7 @@ function CeldaPendientes({ categoria, items, puedeMarcarHecho, puedeCategorizar,
       ) : (
         <ul className="notas-obra-lista">
           {items.map((n) => (
-            <NotaPendiente key={n.id} nota={n} puedeMarcarHecho={puedeMarcarHecho} puedeCategorizar={puedeCategorizar} onMarcarHecho={onMarcarHecho} onAbrir={onAbrir} />
+            <NotaPendiente key={n.id} nota={n} puedeMarcarHecho={puedeMarcarHecho} puedeCategorizar={puedeCategorizar} onMarcarHecho={onMarcarHecho} onAbrir={onAbrir} {...propsNota} />
           ))}
         </ul>
       )}
@@ -156,7 +224,7 @@ function CeldaPendientes({ categoria, items, puedeMarcarHecho, puedeCategorizar,
 
 // Fila de una obra: título con el total, y las dos celdas (Tareas |
 // Recordatorios) de esa obra una al lado de la otra.
-function FilaObraPendientes({ grupo, puedeMarcarHecho, puedeCategorizar, onMarcarHecho, onAbrir, onSoltarNota }) {
+function FilaObraPendientes({ grupo, puedeMarcarHecho, puedeCategorizar, onMarcarHecho, onAbrir, onSoltarNota, ...propsNota }) {
   return (
     <section className="obras-seccion pendientes-fila-obra">
       <h2 className="obras-seccion-titulo">
@@ -164,8 +232,8 @@ function FilaObraPendientes({ grupo, puedeMarcarHecho, puedeCategorizar, onMarca
         <span className="obras-seccion-contador">{grupo.tareas.length + grupo.recordatorios.length}</span>
       </h2>
       <div className="notas-obra-columnas pendientes-columnas">
-        <CeldaPendientes categoria="tarea" items={grupo.tareas} puedeMarcarHecho={puedeMarcarHecho} puedeCategorizar={puedeCategorizar} onMarcarHecho={onMarcarHecho} onAbrir={onAbrir} onSoltarNota={onSoltarNota} />
-        <CeldaPendientes categoria="recordatorio" items={grupo.recordatorios} puedeMarcarHecho={puedeMarcarHecho} puedeCategorizar={puedeCategorizar} onMarcarHecho={onMarcarHecho} onAbrir={onAbrir} onSoltarNota={onSoltarNota} />
+        <CeldaPendientes categoria="tarea" items={grupo.tareas} puedeMarcarHecho={puedeMarcarHecho} puedeCategorizar={puedeCategorizar} onMarcarHecho={onMarcarHecho} onAbrir={onAbrir} onSoltarNota={onSoltarNota} {...propsNota} />
+        <CeldaPendientes categoria="recordatorio" items={grupo.recordatorios} puedeMarcarHecho={puedeMarcarHecho} puedeCategorizar={puedeCategorizar} onMarcarHecho={onMarcarHecho} onAbrir={onAbrir} onSoltarNota={onSoltarNota} {...propsNota} />
       </div>
     </section>
   )
@@ -176,6 +244,7 @@ export default function PendientesObrasPage() {
   const navigate = useNavigate()
   const puedeMarcarHecho = usuario?.roles?.includes('gestion_obras')
   const puedeCategorizar = usuario?.roles?.includes('gestion_obras') || usuario?.roles?.includes('admin')
+  const puedeArchivar = puedeCategorizar
 
   const [pendientes, setPendientes] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -250,6 +319,22 @@ export default function PendientesObrasPage() {
     }
   }
 
+  async function handleArchivar(nota) {
+    if (!puedeArchivar) return
+    const anteriores = pendientes
+    setPendientes((prev) => prev.filter((n) => n.id !== nota.id))
+    try {
+      await archivarComentarioObra(accessToken, nota.id, true)
+    } catch (err) {
+      setPendientes(anteriores)
+      setError(err.message)
+    }
+  }
+
+  function handleNuevaRespuesta(notaId, respuesta) {
+    setPendientes((prev) => prev.map((n) => (n.id === notaId ? { ...n, respuestas: [...(n.respuestas || []), respuesta] } : n)))
+  }
+
   function handleAbrir(nota) {
     navigate(`/obras-aceptadas/${nota.obra_id}?pestana=Notas`)
   }
@@ -314,11 +399,15 @@ export default function PendientesObrasPage() {
             <FilaObraPendientes
               key={grupo.obra}
               grupo={grupo}
+              accessToken={accessToken}
               puedeMarcarHecho={puedeMarcarHecho}
               puedeCategorizar={puedeCategorizar}
+              puedeArchivar={puedeArchivar}
               onMarcarHecho={handleMarcarHecho}
               onAbrir={handleAbrir}
               onSoltarNota={handleSoltarNota}
+              onArchivar={handleArchivar}
+              onNuevaRespuesta={handleNuevaRespuesta}
             />
           ))}
         </>

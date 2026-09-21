@@ -164,7 +164,27 @@ try {
                   )
                 ORDER BY co.creado_en ASC, co.id ASC
             ");
-            Response::json(['comentarios' => $stmt->fetchAll()]);
+            $comentariosPendientes = $stmt->fetchAll();
+
+            // Respuestas de cada nota (a pedido de Álvaro, 2026-09-21: poder
+            // responder directo desde esta vista, sin entrar obra por obra)
+            // — mismo patrón que el GET ?obra=... de más abajo.
+            if ($comentariosPendientes) {
+                $ids = array_column($comentariosPendientes, 'id');
+                $marcadores = implode(',', array_fill(0, count($ids), '?'));
+                $stmtR = $db->prepare("SELECT * FROM comentarios_obra_respuestas WHERE comentario_id IN ($marcadores) ORDER BY creado_en ASC, id ASC");
+                $stmtR->execute($ids);
+                $respuestasPorComentario = [];
+                foreach ($stmtR->fetchAll() as $r) {
+                    $respuestasPorComentario[$r['comentario_id']][] = $r;
+                }
+                foreach ($comentariosPendientes as &$c) {
+                    $c['respuestas'] = $respuestasPorComentario[$c['id']] ?? [];
+                }
+                unset($c);
+            }
+
+            Response::json(['comentarios' => $comentariosPendientes]);
         }
 
         $obra = nombreBaseObra((string) ($_GET['obra'] ?? ''));
