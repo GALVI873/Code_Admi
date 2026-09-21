@@ -9,6 +9,7 @@ import {
   eliminarTareaMontaje,
   agregarDocumentoMontaje,
   eliminarDocumentoMontaje,
+  planosObra,
 } from '../api/client.js'
 
 // Pestaña "Montaje" de una obra aceptada — a pedido de Álvaro, 2026-09-21:
@@ -45,6 +46,12 @@ function formatoFechaHora(iso) {
   const dia = String(fecha.getDate()).padStart(2, '0')
   const mes = String(fecha.getMonth() + 1).padStart(2, '0')
   return `${dia}/${mes}/${fecha.getFullYear()}`
+}
+
+function formatoFecha(iso) {
+  if (!iso) return ''
+  const [anio, mes, dia] = iso.split('-')
+  return `${dia}/${mes}/${anio}`
 }
 
 function leerArchivoComoBase64(archivo) {
@@ -428,11 +435,117 @@ function TareasPendientes({ obra, accessToken, tareas, onCambiarTareas, document
   )
 }
 
+// Documento embebido en el resumen para el montador: si es una imagen se
+// muestra directo (se imprime bien); si es un PDF, el navegador no lo puede
+// embeber de forma confiable dentro de otra página impresa, así que se deja
+// como referencia con un enlace para abrirlo aparte — el archivo en sí ya
+// está guardado y se manda a Drive igual (ver Documentación de montaje).
+function DocumentoResumen({ documento }) {
+  const esImagen = (documento.tipo_mime || '').startsWith('image/')
+  const url = `data:${documento.tipo_mime || 'application/octet-stream'};base64,${documento.archivo_base64}`
+  if (esImagen) {
+    return <img src={url} alt={documento.nombre_original || 'Documento'} className="montaje-resumen-imagen" />
+  }
+  return (
+    <p className="montaje-resumen-doc-referencia">
+      📎 {documento.nombre_original || `Documento #${documento.id}`} — adjunto aparte (
+      <a href={url} target="_blank" rel="noreferrer">abrir</a>)
+    </p>
+  )
+}
+
+// Resumen imprimible para mandarle al montador (a pedido de Álvaro,
+// 2026-09-21) — SIEMPRE está en el DOM pero oculto en pantalla
+// (.montaje-resumen-imprimir, ver global.css); el botón "Descargar para el
+// montador" solo dispara window.print() (mismo mecanismo que "Descargar
+// PDF" en Pendientes, ninguna librería de PDF nueva). El CSS de impresión
+// esconde el resto de la pestaña Montaje (.montaje-pantalla) y muestra solo
+// esto, en el orden pedido: Detalle de obra, Planos (las páginas ya
+// cargadas en la pestaña Planos de esta obra — no hace falta volver a
+// subirlas), Medición, Tareas pendientes y Fotos de obra.
+function ResumenMontador({ obra, detalle, materiales, documentos, tareas, paginasPlanos }) {
+  const medicion = documentos.filter((d) => d.categoria === 'Medición')
+  const fotos = documentos.filter((d) => d.categoria === 'Fotos')
+
+  return (
+    <div className="montaje-resumen-imprimir">
+      <h1>{obra} — Montaje</h1>
+
+      <h2>1. Detalle de obra</h2>
+      <table className="montaje-resumen-tabla">
+        <tbody>
+          <tr><th>Montador</th><td>{detalle?.montador || 'Sin asignar'}</td></tr>
+          <tr><th>Ayudante</th><td>{detalle?.ayudante || 'Sin asignar'}</td></tr>
+          <tr><th>Inicio estimado</th><td>{formatoFecha(detalle?.fecha_inicio_estimada) || '—'}</td></tr>
+          <tr><th>Fin estimado</th><td>{formatoFecha(detalle?.fecha_fin_estimada) || '—'}</td></tr>
+          <tr><th>Carpintería acristalada</th><td>{detalle?.carpinteria_acristalada ? 'Sí' : 'No'}</td></tr>
+        </tbody>
+      </table>
+      <table className="montaje-resumen-tabla">
+        <thead><tr><th>Material</th><th>Fecha estimada de llegada</th></tr></thead>
+        <tbody>
+          {materiales.map((m) => (
+            <tr key={m.material}><td>{m.material}</td><td>{formatoFecha(m.fecha_estimada) || '—'}</td></tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h2>2. Planos</h2>
+      {paginasPlanos === null ? (
+        <p className="dashboard-nota">Cargando planos…</p>
+      ) : paginasPlanos.length === 0 ? (
+        <p className="dashboard-nota">Esta obra todavía no tiene planos cargados.</p>
+      ) : (
+        paginasPlanos.map((p) => (
+          <img key={p.pagina} src={p.imagen_base64} alt={`Plano página ${p.pagina}`} className="montaje-resumen-imagen" />
+        ))
+      )}
+
+      <h2>3. Medición</h2>
+      {medicion.length === 0 ? (
+        <p className="dashboard-nota">Sin documento de medición cargado.</p>
+      ) : (
+        medicion.map((d) => <DocumentoResumen key={d.id} documento={d} />)
+      )}
+
+      <h2>4. Tareas pendientes</h2>
+      {tareas.length === 0 ? (
+        <p className="dashboard-nota">Sin tareas pendientes.</p>
+      ) : (
+        <ul className="montaje-resumen-tareas">
+          {tareas.map((t) => (
+            <li key={t.id}>{t.hecho ? '☑' : '☐'} {t.texto}</li>
+          ))}
+        </ul>
+      )}
+
+      <h2>5. Fotos de obra</h2>
+      {fotos.length === 0 ? (
+        <p className="dashboard-nota">Sin fotos cargadas.</p>
+      ) : (
+        <div className="montaje-resumen-fotos">
+          {fotos.map((d) => (
+            <img
+              key={d.id}
+              src={`data:${d.tipo_mime || 'image/jpeg'};base64,${d.archivo_base64}`}
+              alt={d.nombre_original || 'Foto de obra'}
+              className="montaje-resumen-foto"
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function MontajeObra({ obra, accessToken }) {
   const [subpestana, setSubpestana] = useState('Detalle de obra')
   const [datos, setDatos] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
+  const [paginasPlanos, setPaginasPlanos] = useState(null)
+  const [cargandoDescarga, setCargandoDescarga] = useState(false)
+  const [quiereImprimir, setQuiereImprimir] = useState(false)
 
   useEffect(() => {
     let activo = true
@@ -451,6 +564,36 @@ export default function MontajeObra({ obra, accessToken }) {
       activo = false
     }
   }, [obra, accessToken])
+
+  // El botón "Descargar para el montador" carga los planos (si todavía no
+  // se pidieron) y recién imprime cuando ya están en el DOM — window.print()
+  // llamado antes de que React termine de pintar las imágenes las dejaría
+  // afuera del PDF, por eso se espera al próximo render vía este efecto en
+  // vez de llamarlo justo después de setPaginasPlanos.
+  useEffect(() => {
+    if (quiereImprimir && paginasPlanos !== null) {
+      setQuiereImprimir(false)
+      window.print()
+    }
+  }, [quiereImprimir, paginasPlanos])
+
+  async function handleDescargarMontador() {
+    if (paginasPlanos !== null) {
+      window.print()
+      return
+    }
+    setCargandoDescarga(true)
+    setError('')
+    try {
+      const data = await planosObra(accessToken, obra)
+      setPaginasPlanos(data.paginas || [])
+      setQuiereImprimir(true)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setCargandoDescarga(false)
+    }
+  }
 
   // Siempre mergea contra el estado MÁS RECIENTE (prev), nunca contra lo
   // que DetalleDeObra tenía en sus props al momento del click — ver
@@ -472,17 +615,32 @@ export default function MontajeObra({ obra, accessToken }) {
 
   return (
     <div className="montaje-obra">
-      <div className="seguimiento-pestanas montaje-subpestanas">
-        {SUBPESTANAS.map((p) => (
-          <button
-            key={p}
-            type="button"
-            className={`seguimiento-pestana ${p === subpestana ? 'seguimiento-pestana-activa' : ''}`}
-            onClick={() => setSubpestana(p)}
-          >
-            {p}
-          </button>
-        ))}
+      <ResumenMontador
+        obra={obra}
+        detalle={datos.detalle}
+        materiales={datos.materiales}
+        documentos={datos.documentos}
+        tareas={datos.tareas}
+        paginasPlanos={paginasPlanos}
+      />
+
+      <div className="montaje-pantalla">
+      <div className="montaje-subpestanas-fila">
+        <div className="seguimiento-pestanas montaje-subpestanas">
+          {SUBPESTANAS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={`seguimiento-pestana ${p === subpestana ? 'seguimiento-pestana-activa' : ''}`}
+              onClick={() => setSubpestana(p)}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+        <button type="button" className="btn-secundario" onClick={handleDescargarMontador} disabled={cargandoDescarga}>
+          {cargandoDescarga ? 'Preparando…' : '🖨 Descargar para el montador'}
+        </button>
       </div>
 
       {subpestana === 'Detalle de obra' && (
@@ -513,6 +671,7 @@ export default function MontajeObra({ obra, accessToken }) {
           onCambiarDocumentos={(documentos) => setDatos((prev) => ({ ...prev, documentos }))}
         />
       )}
+      </div>
     </div>
   )
 }

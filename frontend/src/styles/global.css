@@ -3347,8 +3347,24 @@ select.celda-editable-material {
    sub-pestañas, .tabla-adicionales para la tabla de materiales y
    .notas-obra-item/.notas-obra-lista para el checklist de tareas — solo
    estilos propios acá. */
+.montaje-subpestanas-fila {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .montaje-subpestanas {
   margin-bottom: 16px;
+}
+
+/* Resumen para el montador (a pedido de Álvaro, 2026-09-21): siempre está
+   en el DOM pero oculto en pantalla — solo se muestra dentro de
+   @media print, ver el bloque final de este archivo (tiene que ir al
+   final por el mismo motivo que el de Pendientes, ver ese comentario). */
+.montaje-resumen-imprimir {
+  display: none;
 }
 
 .montaje-detalle-fila {
@@ -3625,5 +3641,95 @@ select.celda-editable-material {
   * {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  /* Resumen para el montador (a pedido de Álvaro, 2026-09-21) — ver
+     ResumenMontador en MontajeObra.jsx. :has() para esconder el
+     encabezado/pestañas normales de la obra SOLO cuando se está imprimiendo
+     la pestaña Montaje (mismas clases .dashboard-header/.boton-volver/
+     .seguimiento-pestanas que usan Pendientes y el resto de pestañas de la
+     obra — no se pueden esconder a lo bruto sin romper esas otras vistas). */
+  .dashboard:has(.montaje-obra) > .boton-volver,
+  .dashboard:has(.montaje-obra) > .dashboard-header,
+  .dashboard:has(.montaje-obra) > .seguimiento-pestanas {
+    display: none !important;
+  }
+
+  .montaje-pantalla {
+    display: none !important;
+  }
+
+  .montaje-resumen-imprimir {
+    display: block !important;
+  }
+
+  .montaje-resumen-imprimir h1 {
+    font-size: 17px;
+    margin: 0 0 12px;
+    color: var(--azul);
+  }
+
+  .montaje-resumen-imprimir h2 {
+    font-size: 13px;
+    margin: 18px 0 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #ddd;
+    break-after: avoid;
+  }
+
+  .montaje-resumen-tabla {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 10px;
+    font-size: 11.5px;
+  }
+
+  .montaje-resumen-tabla th,
+  .montaje-resumen-tabla td {
+    text-align: left;
+    padding: 3px 8px;
+    border-bottom: 1px solid #eee;
+  }
+
+  .montaje-resumen-tabla th {
+    width: 200px;
+    color: #7a8699;
+    font-weight: 700;
+  }
+
+  .montaje-resumen-imagen {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    margin-bottom: 14px;
+    break-inside: avoid;
+  }
+
+  .montaje-resumen-doc-referencia {
+    font-size: 11.5px;
+    margin: 0 0 6px;
+  }
+
+  .montaje-resumen-tareas {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: 11.5px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .montaje-resumen-fotos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .montaje-resumen-foto {
+    width: 170px;
+    height: 170px;
+    object-fit: cover;
+    break-inside: avoid;
   }
 }
