@@ -388,11 +388,11 @@ export function actualizarMaterialMontaje(accessToken, obra, material, fechaEsti
   })
 }
 
-export function agregarPersonaMontaje(accessToken, nombre) {
+export function agregarPersonaMontaje(accessToken, nombre, rol) {
   return request('/montaje_obra.php', {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ accion: 'agregar_persona', nombre }),
+    body: JSON.stringify({ accion: 'agregar_persona', nombre, rol }),
   })
 }
 

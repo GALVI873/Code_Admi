@@ -3358,15 +3358,28 @@ select.celda-editable-material {
   margin-bottom: 14px;
 }
 
+.montaje-detalle-persona-bloque {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .montaje-detalle-agregar-persona {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  margin-bottom: 18px;
 }
 
 .montaje-detalle-agregar-persona .input-filtro {
-  max-width: 260px;
+  width: 130px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.montaje-detalle-agregar-persona .btn-secundario {
+  padding: 5px 10px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .montaje-detalle-acristalada {

@@ -9,10 +9,12 @@ declare(strict_types=1);
 // montaje). Se organiza en tres bloques, todos bajo el mismo endpoint:
 //
 // 1) DETALLE DE OBRA (montaje_detalle_obra, una fila por obra):
-//    - montador/ayudante: nombre de una lista manejable (montaje_personas)
-//      — no hay rol de usuario "montador" en el sistema, es una lista
-//      simple que crece a medida que se escribe un nombre nuevo (no hace
-//      falta una pantalla de administración aparte).
+//    - montador/ayudante: nombre de una lista manejable (montaje_personas,
+//      separada en dos por columna "rol" — a pedido de Álvaro, 2026-09-21,
+//      cada persona es SOLO montador o SOLO ayudante, no las dos cosas) —
+//      no hay rol de usuario "montador" en el sistema, es una lista simple
+//      que crece a medida que se escribe un nombre nuevo (no hace falta una
+//      pantalla de administración aparte).
 //    - fecha_inicio_estimada / fecha_fin_estimada: rango de fechas del
 //      montaje (a pedido de Álvaro, 2026-09-21 — antes era texto libre tipo
 //      "3 días", ahora un rango real que se puede comparar/ordenar).
@@ -46,9 +48,8 @@ declare(strict_types=1);
 // PATCH {accion:"actualizar_material", obra, material, fecha_estimada}:
 //   upsert de montaje_material_fecha.
 // PATCH {accion:"marcar_tarea", id, hecho}: tilda/destilda una tarea.
-// POST {accion:"agregar_persona", nombre}: agrega un nombre nuevo a la
-//   lista de montadores/ayudantes (no distingue rol — la misma persona
-//   puede ser montador en una obra y ayudante en otra).
+// POST {accion:"agregar_persona", nombre, rol}: agrega un nombre nuevo a
+//   la lista de montadores o de ayudantes (rol: "montador" | "ayudante").
 // POST {accion:"agregar_tarea", obra, texto}: crea una tarea pendiente.
 // POST {accion:"agregar_documento", obra, categoria, archivo_base64,
 //   nombre_original, tipo_mime}: adjunta un documento.
@@ -100,9 +101,19 @@ try {
         CREATE TABLE IF NOT EXISTS montaje_personas (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           nombre TEXT NOT NULL UNIQUE,
+          rol TEXT,
           creado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
     ");
+    $columnasPersonas = array_column($db->query('PRAGMA table_info(montaje_personas)')->fetchAll(), 'name');
+    if (!in_array('rol', $columnasPersonas, true)) {
+        $db->exec('ALTER TABLE montaje_personas ADD COLUMN rol TEXT');
+        // Los primeros 10 nombres (a pedido de Álvaro, 2026-09-21) se
+        // habían cargado antes de que existiera esta separación — se
+        // reparten acá una sola vez con la división que mandó después.
+        $db->exec("UPDATE montaje_personas SET rol = 'montador' WHERE nombre IN ('Marcin', 'Evert', 'Evaristo', 'Javi', 'Miguel')");
+        $db->exec("UPDATE montaje_personas SET rol = 'ayudante' WHERE nombre IN ('Lucas', 'German', 'Emerson', 'Ivan', 'Daisy')");
+    }
     $db->exec("
         CREATE TABLE IF NOT EXISTS montaje_documentos (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -184,7 +195,7 @@ try {
             $materiales[] = ['material' => $m, 'fecha_estimada' => $fechasPorMaterial[$m] ?? null];
         }
 
-        $personas = $db->query('SELECT id, nombre FROM montaje_personas ORDER BY nombre')->fetchAll();
+        $personas = $db->query('SELECT id, nombre, rol FROM montaje_personas ORDER BY nombre')->fetchAll();
 
         $stmtDocs = $db->prepare('SELECT * FROM montaje_documentos WHERE obra = ? ORDER BY subido_en DESC, id DESC');
         $stmtDocs->execute([$obra]);
@@ -296,11 +307,12 @@ try {
 
         if ($accion === 'agregar_persona') {
             $nombre = trim((string) ($body['nombre'] ?? ''));
-            if ($nombre === '') {
-                Response::error('Falta "nombre"', 422);
+            $rol = trim((string) ($body['rol'] ?? ''));
+            if ($nombre === '' || !in_array($rol, ['montador', 'ayudante'], true)) {
+                Response::error('Falta "nombre" y/o "rol" (debe ser "montador" o "ayudante")', 422);
             }
-            $db->prepare('INSERT OR IGNORE INTO montaje_personas (nombre) VALUES (?)')->execute([$nombre]);
-            $personas = $db->query('SELECT id, nombre FROM montaje_personas ORDER BY nombre')->fetchAll();
+            $db->prepare('INSERT OR IGNORE INTO montaje_personas (nombre, rol) VALUES (?, ?)')->execute([$nombre, $rol]);
+            $personas = $db->query('SELECT id, nombre, rol FROM montaje_personas ORDER BY nombre')->fetchAll();
             Response::json(['personas' => $personas]);
         }
 

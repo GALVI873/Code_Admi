@@ -56,20 +56,58 @@ function leerArchivoComoBase64(archivo) {
   })
 }
 
-function SelectPersona({ valor, personas, onCambio, placeholder }) {
+function SelectPersona({ valor, personas, rol, onCambio, placeholder }) {
   return (
     <select className="select-inline" value={valor || ''} onChange={(e) => onCambio(e.target.value)}>
       <option value="">{placeholder}</option>
-      {personas.map((p) => (
+      {personas.filter((p) => p.rol === rol).map((p) => (
         <option key={p.id} value={p.nombre}>{p.nombre}</option>
       ))}
     </select>
   )
 }
 
+// Una persona es SOLO montador o SOLO ayudante (a pedido de Álvaro,
+// 2026-09-21) — dos listas separadas (columna "rol" en montaje_personas),
+// cada una con su propio "agregar nombre nuevo" al lado de su desplegable.
+function AgregarPersona({ rol, accessToken, onAgregada }) {
+  const [nombre, setNombre] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    const n = nombre.trim()
+    if (!n || enviando) return
+    setEnviando(true)
+    setError('')
+    try {
+      const data = await agregarPersonaMontaje(accessToken, n, rol)
+      onAgregada(data.personas)
+      setNombre('')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <form className="montaje-detalle-agregar-persona" onSubmit={handleSubmit}>
+      <input
+        type="text"
+        className="input-filtro"
+        placeholder={rol === 'montador' ? 'Nuevo montador…' : 'Nuevo ayudante…'}
+        value={nombre}
+        onChange={(e) => setNombre(e.target.value)}
+      />
+      <button type="submit" className="btn-secundario" disabled={enviando || !nombre.trim()}>+ Agregar</button>
+      {error && <span className="auth-error">{error}</span>}
+    </form>
+  )
+}
+
 function DetalleDeObra({ obra, accessToken, detalle, materiales, personas, onCambiado }) {
-  const [nuevaPersona, setNuevaPersona] = useState('')
-  const [agregandoPersona, setAgregandoPersona] = useState(false)
   const [error, setError] = useState('')
 
   // Cada handler manda solo lo que cambió (nunca el "detalle"/"materiales"
@@ -89,23 +127,6 @@ function DetalleDeObra({ obra, accessToken, detalle, materiales, personas, onCam
     }
   }
 
-  async function handleAgregarPersona(e) {
-    e.preventDefault()
-    const nombre = nuevaPersona.trim()
-    if (!nombre || agregandoPersona) return
-    setAgregandoPersona(true)
-    setError('')
-    try {
-      const data = await agregarPersonaMontaje(accessToken, nombre)
-      onCambiado({ personas: data.personas })
-      setNuevaPersona('')
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setAgregandoPersona(false)
-    }
-  }
-
   async function handleCambiarMaterial(material, fechaEstimada) {
     setError('')
     try {
@@ -119,13 +140,19 @@ function DetalleDeObra({ obra, accessToken, detalle, materiales, personas, onCam
   return (
     <div className="montaje-detalle">
       <div className="montaje-detalle-fila">
-        <div className="filtro-campo">
-          <label>Montador</label>
-          <SelectPersona valor={detalle?.montador} personas={personas} placeholder="Sin asignar" onCambio={(v) => guardarDetalle({ montador: v })} />
+        <div className="montaje-detalle-persona-bloque">
+          <div className="filtro-campo">
+            <label>Montador</label>
+            <SelectPersona valor={detalle?.montador} personas={personas} rol="montador" placeholder="Sin asignar" onCambio={(v) => guardarDetalle({ montador: v })} />
+          </div>
+          <AgregarPersona rol="montador" accessToken={accessToken} onAgregada={(personas) => onCambiado({ personas })} />
         </div>
-        <div className="filtro-campo">
-          <label>Ayudante</label>
-          <SelectPersona valor={detalle?.ayudante} personas={personas} placeholder="Sin asignar" onCambio={(v) => guardarDetalle({ ayudante: v })} />
+        <div className="montaje-detalle-persona-bloque">
+          <div className="filtro-campo">
+            <label>Ayudante</label>
+            <SelectPersona valor={detalle?.ayudante} personas={personas} rol="ayudante" placeholder="Sin asignar" onCambio={(v) => guardarDetalle({ ayudante: v })} />
+          </div>
+          <AgregarPersona rol="ayudante" accessToken={accessToken} onAgregada={(personas) => onCambiado({ personas })} />
         </div>
         <div className="filtro-campo">
           <label>Inicio estimado</label>
@@ -146,19 +173,6 @@ function DetalleDeObra({ obra, accessToken, detalle, materiales, personas, onCam
           />
         </div>
       </div>
-
-      <form className="montaje-detalle-agregar-persona" onSubmit={handleAgregarPersona}>
-        <input
-          type="text"
-          className="input-filtro"
-          placeholder="Agregar un nombre nuevo a la lista…"
-          value={nuevaPersona}
-          onChange={(e) => setNuevaPersona(e.target.value)}
-        />
-        <button type="submit" className="btn-secundario" disabled={agregandoPersona || !nuevaPersona.trim()}>
-          + Agregar a la lista
-        </button>
-      </form>
 
       <label className="montaje-detalle-acristalada">
         <input
