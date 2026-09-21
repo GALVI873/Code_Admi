@@ -2562,6 +2562,17 @@ select.celda-editable-material {
   color: #af601a;
 }
 
+.badge-estatus-adicional-alvarada {
+  background: #f6efe4;
+  color: #a0672e;
+}
+
+.adicionales-obra-estatus-con-alvarada {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .badge-estatus-adicional-aceptado {
   background: #d5f5e3;
   color: #1e8449;

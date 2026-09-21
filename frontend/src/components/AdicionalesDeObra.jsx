@@ -9,19 +9,22 @@ import {
   subirPdfAdicionalObra,
 } from '../api/client.js'
 
-const ESTATUS_ADICIONAL_OPCIONES = ['En Valoración', 'Enviado', 'Modificando', 'Aceptado']
+const ESTATUS_ADICIONAL_OPCIONES = ['En Valoración', 'Enviado', 'Modificando', 'Alvarada', 'Aceptado']
 // Mismas clases que ya usa el select de Estatus en Orden del día/General —
-// no hace falta CSS nuevo para "Aceptado" (reutiliza select-estatus-aceptado).
+// no hace falta CSS nuevo para "Alvarada"/"Aceptado" (reutilizan
+// select-estatus-alvarada/select-estatus-aceptado).
 const CLASE_ESTATUS_ADICIONAL = {
   'En Valoración': 'select-estatus-en-valoracion',
   Enviado: 'select-estatus-enviado',
   Modificando: 'select-estatus-modificando',
+  Alvarada: 'select-estatus-alvarada',
   Aceptado: 'select-estatus-aceptado',
 }
 const CLASE_BADGE_ESTATUS_ADICIONAL = {
   'En Valoración': 'en-valoracion',
   Enviado: 'enviado',
   Modificando: 'modificando',
+  Alvarada: 'alvarada',
   Aceptado: 'aceptado',
 }
 const CLASE_PRIORIDAD_ADICIONAL = {
@@ -58,25 +61,49 @@ function formatoFecha(iso) {
 
 // Un adicional arranca siempre "En Valoración" (recién cargado, todavía sin
 // mandar) — el flujo típico es En Valoración → Enviado → Modificando (si el
-// cliente pide cambios sobre lo ya enviado) → Aceptado, aunque el select no
-// obliga ese orden. Cambiar el estatus es una decisión manual, igual que el
-// resto de los campos de esta vista es trabajo operativo de Geraldinne
-// (requiere presupuestos.ver_seguimiento); Álvaro lo ve pero no lo cambia.
-function SelectEstatusAdicional({ adicional, onCambio, puedeCambiar }) {
-  if (!puedeCambiar) {
-    const clase = CLASE_BADGE_ESTATUS_ADICIONAL[adicional.estatus] || 'en-valoracion'
-    return <span className={`badge-estatus-adicional badge-estatus-adicional-${clase}`}>{adicional.estatus}</span>
+// cliente pide cambios sobre lo ya enviado) → Alvarada → Aceptado, aunque el
+// select no obliga ese orden. Cambiar el estatus es trabajo operativo de
+// Geraldinne (requiere presupuestos.ver_seguimiento) — puede ponerlo en
+// cualquiera de los cinco.
+//
+// "Alvarada" (a pedido de Álvaro, 2026-09-21) es la excepción: Álvaro/
+// Valentina (permiso presupuestos.gestionar_prioridad, sin ver_seguimiento)
+// puede marcarla él mismo con un botón puntual — significa que a él el
+// cliente ya se lo aceptó (de palabra), pero el trámite formal (mandar el
+// correo de aceptación y cargar el PDF, ver PdfAdicional) lo sigue llevando
+// Geraldinne. No tiene acceso al resto de los estatus.
+function SelectEstatusAdicional({ adicional, onCambio, puedeCambiar, puedeMarcarAlvarada, onMarcarAlvarada }) {
+  if (puedeCambiar) {
+    return (
+      <select
+        className={`select-inline select-estatus ${CLASE_ESTATUS_ADICIONAL[adicional.estatus] || ''}`}
+        value={adicional.estatus}
+        onChange={(e) => onCambio(adicional.id, e.target.value)}
+      >
+        {ESTATUS_ADICIONAL_OPCIONES.map((op) => (
+          <option key={op} value={op}>{op}</option>
+        ))}
+      </select>
+    )
   }
+
+  const clase = CLASE_BADGE_ESTATUS_ADICIONAL[adicional.estatus] || 'en-valoracion'
+  const badge = <span className={`badge-estatus-adicional badge-estatus-adicional-${clase}`}>{adicional.estatus}</span>
+  const puedeMarcarAhora = puedeMarcarAlvarada && adicional.estatus !== 'Alvarada' && adicional.estatus !== 'Aceptado'
+  if (!puedeMarcarAhora) return badge
+
   return (
-    <select
-      className={`select-inline select-estatus ${CLASE_ESTATUS_ADICIONAL[adicional.estatus] || ''}`}
-      value={adicional.estatus}
-      onChange={(e) => onCambio(adicional.id, e.target.value)}
-    >
-      {ESTATUS_ADICIONAL_OPCIONES.map((op) => (
-        <option key={op} value={op}>{op}</option>
-      ))}
-    </select>
+    <span className="adicionales-obra-estatus-con-alvarada">
+      {badge}
+      <button
+        type="button"
+        className="adicionales-obra-pdf-boton"
+        onClick={() => onMarcarAlvarada(adicional.id)}
+        title="A vos el cliente ya te lo aceptó — Geraldinne se encarga del correo y del PDF"
+      >
+        Marcar Alvarada
+      </button>
+    </span>
   )
 }
 
@@ -155,6 +182,9 @@ export default function AdicionalesDeObra() {
   const { accessToken, tienePermiso } = useAuth()
   const puedeCambiarEstatus = tienePermiso('presupuestos.ver_seguimiento')
   const puedeCambiarPrioridad = tienePermiso('presupuestos.gestionar_prioridad')
+  // Mismo permiso que la prioridad (exclusivo de Álvaro/Valentina) — ver
+  // comentario de SelectEstatusAdicional.
+  const puedeMarcarAlvarada = puedeCambiarPrioridad
   const [adicionales, setAdicionales] = useState([])
   const [obrasDisponibles, setObrasDisponibles] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -206,7 +236,7 @@ export default function AdicionalesDeObra() {
   }
 
   async function handleCambiarEstatus(id, estatus) {
-    if (!puedeCambiarEstatus) return
+    if (!puedeCambiarEstatus && !(puedeMarcarAlvarada && estatus === 'Alvarada')) return
     const anteriores = adicionales
     setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, estatus } : a)))
     try {
@@ -342,7 +372,15 @@ export default function AdicionalesDeObra() {
                 <tr key={a.id}>
                   <td className="adicionales-obra-col-obra">{a.obra}</td>
                   <td>{a.obra_cliente || 'Sin cliente'}</td>
-                  <td><SelectEstatusAdicional adicional={a} onCambio={handleCambiarEstatus} puedeCambiar={puedeCambiarEstatus} /></td>
+                  <td>
+                    <SelectEstatusAdicional
+                      adicional={a}
+                      onCambio={handleCambiarEstatus}
+                      puedeCambiar={puedeCambiarEstatus}
+                      puedeMarcarAlvarada={puedeMarcarAlvarada}
+                      onMarcarAlvarada={(id) => handleCambiarEstatus(id, 'Alvarada')}
+                    />
+                  </td>
                   <td><SelectPrioridadAdicional adicional={a} onCambio={handleCambiarPrioridad} puedeCambiar={puedeCambiarPrioridad} /></td>
                   <td>{formatoFecha(a.fecha_solicitud) || '—'}</td>
                   <td className="adicionales-obra-col-detalle">{a.detalle}</td>

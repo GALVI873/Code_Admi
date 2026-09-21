@@ -23,13 +23,18 @@ declare(strict_types=1);
 // POST: crea un adicional {obra, fecha_solicitud, detalle, solicitado_por} —
 // arranca siempre en estatus "En Valoración" y prioridad "Normal".
 // PATCH: {id, estatus} cambia el estatus ("En Valoración"/"Enviado"/
-// "Modificando"/"Aceptado") — como el resto de los campos, es Geraldinne
-// quien lo hace a mano (requiere presupuestos.ver_seguimiento, no alcanza
-// con ver_todos). {id, prioridad} cambia la prioridad ("Alta"/"Normal") —
-// esa es exclusiva de Álvaro/Valentina (requiere
-// presupuestos.gestionar_prioridad), mismo criterio que la prioridad de
-// Presupuesto: decide si el adicional aparece en el bloque de arriba de
-// "Orden del día".
+// "Modificando"/"Alvarada"/"Aceptado") — Geraldinne (requiere
+// presupuestos.ver_seguimiento) puede ponerlo en cualquiera de los cinco;
+// Álvaro/Valentina (requiere presupuestos.gestionar_prioridad, sin
+// ver_seguimiento) SOLO puede marcarlo "Alvarada" — a pedido de Álvaro,
+// 2026-09-21: significa que a él el cliente ya se lo aceptó (de palabra,
+// por teléfono, etc.), pero el trámite formal (el correo de aceptación y
+// cargar el PDF) lo sigue llevando Geraldinne — cualquier otro valor de
+// estatus mandado por alguien sin ver_seguimiento se rechaza. {id,
+// prioridad} cambia la prioridad ("Alta"/"Normal") — esa es exclusiva de
+// Álvaro/Valentina (requiere presupuestos.gestionar_prioridad), mismo
+// criterio que la prioridad de Presupuesto: decide si el adicional aparece
+// en el bloque de arriba de "Orden del día".
 // {id, pdf_base64, pdf_nombre_original} sube el PDF del adicional ya
 // aceptado por el cliente (a pedido de Álvaro, 2026-09-21: cuando un
 // adicional pasa a "Aceptado", Geraldinne carga acá el PDF firmado) —
@@ -46,7 +51,7 @@ declare(strict_types=1);
 // POST (SYNC_TOKEN) {accion:"marcar_pdf_enviado", id}: marca ese PDF como ya
 // subido a Drive — usado por enviar_adicionales_aceptados.js al terminar.
 
-const ESTATUS_ADICIONAL_VALIDOS = ['En Valoración', 'Enviado', 'Modificando', 'Aceptado'];
+const ESTATUS_ADICIONAL_VALIDOS = ['En Valoración', 'Enviado', 'Modificando', 'Alvarada', 'Aceptado'];
 const PRIORIDAD_ADICIONAL_VALIDOS = ['Alta', 'Normal'];
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
@@ -221,10 +226,19 @@ try {
         }
 
         if (array_key_exists('estatus', $body)) {
-            AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_seguimiento');
+            $tieneVerSeguimiento = in_array('presupuestos.ver_seguimiento', $usuario['permisos'] ?? [], true);
+            $tieneGestionarPrioridad = in_array('presupuestos.gestionar_prioridad', $usuario['permisos'] ?? [], true);
+            if (!$tieneVerSeguimiento && !$tieneGestionarPrioridad) {
+                Response::error('No autorizado para esta acción', 403);
+            }
             $estatus = trim((string) $body['estatus']);
             if (!in_array($estatus, ESTATUS_ADICIONAL_VALIDOS, true)) {
                 Response::error('"estatus" debe ser una de: ' . implode(', ', ESTATUS_ADICIONAL_VALIDOS), 422);
+            }
+            // Álvaro/Valentina (sin ver_seguimiento) solo puede marcar
+            // "Alvarada" — ver comentario de cabecera.
+            if (!$tieneVerSeguimiento && $estatus !== 'Alvarada') {
+                Response::error('Solo podés marcar un adicional como "Alvarada" — el resto del estatus lo maneja Geraldinne', 403);
             }
             $db->prepare("UPDATE adicionales_obra SET estatus = ?, actualizado_en = datetime('now') WHERE id = ?")
                 ->execute([$estatus, $id]);
