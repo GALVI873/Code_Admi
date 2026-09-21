@@ -945,6 +945,41 @@ body {
   overflow-y: auto;
 }
 
+/* "Descargar PDF" en Pendientes (a pedido de Álvaro, 2026-09-21) — dispara
+   window.print(), no hay librería de PDF propia. Deja en el papel solo lo
+   que tiene sentido ahí: se saca el menú, la franja de modo desarrollo, los
+   filtros/pestañas y cualquier control pensado para clickear en pantalla
+   (responder, archivar, el propio botón de descarga). Se fuerzan los
+   colores (algunos navegadores los sacan por default al imprimir) para que
+   las burbujas de "hecho" y las categorías Tareas/Recordatorios se sigan
+   distinguiendo en el PDF. Genérico a propósito (no específico de
+   Pendientes) por si otra vista suma su propio botón de imprimir más
+   adelante — reutiliza las mismas clases.*/
+@media print {
+  .app-sidebar,
+  .dev-banner,
+  .filtro-tabla,
+  .pendientes-boton-imprimir,
+  .notas-obra-archivar,
+  .notas-obra-respuesta-form {
+    display: none !important;
+  }
+
+  .app-content {
+    overflow: visible;
+  }
+
+  .dashboard {
+    max-width: none;
+    padding: 0;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
 .obras-seccion + .obras-seccion {
   margin-top: 28px;
 }

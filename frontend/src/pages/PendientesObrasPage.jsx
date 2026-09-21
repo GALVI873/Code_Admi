@@ -32,6 +32,15 @@ import {
 // directo desde acá, sin tener que entrar al detalle de la obra (pestaña
 // Notas) una por una — mismo botón de archivar y mismo hilo de respuestas
 // que ya existían en NotasObraAceptada.jsx, reutilizados tal cual.
+//
+// "Descargar PDF" (a pedido de Álvaro, 2026-09-21): no genera un PDF propio
+// — dispara el diálogo de impresión del navegador (window.print) sobre esta
+// misma vista ("Guardar como PDF" ahí lo resuelve en cualquier navegador,
+// sin agregar ninguna librería nueva). El CSS de impresión (ver
+// "@media print" en global.css) oculta el menú lateral, los filtros y los
+// controles que no tienen sentido en papel (responder, archivar, arrastrar)
+// y deja solo lo que se está viendo — tal cual quedó filtrado en pantalla
+// (obra elegida, pestaña Pendientes/Hechas).
 function formatoFechaHora(iso) {
   if (!iso) return ''
   const fecha = new Date(iso.replace(' ', 'T') + 'Z')
@@ -346,6 +355,11 @@ export default function PendientesObrasPage() {
           <h1>Pendientes</h1>
           <p>Notas que Álvaro dejó en Obras Aceptadas, juntas de todas las obras — se van sacando de acá a medida que se marcan como hechas.</p>
         </div>
+        {!cargando && !error && gruposObra.length > 0 && (
+          <button type="button" className="btn-secundario pendientes-boton-imprimir" onClick={() => window.print()}>
+            🖨 Descargar PDF
+          </button>
+        )}
       </header>
 
       {!cargando && !error && pendientes.length > 0 && (
