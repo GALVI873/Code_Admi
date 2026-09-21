@@ -154,6 +154,14 @@ try {
         $stmtOa->execute([$obraDebug]);
         $obraAceptada = $stmtOa->fetch();
 
+        $stmtParecidas = $db->prepare("SELECT id, obra FROM obras_aceptadas WHERE obra LIKE ?");
+        $stmtParecidas->execute(['%' . $obraDebug . '%']);
+        $obrasParecidas = $stmtParecidas->fetchAll();
+
+        $stmtNotasParecidas = $db->prepare("SELECT * FROM comentarios_obra WHERE obra LIKE ? ORDER BY creado_en ASC, id ASC");
+        $stmtNotasParecidas->execute(['%' . $obraDebug . '%']);
+        $notasParecidas = $stmtNotasParecidas->fetchAll();
+
         $stmtGestion = $db->query("
             SELECT u.email FROM usuarios u
             INNER JOIN usuario_roles ur ON ur.usuario_id = u.id
@@ -165,8 +173,10 @@ try {
         Response::json([
             'obra_buscada' => $obraDebug,
             'obra_aceptada_match' => $obraAceptada,
+            'obras_aceptadas_parecidas' => $obrasParecidas,
             'emails_gestion_obras' => $emailsGestion,
             'notas' => $todas,
+            'notas_parecidas' => $notasParecidas,
         ]);
     }
 
