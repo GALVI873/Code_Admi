@@ -7,10 +7,23 @@
 // con la librería xlsx: un ida-y-vuelta de xlsx sin ningún cambio ya infló
 // este mismo tipo de archivo de 149 KB a 5.4 MB (rompe formato/fórmulas).
 //
+// Busca la obra primero en "en estudio" (HOJAS DE CALCULO (PPTOS), donde el
+// PDF vive dentro de una carpeta "Enviados") y, si no la encuentra ahí,
+// en "SEGUIMIENTO DE OBRAS (Aceptadas)" (a pedido de Álvaro, 2026-09-21):
+// una obra que se acepta ANTES de correr este script ya no tiene carpeta
+// "Enviados" — traspasar_obras_aceptadas.js mueve el PDF suelto, directo a
+// la raíz de la carpeta de la obra ya aceptada — así que ahí se busca
+// distinto (sin bajar a una subcarpeta "Enviados"). Reportado con "Sector
+// Pueblos 33, 4 Izq": se aceptó sin que nadie hubiera corrido este script
+// todavía, y quedó con la Ficha a medio llenar sin forma de completarla
+// después.
+//
 // Uso:
 //   node llenar_ficha_obras.js "Prado Jerez" "Sauceda,8"   (obras puntuales, para pilotear)
-//   node llenar_ficha_obras.js --todas                      (todas las que tengan Enviados con PDF;
-//                                                             deja resultado_llenar_ficha.json con el detalle)
+//   node llenar_ficha_obras.js --todas                      (todas las de "en estudio" que tengan
+//                                                             Enviados con PDF; deja resultado_llenar_ficha.json
+//                                                             con el detalle — NO recorre Aceptadas, esa
+//                                                             ruta es solo para pedir una obra puntual por nombre)
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -19,6 +32,7 @@ const pdfParse = require('pdf-parse');
 const { extraerCamposFicha, extraerNumeroPpto, esPdfDeCarpinteria } = require('./extract_from_sent_pdf.js');
 
 const BASE = 'Z:/DRIVE GALVI/1. GALVI/1.OBRAS/1. ESTUDIOS Y SEGUIMIENTO/HOJAS DE CALCULO (PPTOS)/2026';
+const BASE_ACEPTADAS_ROOT = 'Z:/DRIVE GALVI/1. GALVI/1.OBRAS/1. ESTUDIOS Y SEGUIMIENTO/SEGUIMIENTO DE OBRAS (Aceptadas)';
 const PS_SCRIPT = path.join(__dirname, 'llenar_ficha_com.ps1');
 
 function normalizar(s) {
@@ -33,31 +47,56 @@ function listarDirs(dir) {
   }
 }
 
-// Busca recursivamente (sin bajar a subcarpetas de organización) una
-// carpeta cuyo nombre coincida con `nombreObjetivo`, en cualquier categoría/
-// contacto. Devuelve { rutaObra, categoria, contacto } o null.
-function buscarObra(nombreObjetivo) {
+// Busca (sin bajar a subcarpetas de organización) una carpeta cuyo nombre
+// coincida con `nombreObjetivo`, en cualquier categoría/contacto DENTRO de
+// `base`. Devuelve { rutaObra, categoria, contacto } o null.
+function buscarObraEnBase(base, nombreObjetivo) {
   const objetivo = normalizar(nombreObjetivo);
-  for (const cat of listarDirs(BASE)) {
+  for (const cat of listarDirs(base)) {
     if (cat.name === 'Particulares') {
-      for (const obra of listarDirs(path.join(BASE, cat.name))) {
+      for (const obra of listarDirs(path.join(base, cat.name))) {
         if (normalizar(obra.name) === objetivo) {
-          return { rutaObra: path.join(BASE, cat.name, obra.name), categoria: cat.name, contacto: null };
+          return { rutaObra: path.join(base, cat.name, obra.name), categoria: cat.name, contacto: null };
         }
       }
       continue;
     }
-    for (const contacto of listarDirs(path.join(BASE, cat.name))) {
-      for (const obra of listarDirs(path.join(BASE, cat.name, contacto.name))) {
+    for (const contacto of listarDirs(path.join(base, cat.name))) {
+      for (const obra of listarDirs(path.join(base, cat.name, contacto.name))) {
         if (normalizar(obra.name) === objetivo) {
           return {
-            rutaObra: path.join(BASE, cat.name, contacto.name, obra.name),
+            rutaObra: path.join(base, cat.name, contacto.name, obra.name),
             categoria: cat.name,
             contacto: contacto.name,
           };
         }
       }
     }
+  }
+  return null;
+}
+
+// Primero "en estudio" (BASE) — ahí el PDF vive dentro de una carpeta
+// "Enviados". Si no aparece, se prueba en cada carpeta de año dentro de
+// "SEGUIMIENTO DE OBRAS (Aceptadas)" (una obra ya aceptada, sin "Enviados":
+// el PDF queda suelto en la raíz de su carpeta — ver comentario de
+// cabecera). `aceptada: true` en el resultado le avisa al resto del script
+// que busque el PDF de esa otra forma.
+//
+// Una vez traspasada, el traspaso deja en "en estudio" una carpeta con el
+// mismo nombre pero prácticamente vacía (solo "_Archivo", visto en Drive
+// real con "Sector Pueblos 33, 4 Izq") — encontrarla ahí NO cuenta como
+// "encontrada de verdad" si no tiene ningún Excel de cálculo, si no, nunca
+// se llegaría a buscar en Aceptadas para una obra ya traspasada.
+function buscarObra(nombreObjetivo) {
+  const enEstudio = buscarObraEnBase(BASE, nombreObjetivo);
+  if (enEstudio && elegirCalculoVigente(enEstudio.rutaObra)) {
+    return { ...enEstudio, aceptada: false };
+  }
+
+  for (const anio of listarDirs(BASE_ACEPTADAS_ROOT)) {
+    const encontrada = buscarObraEnBase(path.join(BASE_ACEPTADAS_ROOT, anio.name), nombreObjetivo);
+    if (encontrada) return { ...encontrada, aceptada: true };
   }
   return null;
 }
@@ -104,6 +143,18 @@ function listarPdfsEnviados(rutaObra) {
   return pdfs;
 }
 
+// Una obra ya aceptada no tiene carpeta "Enviados" — traspasar_obras_
+// aceptadas.js mueve el PDF suelto, directo a la raíz de la carpeta de la
+// obra (confirmado en Drive real: "Sector Pueblos 33, 4 Izq" quedó con el
+// PDF ahí mismo, junto al Excel de cálculo). Shallow a propósito, no hace
+// falta bajar a "1.Organización" ni a ningún lado más.
+function listarPdfsSueltosAceptada(rutaObra) {
+  return fs
+    .readdirSync(rutaObra, { withFileTypes: true })
+    .filter((e) => e.isFile() && /\.pdf$/i.test(e.name) && !e.name.startsWith('~$'))
+    .map((e) => path.join(rutaObra, e.name));
+}
+
 // Clasifica los PDF de Enviados en "principal" (el de carpintería más
 // reciente — entre varias opciones "Opción A/Op.1" vs "Opción B/Op.2", gana
 // la más reciente, ya que la Ficha es un solo Excel y no hay dónde poner
@@ -112,9 +163,11 @@ function listarPdfsEnviados(rutaObra) {
 // estructura de un presupuesto de carpintería). Si no hay ningún PDF de
 // carpintería, la obra queda para llenado manual (motivo específico, no se
 // escribe nada).
-async function elegirPdfPrincipalYComplementarios(rutaObra) {
-  const pdfs = listarPdfsEnviados(rutaObra);
-  if (pdfs.length === 0) return { principal: null, complementarios: [], motivo: 'sin PDF en Enviados' };
+async function elegirPdfPrincipalYComplementarios(rutaObra, aceptada) {
+  const pdfs = aceptada ? listarPdfsSueltosAceptada(rutaObra) : listarPdfsEnviados(rutaObra);
+  if (pdfs.length === 0) {
+    return { principal: null, complementarios: [], motivo: aceptada ? 'sin PDF en la carpeta de la obra' : 'sin PDF en Enviados' };
+  }
 
   const clasificados = [];
   for (const rutaPdf of pdfs) {
@@ -222,7 +275,7 @@ async function procesarObraInfo(nombreObra, info) {
   const rutaCalculo = elegirCalculoVigente(info.rutaObra);
   if (!rutaCalculo) return { obra: nombreObra, ok: false, motivo: 'sin Excel de cálculo' };
 
-  const { principal, complementarios, motivo } = await elegirPdfPrincipalYComplementarios(info.rutaObra);
+  const { principal, complementarios, motivo } = await elegirPdfPrincipalYComplementarios(info.rutaObra, info.aceptada);
   if (!principal) return { obra: nombreObra, ok: false, motivo };
 
   const campos = extraerCamposFicha(principal.text);
