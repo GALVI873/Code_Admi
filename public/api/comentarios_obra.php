@@ -170,6 +170,22 @@ try {
         ");
         $emailsGestion = array_column($stmtGestion->fetchAll(), 'email');
 
+        // Cuántas notas de nivel superior (no respuestas), no archivadas,
+        // quedan ocultas de Pendientes en TODO el sistema por ser de autor
+        // con rol gestion_obras — para saber si Archanda es un caso único
+        // o si pasa en más obras.
+        $marcadoresGestion = implode(',', array_fill(0, count($emailsGestion), '?'));
+        $stmtOcultas = $db->prepare("
+            SELECT co.obra, COUNT(*) AS cantidad
+            FROM comentarios_obra co
+            INNER JOIN obras_aceptadas oa ON oa.obra = co.obra
+            WHERE co.archivado = 0 AND co.autor_email IN ($marcadoresGestion)
+            GROUP BY co.obra
+            ORDER BY co.obra
+        ");
+        $stmtOcultas->execute($emailsGestion);
+        $ocultasPorObra = $stmtOcultas->fetchAll();
+
         Response::json([
             'obra_buscada' => $obraDebug,
             'obra_aceptada_match' => $obraAceptada,
@@ -177,6 +193,7 @@ try {
             'emails_gestion_obras' => $emailsGestion,
             'notas' => $todas,
             'notas_parecidas' => $notasParecidas,
+            'notas_ocultas_de_pendientes_por_obra' => $ocultasPorObra,
         ]);
     }
 
