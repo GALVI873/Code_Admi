@@ -17,19 +17,36 @@ declare(strict_types=1);
 // Geraldinne la página completa de Obras Aceptadas solo para este
 // desplegable). El orden manual en sí se guarda con el mismo PATCH
 // {orden_agenda:[...]} de presupuestos_en_estudio.php (tabla orden_agenda
-// compartida, clave "adicional:<id>") — no tiene endpoint propio acá.
+// compartida, clave "adicional:<id>") — no tiene endpoint propio acá. No
+// devuelve pdf_base64 completo (puede pesar) — solo "tiene_pdf" y los datos
+// del envío a Drive.
 // POST: crea un adicional {obra, fecha_solicitud, detalle, solicitado_por} —
 // arranca siempre en estatus "En Valoración" y prioridad "Normal".
-// PATCH: {id, estatus} cambia el estatus ("En Valoración"/"Enviado") — como
-// el resto de los campos, es Geraldinne quien lo hace a mano (requiere
-// presupuestos.ver_seguimiento, no alcanza con ver_todos). {id, prioridad}
-// cambia la prioridad ("Alta"/"Normal") — esa es exclusiva de Álvaro/
-// Valentina (requiere presupuestos.gestionar_prioridad), mismo criterio que
-// la prioridad de Presupuesto: decide si el adicional aparece en el bloque
-// de arriba de "Orden del día".
+// PATCH: {id, estatus} cambia el estatus ("En Valoración"/"Enviado"/
+// "Modificando"/"Aceptado") — como el resto de los campos, es Geraldinne
+// quien lo hace a mano (requiere presupuestos.ver_seguimiento, no alcanza
+// con ver_todos). {id, prioridad} cambia la prioridad ("Alta"/"Normal") —
+// esa es exclusiva de Álvaro/Valentina (requiere
+// presupuestos.gestionar_prioridad), mismo criterio que la prioridad de
+// Presupuesto: decide si el adicional aparece en el bloque de arriba de
+// "Orden del día".
+// {id, pdf_base64, pdf_nombre_original} sube el PDF del adicional ya
+// aceptado por el cliente (a pedido de Álvaro, 2026-09-21: cuando un
+// adicional pasa a "Aceptado", Geraldinne carga acá el PDF firmado) —
+// requiere presupuestos.ver_seguimiento, no depende de que el estatus ya
+// esté en "Aceptado" (puede subirse antes o después del cambio de estatus).
+// No se sube a Drive al toque (el panel no tiene acceso directo, mismo
+// criterio que medidas_obra.php): queda en base64 en la fila, y
+// backend/drive_sync/enviar_adicionales_aceptados.js lo recoge en la
+// próxima sincronización y lo sube a "1.Organización/Adicionales" de esa
+// obra en Drive, con el nombre "Adicional de obra - <detalle>.pdf".
 // DELETE: {id} borra un adicional puntual (por si se cargó mal).
+// POST (SYNC_TOKEN) {accion:"listar_pdfs_pendientes_envio"}: adicionales con
+// un PDF cargado que todavía no se mandó a Drive.
+// POST (SYNC_TOKEN) {accion:"marcar_pdf_enviado", id}: marca ese PDF como ya
+// subido a Drive — usado por enviar_adicionales_aceptados.js al terminar.
 
-const ESTATUS_ADICIONAL_VALIDOS = ['En Valoración', 'Enviado'];
+const ESTATUS_ADICIONAL_VALIDOS = ['En Valoración', 'Enviado', 'Modificando', 'Aceptado'];
 const PRIORIDAD_ADICIONAL_VALIDOS = ['Alta', 'Normal'];
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
@@ -59,6 +76,13 @@ try {
     if (!in_array('prioridad', $columnasAdicionales, true)) {
         $db->exec("ALTER TABLE adicionales_obra ADD COLUMN prioridad TEXT NOT NULL DEFAULT 'Normal'");
     }
+    if (!in_array('pdf_base64', $columnasAdicionales, true)) {
+        $db->exec('ALTER TABLE adicionales_obra ADD COLUMN pdf_base64 TEXT');
+        $db->exec('ALTER TABLE adicionales_obra ADD COLUMN pdf_nombre_original TEXT');
+        $db->exec('ALTER TABLE adicionales_obra ADD COLUMN pdf_subido_por TEXT');
+        $db->exec('ALTER TABLE adicionales_obra ADD COLUMN pdf_subido_en TEXT');
+        $db->exec('ALTER TABLE adicionales_obra ADD COLUMN pdf_enviado_en TEXT');
+    }
 
     // Misma tabla que usa "Orden del día" para el orden manual de las obras
     // de presupuesto (presupuestos_en_estudio.php) — un adicional comparte
@@ -73,6 +97,37 @@ try {
           actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )
     ");
+
+    // Envío del PDF a Drive (SYNC_TOKEN, sin sesión) — ver comentario de
+    // cabecera. Se resuelve ANTES del chequeo de sesión de más abajo, mismo
+    // patrón que el resto de endpoints con una pata SYNC_TOKEN (p. ej.
+    // medidas_obra.php).
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $bodyPost = json_decode((string) file_get_contents('php://input'), true) ?? [];
+        $token = $_GET['token'] ?? $bodyPost['token'] ?? '';
+        if ($config['sync_token'] !== '' && hash_equals($config['sync_token'], (string) $token)) {
+            if (($bodyPost['accion'] ?? '') === 'listar_pdfs_pendientes_envio') {
+                $pendientes = $db->query("
+                    SELECT id, obra, detalle, pdf_base64, pdf_nombre_original
+                    FROM adicionales_obra
+                    WHERE pdf_base64 IS NOT NULL AND pdf_base64 != '' AND pdf_enviado_en IS NULL
+                ")->fetchAll();
+                Response::json(['pendientes' => $pendientes]);
+            }
+
+            if (($bodyPost['accion'] ?? '') === 'marcar_pdf_enviado') {
+                $idEnviado = (int) ($bodyPost['id'] ?? 0);
+                if ($idEnviado <= 0) {
+                    Response::error('Falta "id"', 422);
+                }
+                $db->prepare("UPDATE adicionales_obra SET pdf_enviado_en = datetime('now') WHERE id = ?")
+                    ->execute([$idEnviado]);
+                Response::json(['ok' => true]);
+            }
+
+            Response::error('Acción no reconocida', 422);
+        }
+    }
 
     $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
     AuthMiddleware::requiereAlgunPermiso($usuario, ['presupuestos.ver_todos', 'presupuestos.ver_seguimiento']);
@@ -93,6 +148,10 @@ try {
         }
         foreach ($adicionales as &$a) {
             $a['orden_agenda'] = $ordenPorClave['adicional:' . $a['id']] ?? null;
+            // El PDF completo no viaja en el listado (puede pesar) — solo si
+            // hay uno cargado y si ya se mandó a Drive.
+            $a['tiene_pdf'] = $a['pdf_base64'] !== null && $a['pdf_base64'] !== '';
+            unset($a['pdf_base64']);
         }
         unset($a);
 
@@ -106,7 +165,9 @@ try {
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
+        // Ya se leyó y decodificó más arriba (ver chequeo de SYNC_TOKEN) —
+        // se reutiliza en vez de volver a leer php://input.
+        $body = $bodyPost;
 
         $obra = trim((string) ($body['obra'] ?? ''));
         $detalle = trim((string) ($body['detalle'] ?? ''));
@@ -146,6 +207,8 @@ try {
         $stmtNuevo->execute([$id]);
         $nuevo = $stmtNuevo->fetch();
         $nuevo['obra_cliente'] = $obraExistente['cliente'];
+        $nuevo['tiene_pdf'] = false;
+        unset($nuevo['pdf_base64']);
 
         Response::json(['ok' => true, 'adicional' => $nuevo]);
     }
@@ -175,6 +238,27 @@ try {
             }
             $db->prepare("UPDATE adicionales_obra SET prioridad = ?, actualizado_en = datetime('now') WHERE id = ?")
                 ->execute([$prioridad, $id]);
+        }
+
+        if (array_key_exists('pdf_base64', $body)) {
+            AuthMiddleware::requierePermiso($usuario, 'presupuestos.ver_seguimiento');
+            $pdfBase64 = (string) $body['pdf_base64'];
+            if ($pdfBase64 === '') {
+                Response::error('Falta "pdf_base64"', 422);
+            }
+            $nombreOriginal = trim((string) ($body['pdf_nombre_original'] ?? ''));
+            // Nueva subida vuelve a marcar el PDF como pendiente de enviar a
+            // Drive, aunque ya se hubiera mandado uno antes (reemplazo).
+            $db->prepare("
+                UPDATE adicionales_obra SET
+                    pdf_base64 = ?,
+                    pdf_nombre_original = ?,
+                    pdf_subido_por = ?,
+                    pdf_subido_en = datetime('now'),
+                    pdf_enviado_en = NULL,
+                    actualizado_en = datetime('now')
+                WHERE id = ?
+            ")->execute([$pdfBase64, $nombreOriginal === '' ? null : $nombreOriginal, $usuario['nombre'] ?? null, $id]);
         }
 
         Response::json(['ok' => true]);

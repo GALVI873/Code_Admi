@@ -1,13 +1,28 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { adicionalesObra, agregarAdicionalObra, cambiarEstatusAdicionalObra, cambiarPrioridadAdicionalObra, eliminarAdicionalObra } from '../api/client.js'
+import {
+  adicionalesObra,
+  agregarAdicionalObra,
+  cambiarEstatusAdicionalObra,
+  cambiarPrioridadAdicionalObra,
+  eliminarAdicionalObra,
+  subirPdfAdicionalObra,
+} from '../api/client.js'
 
-const ESTATUS_ADICIONAL_OPCIONES = ['En Valoración', 'Enviado']
+const ESTATUS_ADICIONAL_OPCIONES = ['En Valoración', 'Enviado', 'Modificando', 'Aceptado']
 // Mismas clases que ya usa el select de Estatus en Orden del día/General —
-// no hace falta CSS nuevo.
+// no hace falta CSS nuevo para "Aceptado" (reutiliza select-estatus-aceptado).
 const CLASE_ESTATUS_ADICIONAL = {
   'En Valoración': 'select-estatus-en-valoracion',
   Enviado: 'select-estatus-enviado',
+  Modificando: 'select-estatus-modificando',
+  Aceptado: 'select-estatus-aceptado',
+}
+const CLASE_BADGE_ESTATUS_ADICIONAL = {
+  'En Valoración': 'en-valoracion',
+  Enviado: 'enviado',
+  Modificando: 'modificando',
+  Aceptado: 'aceptado',
 }
 const CLASE_PRIORIDAD_ADICIONAL = {
   Alta: 'select-prioridad-alta',
@@ -42,12 +57,15 @@ function formatoFecha(iso) {
 }
 
 // Un adicional arranca siempre "En Valoración" (recién cargado, todavía sin
-// mandar) — pasar a "Enviado" es una decisión manual, igual que el resto de
-// los campos de esta vista es trabajo operativo de Geraldinne (requiere
-// presupuestos.ver_seguimiento); Álvaro lo ve pero no lo cambia.
+// mandar) — el flujo típico es En Valoración → Enviado → Modificando (si el
+// cliente pide cambios sobre lo ya enviado) → Aceptado, aunque el select no
+// obliga ese orden. Cambiar el estatus es una decisión manual, igual que el
+// resto de los campos de esta vista es trabajo operativo de Geraldinne
+// (requiere presupuestos.ver_seguimiento); Álvaro lo ve pero no lo cambia.
 function SelectEstatusAdicional({ adicional, onCambio, puedeCambiar }) {
   if (!puedeCambiar) {
-    return <span className={`badge-estatus-adicional badge-estatus-adicional-${adicional.estatus === 'Enviado' ? 'enviado' : 'en-valoracion'}`}>{adicional.estatus}</span>
+    const clase = CLASE_BADGE_ESTATUS_ADICIONAL[adicional.estatus] || 'en-valoracion'
+    return <span className={`badge-estatus-adicional badge-estatus-adicional-${clase}`}>{adicional.estatus}</span>
   }
   return (
     <select
@@ -59,6 +77,71 @@ function SelectEstatusAdicional({ adicional, onCambio, puedeCambiar }) {
         <option key={op} value={op}>{op}</option>
       ))}
     </select>
+  )
+}
+
+// PDF del adicional ya aceptado por el cliente — a pedido de Álvaro
+// (2026-09-21): en cuanto un adicional pasa a "Aceptado", hace falta que
+// Geraldinne suba el PDF firmado para dejarlo guardado con la obra. No se
+// exige subirlo al mismo momento de cambiar el estatus (puede quedar
+// pendiente un rato) — ver adicionales_obra.php y
+// enviar_adicionales_aceptados.js (el panel no sube a Drive al toque, el
+// PDF viaja como base64 y un script aparte lo manda en la próxima
+// sincronización).
+function PdfAdicional({ adicional, puedeSubir, onSubir }) {
+  const inputRef = useRef(null)
+  const [subiendo, setSubiendo] = useState(false)
+  const [error, setError] = useState('')
+
+  if (adicional.estatus !== 'Aceptado') return null
+
+  if (adicional.tiene_pdf) {
+    return <span className="adicionales-obra-pdf-subido" title={adicional.pdf_nombre_original || undefined}>✓ PDF cargado</span>
+  }
+
+  if (!puedeSubir) {
+    return <span className="adicionales-obra-pdf-falta">Falta subir el PDF</span>
+  }
+
+  async function handleElegirArchivo(e) {
+    const archivo = e.target.files?.[0]
+    e.target.value = ''
+    if (!archivo) return
+    if (archivo.type !== 'application/pdf') {
+      setError('Tiene que ser un PDF')
+      return
+    }
+    setSubiendo(true)
+    setError('')
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const lector = new FileReader()
+        lector.onload = () => resolve(lector.result)
+        lector.onerror = () => reject(new Error('No se pudo leer el archivo'))
+        lector.readAsDataURL(archivo)
+      })
+      await onSubir(adicional.id, base64, archivo.name)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSubiendo(false)
+    }
+  }
+
+  return (
+    <div className="adicionales-obra-pdf-falta">
+      Falta el PDF
+      <button
+        type="button"
+        className="adicionales-obra-pdf-boton"
+        onClick={() => inputRef.current?.click()}
+        disabled={subiendo}
+      >
+        {subiendo ? 'Subiendo…' : 'Subir PDF'}
+      </button>
+      <input ref={inputRef} type="file" accept="application/pdf" hidden onChange={handleElegirArchivo} />
+      {error && <span className="auth-error">{error}</span>}
+    </div>
   )
 }
 
@@ -143,6 +226,17 @@ export default function AdicionalesDeObra() {
     } catch (err) {
       setAdicionales(anteriores)
       setError(err.message)
+    }
+  }
+
+  async function handleSubirPdf(id, pdfBase64, nombreArchivo) {
+    const anteriores = adicionales
+    setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, tiene_pdf: true, pdf_nombre_original: nombreArchivo } : a)))
+    try {
+      await subirPdfAdicionalObra(accessToken, id, pdfBase64, nombreArchivo)
+    } catch (err) {
+      setAdicionales(anteriores)
+      throw err
     }
   }
 
@@ -239,6 +333,7 @@ export default function AdicionalesDeObra() {
                 <th>Fecha solicitud</th>
                 <th>Detalle</th>
                 <th>Solicitante</th>
+                <th>PDF aceptado</th>
                 <th></th>
               </tr>
             </thead>
@@ -252,6 +347,7 @@ export default function AdicionalesDeObra() {
                   <td>{formatoFecha(a.fecha_solicitud) || '—'}</td>
                   <td className="adicionales-obra-col-detalle">{a.detalle}</td>
                   <td>{a.solicitado_por || '—'}</td>
+                  <td><PdfAdicional adicional={a} puedeSubir={puedeCambiarEstatus} onSubir={handleSubirPdf} /></td>
                   <td>
                     <button
                       type="button"

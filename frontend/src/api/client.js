@@ -357,3 +357,11 @@ export function eliminarAdicionalObra(accessToken, id) {
     body: JSON.stringify({ id }),
   })
 }
+
+export function subirPdfAdicionalObra(accessToken, id, pdfBase64, pdfNombreOriginal) {
+  return request('/adicionales_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ id, pdf_base64: pdfBase64, pdf_nombre_original: pdfNombreOriginal }),
+  })
+}

@@ -102,3 +102,10 @@ jobs:
       - name: Enviar medidas confirmadas al taller
         run: node enviar_medidas_taller.js
         continue-on-error: true
+
+      # PDF de un adicional de obra ya "Aceptado" por el cliente, cargado a
+      # mano por Geraldinne desde el panel — se sube a la carpeta
+      # "1.Organización/Adicionales" de esa obra (ver adicionales_obra.php).
+      - name: Enviar PDFs de adicionales aceptados
+        run: node enviar_adicionales_aceptados.js
+        continue-on-error: true
