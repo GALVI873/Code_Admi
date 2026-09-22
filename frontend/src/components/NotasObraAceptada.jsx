@@ -57,7 +57,7 @@ function NotaItem({ nota, obraBase, accessToken, puedeMarcarHecho, puedeArchivar
     setError('')
     try {
       const data = await agregarRespuestaNota(accessToken, obraBase, nota.id, texto)
-      onNuevaRespuesta(nota.id, data.respuesta)
+      onNuevaRespuesta(nota.id, data.respuesta, data.nota_hecho)
       setRespuesta('')
     } catch (err) {
       setError(err.message)
@@ -279,8 +279,14 @@ export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido 
     }
   }
 
-  function handleNuevaRespuesta(notaId, respuesta) {
-    setNotas((prev) => prev.map((n) => (n.id === notaId ? { ...n, respuestas: [...(n.respuestas || []), respuesta] } : n)))
+  // notaHecho viene del backend (comentarios_obra.php) — si Álvaro le
+  // vuelve a escribir a una nota que Alfredo ya había tildado, se destilda
+  // sola ahí (no acá): esto solo refleja en pantalla lo que ya pasó en la
+  // base, sin repetir esa lógica del lado del cliente.
+  function handleNuevaRespuesta(notaId, respuesta, notaHecho) {
+    setNotas((prev) => prev.map((n) => (n.id === notaId
+      ? { ...n, respuestas: [...(n.respuestas || []), respuesta], hecho: notaHecho ?? n.hecho }
+      : n)))
   }
 
   async function handleVaciarConversacion() {

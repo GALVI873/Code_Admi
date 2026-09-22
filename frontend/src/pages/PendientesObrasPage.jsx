@@ -122,7 +122,7 @@ function NotaPendiente({ nota, accessToken, puedeMarcarHecho, puedeCategorizar, 
     setError('')
     try {
       const data = await agregarRespuestaNota(accessToken, nota.obra, nota.id, texto)
-      onNuevaRespuesta(nota.id, data.respuesta)
+      onNuevaRespuesta(nota.id, data.respuesta, data.nota_hecho)
       setRespuesta('')
     } catch (err) {
       setError(err.message)
@@ -340,8 +340,14 @@ export default function PendientesObrasPage() {
     }
   }
 
-  function handleNuevaRespuesta(notaId, respuesta) {
-    setPendientes((prev) => prev.map((n) => (n.id === notaId ? { ...n, respuestas: [...(n.respuestas || []), respuesta] } : n)))
+  // notaHecho viene del backend (comentarios_obra.php) — si Álvaro le
+  // vuelve a escribir a una nota que Alfredo ya había tildado, se destilda
+  // sola ahí; esto solo refleja en pantalla lo que ya pasó en la base (la
+  // nota reaparece en la pestaña Pendientes al toque).
+  function handleNuevaRespuesta(notaId, respuesta, notaHecho) {
+    setPendientes((prev) => prev.map((n) => (n.id === notaId
+      ? { ...n, respuestas: [...(n.respuestas || []), respuesta], hecho: notaHecho ?? n.hecho }
+      : n)))
   }
 
   function handleAbrir(nota) {

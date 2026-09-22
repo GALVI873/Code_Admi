@@ -56,7 +56,13 @@ declare(strict_types=1);
 // comentarios_obra_respuestas: hilo corto de respuestas colgado de una nota
 // puntual (comentario_id) — a diferencia de la nota en sí, que es de
 // Álvaro, acá cualquiera de los dos puede escribir (típicamente Alfredo
-// contestando esa nota puntual, sin abrir una nota nueva aparte).
+// contestando esa nota puntual, sin abrir una nota nueva aparte). Si la nota
+// ya estaba tildada "hecho" y quien responde NO es gestion_obras (o sea,
+// Álvaro/admin, no Alfredo), se destilda sola al agregar la respuesta — a
+// pedido de Álvaro, 2026-09-22: si Alfredo la había dado por resuelta pero
+// después le vuelven a escribir ahí, no debería quedar escondida en
+// "Hechas" con algo nuevo sin atender. Si es Alfredo quien responde (un
+// comentario de cierre sobre algo que él mismo resolvió), no se destilda.
 // PATCH {id, hecho} y/o {id, archivado} y/o {id, categoria}: requiere
 // sesión + rol gestion_obras (hecho, específicamente Alfredo) o
 // gestion_obras/admin (archivado y categoria, cualquiera de los dos).
@@ -240,9 +246,31 @@ try {
             $stmt = $db->prepare('SELECT * FROM comentarios_obra_respuestas WHERE id = ?');
             $stmt->execute([$id]);
 
+            // A pedido de Álvaro (2026-09-22): si Alfredo ya había dado la
+            // nota por hecha y después Álvaro (o cualquiera que no sea
+            // gestion_obras) le vuelve a escribir ahí, la nota deja de estar
+            // resuelta de verdad — se destilda sola para que vuelva a
+            // aparecer en Pendientes, en vez de quedar escondida en Hechas
+            // con una respuesta nueva sin atender. Si es el propio Alfredo
+            // quien responde (ej. un comentario de cierre tipo "ya avisé a
+            // fulano"), NO se destilda — fue él quien la resolvió.
+            if (!tieneRol($usuario, 'gestion_obras')) {
+                $db->prepare('UPDATE comentarios_obra SET hecho = 0 WHERE id = ? AND hecho = 1')->execute([$comentarioId]);
+            }
+
             marcarLeido($db, $obra, $usuario['email']);
 
-            Response::json(['respuesta' => $stmt->fetch()]);
+            // "nota_hecho": el frontend actualiza el casillero de la nota
+            // con esto (en vez de recalcular la misma condición del lado
+            // del cliente) para no duplicar la regla de arriba.
+            $stmtNota = $db->prepare('SELECT hecho FROM comentarios_obra WHERE id = ?');
+            $stmtNota->execute([$comentarioId]);
+            $notaActual = $stmtNota->fetch();
+
+            Response::json([
+                'respuesta' => $stmt->fetch(),
+                'nota_hecho' => $notaActual ? (int) $notaActual['hecho'] : null,
+            ]);
         }
 
         $db->prepare('INSERT INTO comentarios_obra (obra, autor_nombre, autor_email, mensaje) VALUES (?, ?, ?, ?)')
