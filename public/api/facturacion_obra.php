@@ -128,29 +128,6 @@ try {
         )
     ");
 
-    // TEMPORAL — seed único de las líneas reales de Jose Abascal, leídas
-    // directo de su MEDYSEG (sacar después de usarlo una vez).
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $bodySeed = json_decode((string) file_get_contents('php://input'), true) ?? [];
-        $tokenSeed = $_GET['token'] ?? $bodySeed['token'] ?? '';
-        if ($config['sync_token'] !== '' && hash_equals($config['sync_token'], (string) $tokenSeed) && ($bodySeed['accion'] ?? '') === 'seed_lineas') {
-            $obraSeed = trim((string) ($bodySeed['obra'] ?? ''));
-            $lineasSeed = $bodySeed['lineas'] ?? [];
-            if ($obraSeed === '' || !is_array($lineasSeed)) {
-                Response::error('Faltan "obra" y/o "lineas"', 422);
-            }
-            $stmtIns = $db->prepare('INSERT INTO facturacion_linea (obra, concepto, presupuesto_ref, uds, precio_unit, total, orden) VALUES (?, ?, ?, ?, ?, ?, ?)');
-            $orden = 0;
-            foreach ($lineasSeed as $l) {
-                $orden++;
-                $uds = (float) ($l['uds'] ?? 0);
-                $precioUnit = (float) ($l['precio_unit'] ?? 0);
-                $stmtIns->execute([$obraSeed, (string) $l['concepto'], (string) ($l['presupuesto_ref'] ?? ''), $uds, $precioUnit, $uds * $precioUnit, $orden]);
-            }
-            Response::json(['ok' => true, 'insertadas' => count($lineasSeed)]);
-        }
-    }
-
     $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
     AuthMiddleware::requierePermiso($usuario, 'obras.ver_aceptadas');
 
