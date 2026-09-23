@@ -68,17 +68,21 @@ function DatosCliente({ obra, accessToken, datos, onCambiado }) {
   return (
     <div className="facturacion-datos-cliente">
       <div className="facturacion-fila-campos">
-        <div className="filtro-campo">
+        <div className="filtro-campo facturacion-campo-ancho">
           <label>Razón social</label>
           <input type="text" className="input-filtro" defaultValue={datos?.razon_social || ''} onBlur={(e) => guardar({ razon_social: e.target.value })} />
         </div>
-        <div className="filtro-campo">
-          <label>NIF / CIF</label>
-          <input type="text" className="input-filtro" defaultValue={datos?.nif || ''} onBlur={(e) => guardar({ nif: e.target.value })} />
-        </div>
+      </div>
+      <div className="facturacion-fila-campos">
         <div className="filtro-campo facturacion-campo-direccion">
           <label>Dirección fiscal</label>
           <input type="text" className="input-filtro" defaultValue={datos?.direccion_fiscal || ''} onBlur={(e) => guardar({ direccion_fiscal: e.target.value })} />
+        </div>
+      </div>
+      <div className="facturacion-fila-campos">
+        <div className="filtro-campo">
+          <label>NIF / CIF</label>
+          <input type="text" className="input-filtro" defaultValue={datos?.nif || ''} onBlur={(e) => guardar({ nif: e.target.value })} />
         </div>
         <div className="filtro-campo">
           <label>IVA %</label>
@@ -128,8 +132,8 @@ function FormAgregarLinea({ obra, accessToken, onAgregada }) {
 
   return (
     <form className="facturacion-form-linea" onSubmit={handleSubmit}>
-      <input type="text" className="input-filtro facturacion-input-concepto" placeholder="Concepto (posición o fuera de presupuesto, ej. chapas)…" value={concepto} onChange={(e) => setConcepto(e.target.value)} />
       <input type="text" className="input-filtro facturacion-input-ref" placeholder="Ref. ppto (opcional)" value={presupuestoRef} onChange={(e) => setPresupuestoRef(e.target.value)} />
+      <input type="text" className="input-filtro facturacion-input-concepto" placeholder="Concepto (posición o fuera de presupuesto, ej. chapas)…" value={concepto} onChange={(e) => setConcepto(e.target.value)} />
       <input type="number" step="0.01" className="input-filtro facturacion-input-uds" placeholder="Uds" value={uds} onChange={(e) => setUds(e.target.value)} />
       <input type="number" step="0.01" className="input-filtro facturacion-input-precio" placeholder="Precio unit." value={precioUnit} onChange={(e) => setPrecioUnit(e.target.value)} />
       <button type="submit" className="btn-secundario" disabled={enviando || !concepto.trim()}>+ Agregar línea</button>
@@ -165,8 +169,8 @@ function TablaLineas({ lineas, accessToken, onEliminada }) {
       <table className="tabla-adicionales facturacion-tabla-lineas">
         <thead>
           <tr>
-            <th>Concepto</th>
             <th>Ref. ppto</th>
+            <th>Concepto</th>
             <th>Uds</th>
             <th>Precio unit.</th>
             <th>Total</th>
@@ -178,8 +182,8 @@ function TablaLineas({ lineas, accessToken, onEliminada }) {
         <tbody>
           {lineas.map((l) => (
             <tr key={l.id}>
-              <td>{l.concepto}</td>
               <td>{l.presupuesto_ref || '—'}</td>
+              <td>{l.concepto}</td>
               <td>{l.uds}</td>
               <td>{euros(l.precio_unit)}</td>
               <td>{euros(l.total)}</td>
@@ -349,6 +353,7 @@ function NuevaRonda({ obra, accessToken, lineas, anticipos, rondas, onCreada }) 
         <table className="tabla-adicionales facturacion-tabla-lineas">
           <thead>
             <tr>
+              <th>Ref. ppto</th>
               <th>Concepto</th>
               <th>Pendiente</th>
               <th>A facturar esta ronda</th>
@@ -357,6 +362,7 @@ function NuevaRonda({ obra, accessToken, lineas, anticipos, rondas, onCreada }) 
           <tbody>
             {lineasConPendiente.map((l) => (
               <tr key={l.id}>
+                <td>{l.presupuesto_ref || '—'}</td>
                 <td>{l.concepto}</td>
                 <td>{euros(l.pendiente)}</td>
                 <td>
@@ -667,6 +673,39 @@ function HistorialRondas({ obra, accessToken, rondas, lineas, datosCliente, onCa
   )
 }
 
+// Resumen general arriba de todo (a pedido de Álvaro, 2026-09-23): antes
+// había que bajar hasta la tabla de Líneas y volver a subir para armar una
+// ronda, solo para acordarse de cuánto era el total del presupuesto y
+// cuánto quedaba pendiente — esto deja esos tres números a la vista todo
+// el tiempo, arriba de Datos del cliente/Anticipos.
+function ResumenPresupuesto({ lineas }) {
+  const totalPresupuesto = lineas.reduce((acc, l) => acc + Number(l.total), 0)
+  const totalFacturado = lineas.reduce((acc, l) => acc + Number(l.facturado), 0)
+  const totalPendiente = lineas.reduce((acc, l) => acc + Number(l.pendiente), 0)
+  const pctFacturado = totalPresupuesto > 0 ? (totalFacturado / totalPresupuesto) * 100 : 0
+
+  return (
+    <div className="facturacion-resumen">
+      <div className="facturacion-resumen-item">
+        <span className="facturacion-resumen-etiqueta">Presupuesto</span>
+        <span className="facturacion-resumen-valor">{euros(totalPresupuesto)} €</span>
+      </div>
+      <div className="facturacion-resumen-item">
+        <span className="facturacion-resumen-etiqueta">Facturado</span>
+        <span className="facturacion-resumen-valor facturacion-al-dia">{euros(totalFacturado)} €</span>
+      </div>
+      <div className="facturacion-resumen-item">
+        <span className="facturacion-resumen-etiqueta">Pendiente</span>
+        <span className="facturacion-resumen-valor facturacion-pendiente">{euros(totalPendiente)} €</span>
+      </div>
+      <div className="facturacion-resumen-barra">
+        <div className="facturacion-resumen-barra-relleno" style={{ width: `${Math.min(100, pctFacturado)}%` }} />
+      </div>
+      <span className="facturacion-resumen-pct">{pctFacturado.toFixed(1)}% facturado</span>
+    </div>
+  )
+}
+
 export default function FacturacionObra({ obra, accessToken }) {
   const [datos, setDatos] = useState(null)
   const [cargando, setCargando] = useState(true)
@@ -696,13 +735,28 @@ export default function FacturacionObra({ obra, accessToken }) {
 
   return (
     <div className="facturacion-obra">
-      <h3 className="montaje-subtitulo">Datos del cliente</h3>
-      <DatosCliente
-        obra={obra}
-        accessToken={accessToken}
-        datos={datos.datos_cliente}
-        onCambiado={(campos) => setDatos((prev) => ({ ...prev, datos_cliente: { ...prev.datos_cliente, ...campos } }))}
-      />
+      <ResumenPresupuesto lineas={datos.lineas} />
+
+      <div className="facturacion-fila-superior">
+        <div className="facturacion-columna">
+          <h3 className="montaje-subtitulo">Datos del cliente</h3>
+          <DatosCliente
+            obra={obra}
+            accessToken={accessToken}
+            datos={datos.datos_cliente}
+            onCambiado={(campos) => setDatos((prev) => ({ ...prev, datos_cliente: { ...prev.datos_cliente, ...campos } }))}
+          />
+        </div>
+        <div className="facturacion-columna">
+          <h3 className="montaje-subtitulo">Anticipos</h3>
+          <Anticipos
+            obra={obra}
+            accessToken={accessToken}
+            anticipos={datos.anticipos || []}
+            onCambiados={(anticipos) => setDatos((prev) => ({ ...prev, anticipos }))}
+          />
+        </div>
+      </div>
 
       <h3 className="montaje-subtitulo">Líneas</h3>
       <TablaLineas
@@ -711,14 +765,6 @@ export default function FacturacionObra({ obra, accessToken }) {
         onEliminada={(id) => setDatos((prev) => ({ ...prev, lineas: prev.lineas.filter((l) => l.id !== id) }))}
       />
       <FormAgregarLinea obra={obra} accessToken={accessToken} onAgregada={(l) => setDatos((prev) => ({ ...prev, lineas: [...prev.lineas, l] }))} />
-
-      <h3 className="montaje-subtitulo">Anticipos</h3>
-      <Anticipos
-        obra={obra}
-        accessToken={accessToken}
-        anticipos={datos.anticipos || []}
-        onCambiados={(anticipos) => setDatos((prev) => ({ ...prev, anticipos }))}
-      />
 
       <h3 className="montaje-subtitulo">Rondas de facturación</h3>
       <NuevaRonda

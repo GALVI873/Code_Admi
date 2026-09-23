@@ -3516,16 +3516,113 @@ select.celda-editable-material {
   gap: 4px;
 }
 
+/* Resumen fijo arriba de todo (a pedido de Álvaro, 2026-09-23) — para no
+   tener que bajar a la tabla de Líneas y volver a subir mientras se arma
+   una ronda de facturación. */
+.facturacion-resumen {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  background: #f7f9fc;
+  border: 1px solid #e3e8f0;
+  border-radius: 10px;
+  padding: 14px 20px;
+  margin-bottom: 20px;
+}
+
+.facturacion-resumen-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.facturacion-resumen-etiqueta {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: #7a8699;
+}
+
+.facturacion-resumen-valor {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--azul);
+}
+
+.facturacion-resumen-barra {
+  flex: 1;
+  min-width: 120px;
+  height: 8px;
+  border-radius: 4px;
+  background: #e3e8f0;
+  overflow: hidden;
+}
+
+.facturacion-resumen-barra-relleno {
+  height: 100%;
+  background: #1e8449;
+  border-radius: 4px;
+  transition: width .2s ease;
+}
+
+.facturacion-resumen-pct {
+  font-size: 12px;
+  color: #7a8699;
+  white-space: nowrap;
+}
+
+/* A pedido de Álvaro (2026-09-23): antes Datos del cliente y Anticipos
+   quedaban apilados uno debajo del otro, cada uno ocupando todo el ancho
+   para muy poco contenido — se ve mucho más vertical/angosto de lo que
+   hace falta en una pantalla ancha. Van lado a lado; en pantallas
+   angostas (o si el navegador queda chico) se apilan solas por el
+   flex-wrap, igual que el resto del panel. */
+.facturacion-fila-superior {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.facturacion-columna {
+  flex: 1;
+  min-width: 340px;
+}
+
 .facturacion-fila-campos {
   display: flex;
   gap: 16px;
   flex-wrap: wrap;
   align-items: flex-end;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
+/* Razón social/dirección fiscal en su propio renglón, ancho completo de la
+   columna — en un renglón compartido con otros campos quedaban recortados
+   (ej. "REFORMAS ANTANA C..."). .filtro-campo es flex-direction:row por
+   defecto (label + input lado a lado) — acá se pasa a columna (label
+   arriba, input abajo) para que el 100% de ancho se pueda calcular contra
+   el contenedor entero, no contra "lo que sobra" al lado del label. */
+.facturacion-campo-ancho,
 .facturacion-campo-direccion {
-  min-width: 260px;
+  flex: 1;
+  min-width: 220px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.facturacion-fila-campos .facturacion-campo-ancho .input-filtro,
+.facturacion-fila-campos .facturacion-campo-direccion .input-filtro {
+  /* .input-filtro trae "flex: 0 1 130px" pensado para un contenedor fila
+     (ahí el flex-basis cae en el ancho) — acá el contenedor es columna, así
+     que ese mismo flex-basis termina siendo el ALTO (130px de alto en vez
+     de ancho) si no se pisa el shorthand entero, no solo el width. */
+  flex: none;
+  width: 100%;
 }
 
 .facturacion-input-pct {
