@@ -763,6 +763,156 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   URL.revokeObjectURL(url)
 }
 
+function arrayBufferABase64(buffer) {
+  let binario = ''
+  const bytes = new Uint8Array(buffer)
+  for (let i = 0; i < bytes.byteLength; i++) binario += String.fromCharCode(bytes[i])
+  return btoa(binario)
+}
+
+// Versión PDF de la misma ronda — a pedido de Álvaro (2026-09-23), para
+// tener las dos opciones de descarga en el panel. No es una réplica
+// celda a celda como el .xlsx (jsPDF no tiene Calibri ni el motor de
+// celdas de Excel), pero usa el mismo logo, los mismos colores de marca
+// (teal FF21AEB1 / gris de texto) y el mismo orden de datos, para que
+// sirva como vista rápida o para mandar por mail sin abrir Excel.
+const TEAL_RGB = [0x21, 0xae, 0xb1]
+const GRIS_RGB = [0x80, 0x80, 0x80]
+
+async function generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas }) {
+  const { jsPDF } = await import('jspdf')
+  const { default: autoTable } = await import('jspdf-autotable')
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+
+  const logoBuffer = await (await fetch(logoGalvi)).arrayBuffer()
+  const logoBase64 = `data:image/png;base64,${arrayBufferABase64(logoBuffer)}`
+  doc.addImage(logoBase64, 'PNG', 14, 10, 36, 18.8)
+
+  const titulo = ronda.tipo === 'factura' ? 'FACTURA' : 'PROFORMA'
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(20)
+  doc.setTextColor(...GRIS_RGB)
+  doc.text(titulo, 196, 22, { align: 'right' })
+
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'bold')
+  ;[EMISOR.nombre, EMISOR.direccion, EMISOR.localidad, EMISOR.movil, EMISOR.telefono, EMISOR.fax, EMISOR.email, EMISOR.nif].forEach((texto, i) => {
+    doc.text(texto, 14, 36 + i * 3.6)
+  })
+
+  // Cliente (misma columna, debajo FECHA/Nº/NIF — igual que en el original,
+  // donde esos datos van debajo del bloque del cliente, no al costado).
+  const [direccionLinea1, direccionLinea2] = splitDireccionFiscal(datosCliente?.direccion_fiscal)
+  doc.setFontSize(9)
+  ;[datosCliente?.razon_social || 'Cliente sin datos cargados', direccionLinea1, direccionLinea2].filter(Boolean).forEach((texto, i) => {
+    doc.text(texto, 105, 36 + i * 4)
+  })
+
+  doc.setFontSize(8)
+  doc.text('FECHA:', 105, 52)
+  doc.text(formatoFecha(ronda.fecha), 130, 52)
+  doc.text(ronda.tipo === 'factura' ? 'Nº FACTURA:' : 'Nº PROFORMA:', 105, 56)
+  doc.text(ronda.numero_factura || '', 130, 56)
+  doc.text('NIF:', 105, 60)
+  doc.text(datosCliente?.nif || '', 130, 60)
+
+  doc.setFontSize(10)
+  doc.text(`Ref: ${obra}`, 105, 70, { align: 'center' })
+
+  const filasTabla = []
+  let baseImponible = 0
+  let facturacionOrigen = 0
+  for (const l of lineas) {
+    const importeEstaRonda = (ronda.lineas || []).find((rl) => rl.linea_id === l.id)?.importe || 0
+    if (importeEstaRonda === 0 && Number(l.total) === 0) continue
+    const factAnterior = facturadoAntesDe(l.id, ronda.numero, rondas)
+    const udsTotal = Number(l.uds)
+    const precioUnit = Number(l.precio_unit)
+    const udsFacturadas = precioUnit > 0 ? (factAnterior + importeEstaRonda) / precioUnit : 0
+    const udsMensual = precioUnit > 0 ? importeEstaRonda / precioUnit : 0
+    const udsPendientes = udsTotal - udsFacturadas
+    filasTabla.push([
+      l.concepto, euros(precioUnit), String(udsTotal), euros(l.total), euros(factAnterior),
+      euros(udsFacturadas), euros(udsPendientes), euros(udsMensual), euros(importeEstaRonda),
+    ])
+    baseImponible += importeEstaRonda
+    facturacionOrigen += factAnterior
+  }
+
+  autoTable(doc, {
+    startY: 74,
+    head: [['CONCEPTO', 'IMPORTE UNIT.', 'UDS.', 'TOTAL A FACTURAR', 'FACT. ANTERIOR', 'UDS FACTURADAS', 'UDS PENDIENTES', 'UDS MENSUAL', 'TOTAL MES ACTUAL']],
+    body: filasTabla,
+    theme: 'grid',
+    styles: { fontSize: 6.5, textColor: GRIS_RGB, lineColor: [191, 191, 191], lineWidth: 0.1 },
+    headStyles: { fillColor: TEAL_RGB, textColor: 255, fontStyle: 'bold', halign: 'center', fontSize: 6 },
+    columnStyles: {
+      0: { halign: 'left', cellWidth: 45 },
+      1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' },
+      5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' },
+    },
+    margin: { left: 14, right: 14 },
+  })
+
+  let y = doc.lastAutoTable.finalY + 6
+  const ivaPct = Number(datosCliente?.iva_pct ?? 21)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(8)
+  doc.setTextColor(...GRIS_RGB)
+  if (ivaPct === 0) {
+    doc.text('Operación sujeta a inversión del sujeto pasivo Articulo 84.1,2(s)', 14, y)
+    y += 6
+  }
+  doc.text(`Nº de Cuenta: ${EMISOR.cuenta}`, 14, y)
+  y += 4
+
+  let amortizacionTotal = 0
+  for (const am of ronda.amortizaciones || []) amortizacionTotal += Number(am.monto)
+  if (amortizacionTotal > 0) {
+    doc.setFont('helvetica', 'italic')
+    doc.text('Amortización de anticipo', 14, y + 4)
+    doc.text(euros(-amortizacionTotal), 196, y + 4, { align: 'right' })
+    y += 8
+  }
+
+  const baseTrasAnticipo = baseImponible - amortizacionTotal
+  const retencionPct = Number(datosCliente?.retencion_pct ?? 0)
+  const ivaMonto = baseTrasAnticipo * (ivaPct / 100)
+  const retencionMonto = baseTrasAnticipo * (retencionPct / 100)
+  const totalFacturar = baseTrasAnticipo + ivaMonto - retencionMonto
+  const totalPresupuesto = lineas.reduce((acc, l) => acc + Number(l.total), 0)
+
+  autoTable(doc, {
+    startY: y + 4,
+    body: [
+      ['PREVISIÓN DE FACTURACIÓN SEGÚN PRESUPUESTO', euros(totalPresupuesto)],
+      ['FACTURACIÓN ORIGEN (MESES ANTERIORES)', euros(facturacionOrigen)],
+      ['BASE IMPONIBLE (MES ACTUAL)', euros(baseTrasAnticipo)],
+      [`IVA (${ivaPct}%)`, euros(ivaMonto)],
+      [`RETENCIÓN (${retencionPct}%)`, euros(-retencionMonto)],
+      ['TOTAL A FACTURAR', euros(totalFacturar)],
+    ],
+    theme: 'grid',
+    styles: { fontSize: 8, textColor: GRIS_RGB, lineColor: [191, 191, 191], lineWidth: 0.1 },
+    columnStyles: { 0: { cellWidth: 130, fontStyle: 'bold' }, 1: { halign: 'right', cellWidth: 38 } },
+    margin: { left: 14, right: 14 },
+    didParseCell(data) {
+      if (data.row.index === 2 && data.column.index === 1) {
+        data.cell.styles.fillColor = TEAL_RGB
+        data.cell.styles.textColor = 255
+      }
+      if (data.row.index === 5) {
+        data.cell.styles.fillColor = TEAL_RGB
+        data.cell.styles.textColor = 255
+        data.cell.styles.fontStyle = 'bold'
+      }
+    },
+  })
+
+  const nombreArchivo = `${titulo} - ${obra} - ronda ${ronda.numero}.pdf`
+  doc.save(nombreArchivo)
+}
+
 function totalRonda(ronda) {
   return (ronda.lineas || []).reduce((acc, l) => acc + Number(l.importe), 0)
 }
@@ -794,11 +944,23 @@ function HistorialRondas({ obra, accessToken, rondas, lineas, datosCliente, onCa
   const [error, setError] = useState('')
   const [descargando, setDescargando] = useState(null)
 
-  async function handleDescargar(ronda) {
-    setDescargando(ronda.id)
+  async function handleDescargarExcel(ronda) {
+    setDescargando(`${ronda.id}-xlsx`)
     setError('')
     try {
       await generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setDescargando(null)
+    }
+  }
+
+  async function handleDescargarPdf(ronda) {
+    setDescargando(`${ronda.id}-pdf`)
+    setError('')
+    try {
+      await generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -847,8 +1009,11 @@ function HistorialRondas({ obra, accessToken, rondas, lineas, datosCliente, onCa
               <span>{formatoFecha(r.fecha)}</span>
               <span>{euros(total)} €</span>
               <span className="facturacion-ronda-numero-factura">{r.numero_factura ? `Nº ${r.numero_factura}` : 'Sin número asignado'}</span>
-              <button type="button" className="btn-secundario" onClick={() => handleDescargar(r)} disabled={descargando === r.id}>
-                {descargando === r.id ? 'Generando…' : '⬇ Descargar'}
+              <button type="button" className="btn-secundario" onClick={() => handleDescargarExcel(r)} disabled={descargando === `${r.id}-xlsx`}>
+                {descargando === `${r.id}-xlsx` ? 'Generando…' : '⬇ Excel'}
+              </button>
+              <button type="button" className="btn-secundario" onClick={() => handleDescargarPdf(r)} disabled={descargando === `${r.id}-pdf`}>
+                {descargando === `${r.id}-pdf` ? 'Generando…' : '⬇ PDF'}
               </button>
               {r.tipo === 'factura' && (
                 <button type="button" className="btn-secundario" onClick={() => handleAsignarNumero(r)}>Nº factura</button>
