@@ -3506,6 +3506,192 @@ select.celda-editable-material {
   margin-bottom: 24px;
 }
 
+/* Pestaña "Facturación" de Obras Aceptadas (a pedido de Álvaro,
+   2026-09-23) — ver FacturacionObra.jsx. Reutiliza .montaje-subtitulo,
+   .tabla-adicionales, .filtro-campo, .btn-secundario, .boton-icono — solo
+   estilos propios acá. */
+.facturacion-obra {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.facturacion-fila-campos {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 14px;
+}
+
+.facturacion-campo-direccion {
+  min-width: 260px;
+}
+
+.facturacion-input-pct {
+  width: 80px;
+}
+
+.facturacion-datos-cliente {
+  margin-bottom: 22px;
+}
+
+.facturacion-form-linea {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0 24px;
+  flex-wrap: wrap;
+}
+
+.facturacion-input-concepto {
+  flex: 1;
+  min-width: 220px;
+}
+
+.facturacion-input-ref {
+  width: 140px;
+}
+
+.facturacion-input-uds,
+.facturacion-input-precio {
+  width: 110px;
+}
+
+.facturacion-tabla-lineas td {
+  white-space: nowrap;
+}
+
+.facturacion-tabla-lineas td:first-child {
+  white-space: normal;
+}
+
+.facturacion-pendiente {
+  color: var(--rojo);
+  font-weight: 700;
+}
+
+.facturacion-al-dia {
+  color: #1e8449;
+}
+
+.facturacion-fila-totales td {
+  font-weight: 700;
+  border-top: 2px solid #e3e8f0;
+}
+
+.facturacion-anticipos {
+  margin-bottom: 24px;
+}
+
+.facturacion-lista-anticipos {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.facturacion-anticipo-item {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  background: #f7f9fc;
+  border: 1px solid #e3e8f0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.facturacion-anticipo-desc {
+  font-weight: 600;
+  flex: 1;
+  min-width: 160px;
+}
+
+.facturacion-anticipo-fecha {
+  color: #999;
+  font-size: 12px;
+}
+
+.facturacion-numero-ronda {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--azul);
+}
+
+.facturacion-nueva-ronda {
+  background: #f7f9fc;
+  border: 1px solid #e3e8f0;
+  border-radius: 10px;
+  padding: 16px;
+  margin: 10px 0 20px;
+}
+
+.facturacion-nueva-ronda-acciones {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.facturacion-historial {
+  margin-bottom: 10px;
+}
+
+.facturacion-lista-rondas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.facturacion-ronda-item {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  background: #f7f9fc;
+  border: 1px solid #e3e8f0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.facturacion-ronda-numero {
+  font-weight: 700;
+  color: var(--azul);
+}
+
+.facturacion-ronda-tipo {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+  padding: 3px 9px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.facturacion-ronda-tipo-proforma {
+  background: #eaf0fb;
+  color: #2980b9;
+}
+
+.facturacion-ronda-tipo-factura {
+  background: #d5f5e3;
+  color: #1e8449;
+}
+
+.facturacion-ronda-numero-factura {
+  color: #999;
+  font-size: 12px;
+  flex: 1;
+}
+
 /* "Descargar PDF" en Pendientes (a pedido de Álvaro, 2026-09-21) — dispara
    window.print(), no hay librería de PDF propia. Deja en el papel solo lo
    que tiene sentido ahí: se saca el menú, la franja de modo desarrollo, los

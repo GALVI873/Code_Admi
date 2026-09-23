@@ -435,3 +435,65 @@ export function eliminarDocumentoMontaje(accessToken, id) {
     body: JSON.stringify({ accion: 'eliminar_documento', id }),
   })
 }
+
+export function facturacionObra(accessToken, obra) {
+  return request(`/facturacion_obra.php?obra=${encodeURIComponent(obra)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
+export function actualizarDatosClienteFacturacion(accessToken, obra, campos) {
+  return request('/facturacion_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'actualizar_datos_cliente', obra, ...campos }),
+  })
+}
+
+export function agregarLineaFacturacion(accessToken, obra, campos) {
+  return request('/facturacion_obra.php', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'agregar_linea', obra, ...campos }),
+  })
+}
+
+export function eliminarLineaFacturacion(accessToken, id) {
+  return request('/facturacion_obra.php', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'eliminar_linea', id }),
+  })
+}
+
+export function agregarAnticipoFacturacion(accessToken, obra, campos) {
+  return request('/facturacion_obra.php', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'agregar_anticipo', obra, ...campos }),
+  })
+}
+
+export function crearRondaFacturacion(accessToken, obra, campos) {
+  return request('/facturacion_obra.php', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'crear_ronda', obra, ...campos }),
+  })
+}
+
+export function asignarNumeroFacturaRonda(accessToken, rondaId, numeroFactura) {
+  return request('/facturacion_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'asignar_numero_factura', ronda_id: rondaId, numero_factura: numeroFactura }),
+  })
+}
+
+export function eliminarRondaFacturacion(accessToken, id) {
+  return request('/facturacion_obra.php', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'eliminar_ronda', id }),
+  })
+}

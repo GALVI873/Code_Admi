@@ -22,6 +22,7 @@ import NotasObraAceptada from '../components/NotasObraAceptada.jsx'
 import DireccionContactoObra from '../components/DireccionContactoObra.jsx'
 import BitacoraObra from '../components/BitacoraObra.jsx'
 import MontajeObra from '../components/MontajeObra.jsx'
+import FacturacionObra from '../components/FacturacionObra.jsx'
 
 // Espacio de trabajo de Gestión de Obras — la lista de obras que
 // Geraldinne ya movió a "Aceptadas". Según la entrevista de Fase 1, desde
@@ -1613,7 +1614,7 @@ function EstatusObra({ materiales, onVerEnSeguimiento }) {
   )
 }
 
-const PESTANAS_DETALLE = ['Ficha', 'Estatus', 'Seguimiento', 'Planos', 'Montaje', 'Bitácora', 'Notas']
+const PESTANAS_DETALLE = ['Ficha', 'Estatus', 'Seguimiento', 'Planos', 'Montaje', 'Facturación', 'Bitácora', 'Notas']
 
 // Página propia (no modal): la información de una obra aceptada —
 // especialmente Seguimiento, con su tabla ancha y filtros por columna —
@@ -1708,6 +1709,7 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, direccio
       )}
       {pestana === 'Planos' && <PlanosObra obra={presupuesto.obra} materiales={materiales} />}
       {pestana === 'Montaje' && <MontajeObra obra={presupuesto.obra} accessToken={accessToken} />}
+      {pestana === 'Facturación' && <FacturacionObra obra={presupuesto.obra} accessToken={accessToken} />}
       {pestana === 'Bitácora' && (
         <BitacoraObra obra={presupuesto.obra} accessToken={accessToken} usuario={usuario} />
       )}
