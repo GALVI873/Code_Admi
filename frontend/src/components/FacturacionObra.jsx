@@ -785,6 +785,14 @@ function arrayBufferABase64(buffer) {
 // propietaria de Microsoft que no se puede redistribuir.
 const TEAL_RGB = [0x21, 0xae, 0xb1]
 const GRIS_RGB = [0x80, 0x80, 0x80]
+const BORDE_RGB = [191, 191, 191]
+// Límites de columna en mm (10 bordes = 9 columnas: CONCEPTO, IMPORTE UNIT.,
+// UDS., TOTAL A FACTURAR, FACT. ANTERIOR, UDS FACTURADAS, UDS PENDIENTES,
+// UDS MENSUAL, TOTAL MES ACTUAL) — las mismas para la tabla de líneas Y
+// para el bloque de totales de abajo, así el PDF queda igual de "escalonado"
+// que el .xlsx (cada total cae bajo la columna que le corresponde, no todo
+// amontonado en una sola columna de "valor").
+const COLS_X = [14, 60, 77, 89, 107, 125, 143, 161, 178, 196]
 
 async function registrarCarlito(doc) {
   const [regularBuffer, boldBuffer] = await Promise.all([
@@ -858,17 +866,28 @@ async function generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas }) {
     facturacionOrigen += factAnterior
   }
 
+  const anchoCol = (i) => COLS_X[i + 1] - COLS_X[i]
+
   autoTable(doc, {
     startY: 80,
-    head: [['CONCEPTO', 'IMPORTE UNIT.', 'UDS.', 'TOTAL A FACTURAR', 'FACT. ANTERIOR', 'UDS FACTURADAS', 'UDS PENDIENTES', 'UDS MENSUAL', 'TOTAL MES ACTUAL']],
+    head: [
+      [
+        { content: '', styles: { fillColor: [255, 255, 255] } },
+        { content: 'Presupuestado', colSpan: 3 },
+        { content: 'Origen', colSpan: 3 },
+        { content: 'Mes', colSpan: 2 },
+      ],
+      ['CONCEPTO', 'IMPORTE UNIT.', 'UDS.', 'TOTAL A FACTURAR', 'FACT. ANTERIOR', 'UDS FACTURADAS', 'UDS PENDIENTES', 'UDS MENSUAL', 'TOTAL FACTURAR MES ACTUAL'],
+    ],
     body: filasTabla,
     theme: 'grid',
-    styles: { font: 'Carlito', fontSize: 6.5, textColor: GRIS_RGB, lineColor: [191, 191, 191], lineWidth: 0.1 },
+    styles: { font: 'Carlito', fontSize: 6.5, textColor: GRIS_RGB, lineColor: BORDE_RGB, lineWidth: 0.1 },
     headStyles: { font: 'Carlito', fillColor: TEAL_RGB, textColor: 255, fontStyle: 'bold', halign: 'center', fontSize: 6 },
-    columnStyles: {
-      0: { halign: 'left', cellWidth: 45 },
-      1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' },
-      5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' },
+    columnStyles: Object.fromEntries([0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => [i, { cellWidth: anchoCol(i), halign: i === 0 ? 'left' : 'right' }])),
+    didParseCell(data) {
+      if (data.row.section === 'head' && data.row.index === 0 && data.column.index > 0) {
+        data.cell.styles.fontSize = 8
+      }
     },
     margin: { left: 14, right: 14 },
   })
@@ -901,32 +920,51 @@ async function generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas }) {
   const totalFacturar = baseTrasAnticipo + ivaMonto - retencionMonto
   const totalPresupuesto = lineas.reduce((acc, l) => acc + Number(l.total), 0)
 
-  autoTable(doc, {
-    startY: y + 4,
-    body: [
-      ['PREVISIÓN DE FACTURACIÓN SEGÚN PRESUPUESTO', euros(totalPresupuesto)],
-      ['FACTURACIÓN ORIGEN (MESES ANTERIORES)', euros(facturacionOrigen)],
-      ['BASE IMPONIBLE (MES ACTUAL)', euros(baseTrasAnticipo)],
-      [`IVA (${ivaPct}%)`, euros(ivaMonto)],
-      [`RETENCIÓN (${retencionPct}%)`, euros(-retencionMonto)],
-      ['TOTAL A FACTURAR', euros(totalFacturar)],
-    ],
-    theme: 'grid',
-    styles: { font: 'Carlito', fontSize: 8, textColor: GRIS_RGB, lineColor: [191, 191, 191], lineWidth: 0.1 },
-    columnStyles: { 0: { cellWidth: 130, fontStyle: 'bold' }, 1: { halign: 'right', cellWidth: 38 } },
-    margin: { left: 14, right: 14 },
-    didParseCell(data) {
-      if (data.row.index === 2 && data.column.index === 1) {
-        data.cell.styles.fillColor = TEAL_RGB
-        data.cell.styles.textColor = 255
-      }
-      if (data.row.index === 5) {
-        data.cell.styles.fillColor = TEAL_RGB
-        data.cell.styles.textColor = 255
-        data.cell.styles.fontStyle = 'bold'
-      }
-    },
-  })
+  // Bloque de totales dibujado a mano con la MISMA grilla de 9 columnas que
+  // la tabla de líneas (COLS_X) — igual que el .xlsx, donde cada total cae
+  // bajo su columna real (PREVISIÓN bajo "TOTAL A FACTURAR", FACTURACIÓN
+  // ORIGEN bajo "FACT. ANTERIOR", el resto bajo "TOTAL MES ACTUAL") en vez
+  // de una tabla genérica de 2 columnas.
+  const filaInicioFooter = y + 4
+  function filaFooterPdf(yFila, alto, { etiqueta, colEtiquetaHasta, valor, colValor, pct, fillFullRow, fillValueOnly }) {
+    for (let i = 0; i < 9; i++) {
+      const x0 = COLS_X[i]
+      const ancho = COLS_X[i + 1] - x0
+      const rellenar = fillFullRow || (fillValueOnly && i === colValor)
+      doc.setDrawColor(...BORDE_RGB)
+      doc.setLineWidth(0.1)
+      if (rellenar) doc.setFillColor(...TEAL_RGB)
+      doc.rect(x0, yFila, ancho, alto, rellenar ? 'FD' : 'S')
+    }
+    const colorTexto = fillFullRow ? [255, 255, 255] : GRIS_RGB
+    doc.setFont('Carlito', 'bold')
+    doc.setFontSize(8)
+    doc.setTextColor(...colorTexto)
+    const textoEtiqueta = doc.splitTextToSize(etiqueta, COLS_X[colEtiquetaHasta] - COLS_X[0] - 2)
+    doc.text(textoEtiqueta, COLS_X[0] + 1, yFila + alto / 2 - (textoEtiqueta.length - 1) * 1.3, { baseline: 'middle' })
+    if (pct !== undefined) {
+      doc.setFont('Carlito', 'normal')
+      doc.text(`${pct}%`, (COLS_X[1] + COLS_X[2]) / 2, yFila + alto / 2, { align: 'center', baseline: 'middle' })
+    }
+    const colorValor = fillFullRow || fillValueOnly ? [255, 255, 255] : GRIS_RGB
+    doc.setFont('Carlito', fillFullRow ? 'bold' : 'normal')
+    doc.setTextColor(...colorValor)
+    doc.text(valor, COLS_X[colValor + 1] - 1, yFila + alto / 2, { align: 'right', baseline: 'middle' })
+  }
+
+  filaFooterPdf(filaInicioFooter, 7, { etiqueta: 'PREVISIÓN DE FACTURACIÓN SEGÚN PRESUPUESTO', colEtiquetaHasta: 3, valor: euros(totalPresupuesto), colValor: 3 })
+  filaFooterPdf(filaInicioFooter + 7, 7, { etiqueta: 'FACTURACIÓN ORIGEN (MESES ANTERIORES)', colEtiquetaHasta: 4, valor: euros(facturacionOrigen), colValor: 4 })
+  filaFooterPdf(filaInicioFooter + 14, 6, { etiqueta: 'BASE IMPONIBLE (MES ACTUAL)', colEtiquetaHasta: 8, valor: euros(baseTrasAnticipo), colValor: 8, fillValueOnly: true })
+  filaFooterPdf(filaInicioFooter + 20, 6, { etiqueta: 'IVA', colEtiquetaHasta: 8, valor: euros(ivaMonto), colValor: 8, pct: ivaPct })
+  filaFooterPdf(filaInicioFooter + 26, 6, { etiqueta: 'RETENCIÓN', colEtiquetaHasta: 8, valor: euros(-retencionMonto), colValor: 8, pct: retencionPct })
+  filaFooterPdf(filaInicioFooter + 32, 6, { etiqueta: 'TOTAL A FACTURAR', colEtiquetaHasta: 8, valor: euros(totalFacturar), colValor: 8, fillFullRow: true })
+
+  // Franja vertical del Registro Mercantil de GALVI, igual que en el
+  // original — corre rotada por el borde izquierdo de toda la tabla.
+  doc.setFont('Carlito', 'normal')
+  doc.setFontSize(6)
+  doc.setTextColor(...GRIS_RGB)
+  doc.text(EMISOR.registroMercantil, 12, filaInicioFooter + 38, { angle: 90 })
 
   const nombreArchivo = `${titulo} - ${obra} - ronda ${ronda.numero}.pdf`
   doc.save(nombreArchivo)
