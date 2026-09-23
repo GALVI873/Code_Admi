@@ -673,6 +673,33 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   URL.revokeObjectURL(url)
 }
 
+function totalRonda(ronda) {
+  return (ronda.lineas || []).reduce((acc, l) => acc + Number(l.importe), 0)
+}
+
+// Sumatorio de proformas vs. facturas (a pedido de Álvaro, 2026-09-23): con
+// varias rondas cargadas no se veía de un vistazo cuánto llevaba proformado
+// y cuánto ya facturado de verdad — había que sumar la lista a mano.
+function ResumenRondas({ rondas }) {
+  const proformas = rondas.filter((r) => r.tipo === 'proforma')
+  const facturas = rondas.filter((r) => r.tipo === 'factura')
+  const totalProformas = proformas.reduce((acc, r) => acc + totalRonda(r), 0)
+  const totalFacturas = facturas.reduce((acc, r) => acc + totalRonda(r), 0)
+
+  return (
+    <div className="facturacion-resumen facturacion-resumen-rondas">
+      <div className="facturacion-resumen-item">
+        <span className="facturacion-resumen-etiqueta">Total proformado ({proformas.length})</span>
+        <span className="facturacion-resumen-valor">{euros(totalProformas)} €</span>
+      </div>
+      <div className="facturacion-resumen-item">
+        <span className="facturacion-resumen-etiqueta">Total facturado ({facturas.length})</span>
+        <span className="facturacion-resumen-valor facturacion-al-dia">{euros(totalFacturas)} €</span>
+      </div>
+    </div>
+  )
+}
+
 function HistorialRondas({ obra, accessToken, rondas, lineas, datosCliente, onCambiadas }) {
   const [error, setError] = useState('')
   const [descargando, setDescargando] = useState(null)
@@ -718,10 +745,11 @@ function HistorialRondas({ obra, accessToken, rondas, lineas, datosCliente, onCa
 
   return (
     <div className="facturacion-historial">
+      <ResumenRondas rondas={rondas} />
       {error && <div className="auth-error">{error}</div>}
       <ul className="facturacion-lista-rondas">
         {[...rondas].sort((a, b) => b.numero - a.numero).map((r) => {
-          const total = (r.lineas || []).reduce((acc, l) => acc + Number(l.importe), 0)
+          const total = totalRonda(r)
           return (
             <li key={r.id} className="facturacion-ronda-item">
               <span className="facturacion-ronda-numero">Ronda {r.numero}</span>
