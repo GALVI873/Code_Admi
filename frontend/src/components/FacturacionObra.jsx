@@ -542,22 +542,27 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   celdaTitulo.alignment = { horizontal: 'center', vertical: 'middle' }
 
   // Emisor (columna B, filas 2-9) y cliente (columna J, filas 3-5) — misma
-  // disposición que el original.
-  const fuenteEmisor = { name: 'Calibri', size: 9, bold: true }
+  // disposición que el original, pero a pedido de Álvaro (2026-09-23) con
+  // el mismo color/tamaño para los dos bloques y ambos justificados a la
+  // izquierda (el original tiene el bloque cliente en 11pt alineado a la
+  // derecha, acá se unifica con el del emisor para que se vea parejo).
+  const fuenteInfo = { name: 'Calibri', size: 9, bold: true, color: { argb: TEXTO_MARCA } }
+  const alineacionInfo = { horizontal: 'left', vertical: 'middle' }
   ;[[2, EMISOR.nombre], [3, EMISOR.direccion], [4, EMISOR.localidad], [5, EMISOR.movil], [6, EMISOR.telefono], [7, EMISOR.fax], [8, EMISOR.email], [9, EMISOR.nif]].forEach(([fila, texto]) => {
     const celda = ws.getCell(`B${fila}`)
     celda.value = texto
-    celda.font = fuenteEmisor
+    celda.font = fuenteInfo
+    celda.alignment = alineacionInfo
   })
 
-  const fuenteCliente = { name: 'Calibri (Cuerpo)', size: 11, bold: true }
   const [direccionLinea1, direccionLinea2] = splitDireccionFiscal(datosCliente?.direccion_fiscal)
   ws.getCell('J3').value = datosCliente?.razon_social || 'Cliente sin datos cargados'
-  ws.getCell('J3').font = fuenteCliente
   ws.getCell('J4').value = direccionLinea1
-  ws.getCell('J4').font = fuenteCliente
   ws.getCell('J5').value = direccionLinea2
-  ws.getCell('J5').font = fuenteCliente
+  ;['J3', 'J4', 'J5'].forEach((addr) => {
+    ws.getCell(addr).font = fuenteInfo
+    ws.getCell(addr).alignment = alineacionInfo
+  })
 
   const fuenteDato = { name: 'Calibri (Cuerpo)', size: 11, bold: true }
   ws.getCell('H9').value = 'FECHA:'
@@ -581,6 +586,7 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   ws.mergeCells('B13:J13')
   ws.getCell('B13').value = `Ref: ${obra}`
   ws.getCell('B13').font = { name: 'Calibri', size: 11, bold: true }
+  ws.getCell('B13').alignment = { horizontal: 'center', vertical: 'middle' }
 
   // Fila de agrupación ("Presupuestado" / "Origen" / "Mes") y cabecera de
   // columnas — mismo fondo celeste de marca y mismos tamaños de letra por
@@ -694,19 +700,29 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   const retencionMonto = baseTrasAnticipo * (retencionPct / 100)
   const totalFacturar = baseTrasAnticipo + ivaMonto - retencionMonto
 
+  // A pedido de Álvaro (2026-09-23): el bloque de totales del original va
+  // recuadrado entero (cada celda B:J con borde fino, como una mini-tabla),
+  // no solo la fila del total — y esa última fila (TOTAL A FACTURAR) va
+  // coloreada de punta a punta, no solo la celda con el importe.
+  const BORDE_CAJA = { top: BORDE_FINO, left: BORDE_FINO, bottom: BORDE_FINO, right: BORDE_FINO }
   function filaTotalCon(etiqueta, valorCol, colLetra, opciones = {}) {
     const fila = ws.getRow(filaActual)
     fila.height = opciones.height || 15.75
+    for (let c = 2; c <= 10; c++) {
+      const cel = fila.getCell(c)
+      cel.border = BORDE_CAJA
+      if (opciones.fillFullRow) cel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL } }
+    }
+    const relleno = opciones.fillFullRow || opciones.fillValue
     const celdaLabel = ws.getCell(`B${filaActual}`)
     celdaLabel.value = etiqueta
-    celdaLabel.font = { name: 'Calibri (Cuerpo)', bold: true, size: 8, color: opciones.fill ? { argb: 'FFFFFFFF' } : undefined }
+    celdaLabel.font = { name: 'Calibri (Cuerpo)', bold: true, size: 8, color: opciones.fillFullRow ? { argb: 'FFFFFFFF' } : undefined }
     celdaLabel.alignment = { vertical: 'middle', wrapText: true }
-    if (opciones.fill) celdaLabel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL } }
     const celda = ws.getCell(`${colLetra}${filaActual}`)
     celda.value = valorCol
     celda.numFmt = MONEY_FMT
-    celda.font = { name: 'Calibri (Cuerpo)', bold: !!opciones.bold, size: opciones.size || 9, color: opciones.fill ? { argb: 'FFFFFFFF' } : { argb: TEXTO_MARCA } }
-    if (opciones.fill) celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL } }
+    celda.font = { name: 'Calibri (Cuerpo)', bold: !!opciones.bold, size: opciones.size || 9, color: relleno ? { argb: 'FFFFFFFF' } : { argb: TEXTO_MARCA } }
+    if (opciones.fillValue && !opciones.fillFullRow) celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL } }
     if (opciones.pct !== undefined) {
       const celdaPct = ws.getCell(`C${filaActual}`)
       celdaPct.value = opciones.pct / 100
@@ -719,10 +735,10 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
 
   filaTotalCon('PREVISIÓN DE FACTURACIÓN SEGÚN PRESUPUESTO', lineas.reduce((acc, l) => acc + Number(l.total), 0), 'E', { height: 21 })
   filaTotalCon('FACTURACIÓN ORIGEN (MESES ANTERIORES)', facturacionOrigen, 'F', { height: 19.5 })
-  filaTotalCon('BASE IMPONIBLE (MES ACTUAL)', baseTrasAnticipo, 'J', { bold: true })
+  filaTotalCon('BASE IMPONIBLE (MES ACTUAL)', baseTrasAnticipo, 'J', { bold: true, fillValue: true })
   filaTotalCon('IVA', ivaMonto, 'J', { pct: ivaPct })
   filaTotalCon('RETENCIÓN', -retencionMonto, 'J', { pct: retencionPct })
-  filaTotalCon('TOTAL A FACTURAR', totalFacturar, 'J', { bold: true, fill: true })
+  filaTotalCon('TOTAL A FACTURAR', totalFacturar, 'J', { bold: true, fillFullRow: true })
 
   // Franja vertical decorativa del original: el dato del Registro Mercantil
   // de GALVI corriendo rotado 90º por el borde izquierdo de toda la tabla
