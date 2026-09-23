@@ -413,74 +413,145 @@ function NuevaRonda({ obra, accessToken, lineas, anticipos, rondas, onCreada }) 
 // las veces que se abre esta pestaña es solo para cargar/revisar líneas,
 // no para descargar un documento — así no infla el bundle principal que
 // se baja en CADA carga del panel, solo cuando de verdad hace falta.
+const MONEY_FMT = '#,##0.00'
+const UDS_FMT = '#,##0.00'
+const BORDE_FINO = { style: 'thin', color: { argb: 'FFBFBFBF' } }
+const BORDE_TABLA = { top: BORDE_FINO, left: BORDE_FINO, bottom: BORDE_FINO, right: BORDE_FINO }
+// Últimas 3 (I,J,K en real; acá G,H,I) llevan fondo celeste clarito en el
+// original ("Mes") — se marca igual para que salte a la vista cuál es la
+// plata de ESTA ronda entre todas las columnas.
+const FILL_MES = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAF2FB' } }
+
 async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas }) {
   const { default: ExcelJS } = await import('exceljs')
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet(ronda.tipo === 'factura' ? 'Factura' : 'Proforma')
   ws.columns = [
-    { width: 42 }, { width: 14 }, { width: 8 }, { width: 14 },
-    { width: 14 }, { width: 12 }, { width: 12 }, { width: 14 },
+    { width: 40 }, { width: 13 }, { width: 8 }, { width: 14 },
+    { width: 13 }, { width: 13 }, { width: 13 }, { width: 12 }, { width: 15 },
   ]
 
   const titulo = ronda.tipo === 'factura' ? 'FACTURA' : 'PROFORMA'
-  ws.addRow([titulo]).font = { bold: true, size: 16 }
-  ws.addRow([EMISOR.nombre]).font = { bold: true }
-  ws.addRow([EMISOR.direccion])
-  ws.addRow([EMISOR.localidad])
-  ws.addRow([EMISOR.contacto])
-  ws.addRow([EMISOR.nif])
-  ws.addRow([])
-  const filaCliente = ws.addRow([datosCliente?.razon_social || 'Cliente sin datos cargados'])
-  filaCliente.font = { bold: true }
-  if (datosCliente?.direccion_fiscal) ws.addRow([datosCliente.direccion_fiscal])
-  if (datosCliente?.nif) ws.addRow([`NIF/CIF: ${datosCliente.nif}`])
-  ws.addRow([])
+  ws.mergeCells('F1:I1')
+  const celdaTitulo = ws.getCell('F1')
+  celdaTitulo.value = titulo
+  celdaTitulo.font = { bold: true, size: 18 }
+  celdaTitulo.alignment = { horizontal: 'center' }
 
-  const filaFecha = ws.addRow(['FECHA:', formatoFecha(ronda.fecha)])
-  filaFecha.font = { bold: true }
-  const filaNumero = ws.addRow([ronda.tipo === 'factura' ? 'Nº FACTURA:' : 'Nº PROFORMA:', ronda.numero_factura || `(ronda ${ronda.numero})`])
-  filaNumero.font = { bold: true }
-  ws.addRow(['Ref:', obra])
-  ws.addRow([])
-
-  const encabezado = ws.addRow(['CONCEPTO', 'IMPORTE UNIT.', 'UDS.', 'TOTAL A FACTURAR', 'FACT. ANTERIOR', 'UDS PENDIENTES', 'UDS MENSUAL', 'TOTAL FACTURAR MES ACTUAL'])
-  encabezado.font = { bold: true }
-  encabezado.eachCell((cell) => {
-    cell.border = { bottom: { style: 'thin' } }
+  // Emisor (izquierda) y cliente (derecha), lado a lado — igual que el
+  // formato real en vez de todo apilado en una sola columna.
+  const filasEmisor = [EMISOR.nombre, EMISOR.direccion, EMISOR.localidad, EMISOR.contacto, EMISOR.nif]
+  filasEmisor.forEach((texto, i) => {
+    const celda = ws.getCell(`A${2 + i}`)
+    celda.value = texto
+    if (i === 0) celda.font = { bold: true }
   })
 
+  ws.mergeCells('F2:I2')
+  const celdaClienteNombre = ws.getCell('F2')
+  celdaClienteNombre.value = datosCliente?.razon_social || 'Cliente sin datos cargados'
+  celdaClienteNombre.font = { bold: true }
+  if (datosCliente?.direccion_fiscal) {
+    ws.mergeCells('F3:I3')
+    ws.getCell('F3').value = datosCliente.direccion_fiscal
+  }
+
+  ws.getCell('F5').value = 'FECHA:'
+  ws.getCell('F5').font = { bold: true }
+  ws.getCell('G5').value = formatoFecha(ronda.fecha)
+  ws.getCell('F6').value = ronda.tipo === 'factura' ? 'Nº FACTURA:' : 'Nº PROFORMA:'
+  ws.getCell('F6').font = { bold: true }
+  ws.getCell('G6').value = ronda.numero_factura || `(ronda ${ronda.numero})`
+  if (datosCliente?.nif) {
+    ws.getCell('F7').value = 'NIF/CIF:'
+    ws.getCell('F7').font = { bold: true }
+    ws.getCell('G7').value = datosCliente.nif
+  }
+
+  ws.getCell('A9').value = `Ref: ${obra}`
+  ws.getCell('A9').font = { bold: true }
+
+  // Fila de agrupación arriba de los encabezados de columna — "Presupuestado"
+  // / "Origen" / "Mes", igual que el original (ahí es donde más se nota la
+  // diferencia si falta: sin esto la tabla se ve toda al mismo nivel).
+  const filaGrupo = 11
+  ws.mergeCells(filaGrupo, 2, filaGrupo, 4)
+  ws.mergeCells(filaGrupo, 5, filaGrupo, 6)
+  ws.mergeCells(filaGrupo, 7, filaGrupo, 9)
+  ;[[2, 'Presupuestado'], [5, 'Origen'], [7, 'Mes']].forEach(([col, texto]) => {
+    const celda = ws.getRow(filaGrupo).getCell(col)
+    celda.value = texto
+    celda.font = { bold: true, italic: true }
+    celda.alignment = { horizontal: 'center' }
+  })
+
+  const encabezados = ['CONCEPTO', 'IMPORTE UNIT.', 'UDS.', 'TOTAL A FACTURAR', 'FACT. ANTERIOR', 'UDS FACTURADAS', 'UDS PENDIENTES', 'UDS MENSUAL', 'TOTAL FACTURAR MES ACTUAL']
+  const filaEncabezado = ws.getRow(filaGrupo + 1)
+  encabezados.forEach((texto, i) => {
+    const celda = filaEncabezado.getCell(i + 1)
+    celda.value = texto
+    celda.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+    celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } }
+    celda.alignment = { horizontal: i === 0 ? 'left' : 'center', vertical: 'middle', wrapText: true }
+    celda.border = BORDE_TABLA
+  })
+  filaEncabezado.height = 30
+
+  let filaActual = filaGrupo + 2
   let baseImponible = 0
   let facturacionOrigen = 0
   for (const l of lineas) {
     const importeEstaRonda = (ronda.lineas || []).find((rl) => rl.linea_id === l.id)?.importe || 0
     if (importeEstaRonda === 0 && Number(l.total) === 0) continue
     const factAnterior = facturadoAntesDe(l.id, ronda.numero, rondas)
-    const udsMensual = Number(l.precio_unit) > 0 ? importeEstaRonda / Number(l.precio_unit) : 0
-    const udsPendientes = Number(l.precio_unit) > 0 ? (Number(l.total) - factAnterior - importeEstaRonda) / Number(l.precio_unit) : 0
-    ws.addRow([
-      l.concepto,
-      Number(l.precio_unit),
-      Number(l.uds),
-      Number(l.total),
-      factAnterior,
-      udsPendientes,
-      udsMensual,
-      importeEstaRonda,
-    ])
+    const udsTotal = Number(l.uds)
+    const precioUnit = Number(l.precio_unit)
+    const udsFacturadas = precioUnit > 0 ? (factAnterior + importeEstaRonda) / precioUnit : 0
+    const udsMensual = precioUnit > 0 ? importeEstaRonda / precioUnit : 0
+    const udsPendientes = udsTotal - udsFacturadas
+
+    const fila = ws.getRow(filaActual)
+    fila.getCell(1).value = l.concepto
+    fila.getCell(2).value = precioUnit
+    fila.getCell(3).value = udsTotal
+    fila.getCell(4).value = Number(l.total)
+    fila.getCell(5).value = factAnterior
+    fila.getCell(6).value = udsFacturadas
+    fila.getCell(7).value = udsPendientes
+    fila.getCell(8).value = udsMensual
+    fila.getCell(9).value = importeEstaRonda
+    for (let c = 1; c <= 9; c++) {
+      const celda = fila.getCell(c)
+      celda.border = BORDE_TABLA
+      if (c === 2 || c === 4 || c === 5 || c === 9) celda.numFmt = MONEY_FMT
+      if (c === 3 || c === 6 || c === 7 || c === 8) celda.numFmt = UDS_FMT
+      if (c >= 7) celda.fill = FILL_MES
+      if (c >= 2) celda.alignment = { horizontal: 'right' }
+    }
+    filaActual++
+
     baseImponible += importeEstaRonda
     facturacionOrigen += factAnterior
   }
 
-  ws.addRow([])
-  ws.addRow(['Nº de Cuenta:', EMISOR.cuenta])
+  filaActual += 1
+  ws.getCell(`A${filaActual}`).value = 'Nº de Cuenta:'
+  ws.getCell(`A${filaActual}`).font = { bold: true }
+  ws.getCell(`B${filaActual}`).value = EMISOR.cuenta
+  filaActual += 2
 
   let amortizacionTotal = 0
   for (const am of ronda.amortizaciones || []) {
     amortizacionTotal += Number(am.monto)
   }
   if (amortizacionTotal > 0) {
-    const filaAmort = ws.addRow(['Amortización de anticipo', '', '', '', '', '', '', -amortizacionTotal])
-    filaAmort.font = { italic: true }
+    ws.getCell(`A${filaActual}`).value = 'Amortización de anticipo'
+    ws.getCell(`A${filaActual}`).font = { italic: true }
+    const celdaMonto = ws.getCell(`I${filaActual}`)
+    celdaMonto.value = -amortizacionTotal
+    celdaMonto.numFmt = MONEY_FMT
+    celdaMonto.font = { italic: true }
+    filaActual++
   }
 
   const baseTrasAnticipo = baseImponible - amortizacionTotal
@@ -490,15 +561,27 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   const retencionMonto = baseTrasAnticipo * (retencionPct / 100)
   const totalFacturar = baseTrasAnticipo + ivaMonto - retencionMonto
 
-  ws.addRow(['PREVISIÓN DE FACTURACIÓN SEGÚN PRESUPUESTO', '', '', lineas.reduce((acc, l) => acc + Number(l.total), 0)])
-  if (facturacionOrigen > 0) {
-    ws.addRow(['FACTURACIÓN ORIGEN (RONDAS ANTERIORES)', '', '', '', facturacionOrigen])
+  function filaTotalCon(etiqueta, valorCol, colLetra, opciones = {}) {
+    ws.getCell(`A${filaActual}`).value = etiqueta
+    ws.getCell(`A${filaActual}`).font = { bold: !!opciones.bold }
+    const celda = ws.getCell(`${colLetra}${filaActual}`)
+    celda.value = valorCol
+    celda.numFmt = MONEY_FMT
+    celda.font = { bold: !!opciones.bold, size: opciones.size }
+    if (opciones.etiqueta2) {
+      ws.getCell(`B${filaActual}`).value = opciones.etiqueta2
+    }
+    filaActual++
   }
-  ws.addRow(['BASE IMPONIBLE (ESTA RONDA)', '', '', '', '', '', '', baseTrasAnticipo]).font = { bold: true }
-  ws.addRow(['IVA', `${ivaPct}%`, '', '', '', '', '', ivaMonto])
-  ws.addRow(['RETENCIÓN', `${retencionPct}%`, '', '', '', '', '', -retencionMonto])
-  const filaTotal = ws.addRow(['TOTAL A FACTURAR', '', '', '', '', '', '', totalFacturar])
-  filaTotal.font = { bold: true, size: 12 }
+
+  filaTotalCon('PREVISIÓN DE FACTURACIÓN SEGÚN PRESUPUESTO', lineas.reduce((acc, l) => acc + Number(l.total), 0), 'D')
+  if (facturacionOrigen > 0) {
+    filaTotalCon('FACTURACIÓN ORIGEN (RONDAS ANTERIORES)', facturacionOrigen, 'E')
+  }
+  filaTotalCon('BASE IMPONIBLE (ESTA RONDA)', baseTrasAnticipo, 'I', { bold: true })
+  filaTotalCon('IVA', ivaMonto, 'I', { etiqueta2: `${ivaPct}%` })
+  filaTotalCon('RETENCIÓN', -retencionMonto, 'I', { etiqueta2: `${retencionPct}%` })
+  filaTotalCon('TOTAL A FACTURAR', totalFacturar, 'I', { bold: true, size: 13 })
 
   const buffer = await wb.xlsx.writeBuffer()
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
