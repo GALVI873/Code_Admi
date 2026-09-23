@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import logoGalvi from '../assets/logo_galvi_factura.png'
 import {
   facturacionObra,
   actualizarDatosClienteFacturacion,
@@ -32,7 +33,10 @@ const EMISOR = {
   nombre: 'Gestión de Aluminio y Vidrio, S.L.',
   direccion: 'C/Juan Ramón Jiménez, 2 - Bajo 1',
   localidad: '28036 - Madrid',
-  contacto: 'Móvil: 699 14 23 27 · Tlf: 91 344 04 62 · administracion@galvi.es',
+  movil: 'Móvil: 699 14 23 27',
+  telefono: 'Tlf: 91 344 04 62',
+  fax: 'Fax: 91 344 08 83',
+  email: 'administracion@galvi.es',
   nif: 'N.I.F.: B-84530955',
   cuenta: 'ES35 2100 2530 1813 0054 8475',
 }
@@ -481,102 +485,140 @@ function NuevaRonda({ obra, accessToken, lineas, anticipos, rondas, onCreada }) 
   )
 }
 
-// Arma el .xlsx de la proforma/factura para una ronda ya creada — mismas
-// columnas que el formato real (ver comentario de cabecera), calculando
-// para cada línea cuánto se había facturado ANTES de esta ronda y cuánto
-// queda pendiente después. Descarga directo en el navegador (no pasa por
-// Drive: no hace falta, es un documento para revisar/mandar al toque).
+// Arma el .xlsx de la proforma/factura para una ronda ya creada — a pedido
+// de Álvaro (2026-09-23): "dejalo como el que ya tenemos, con el logo, el
+// tipo de letra y demás" — esto ya NO es un diseño propio, es una réplica
+// celda a celda del formato real que usa Contabilidad (columnas, fuentes,
+// anchos, colores de fondo, bordes y el logo), sacada inspeccionando un
+// archivo real ya emitido (GALVI FRA 089-2026, obra Azalea) con ExcelJS
+// para copiar exactamente qué lleva cada celda. El color de fondo celeste
+// (FF21AEB1) es el color de marca que ya usan en cabeceras/agrupadores/
+// total final; el logo (logo_galvi_factura.png) se extrajo de ese mismo
+// archivo real.
 // import() dinámico: ExcelJS pesa bastante (~1MB) y la enorme mayoría de
 // las veces que se abre esta pestaña es solo para cargar/revisar líneas,
 // no para descargar un documento — así no infla el bundle principal que
 // se baja en CADA carga del panel, solo cuando de verdad hace falta.
 const MONEY_FMT = '#,##0.00'
 const UDS_FMT = '#,##0.00'
+const PCT_FMT = '0%'
+const TEAL = 'FF21AEB1'
+const TEXTO_MARCA = 'FF333399'
 const BORDE_FINO = { style: 'thin', color: { argb: 'FFBFBFBF' } }
-const BORDE_TABLA = { top: BORDE_FINO, left: BORDE_FINO, bottom: BORDE_FINO, right: BORDE_FINO }
-// Últimas 3 (I,J,K en real; acá G,H,I) llevan fondo celeste clarito en el
-// original ("Mes") — se marca igual para que salte a la vista cuál es la
-// plata de ESTA ronda entre todas las columnas.
-const FILL_MES = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAF2FB' } }
+
+function splitDireccionFiscal(direccion) {
+  if (!direccion) return ['', '']
+  const idx = direccion.lastIndexOf(',')
+  if (idx === -1) return [direccion, '']
+  return [direccion.slice(0, idx + 1).trim(), direccion.slice(idx + 1).trim()]
+}
 
 async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas }) {
   const { default: ExcelJS } = await import('exceljs')
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet(ronda.tipo === 'factura' ? 'Factura' : 'Proforma')
+  ws.properties.defaultRowHeight = 12
   ws.columns = [
-    { width: 40 }, { width: 13 }, { width: 8 }, { width: 14 },
-    { width: 13 }, { width: 13 }, { width: 13 }, { width: 12 }, { width: 15 },
+    { width: 1.875 }, { width: 31.125 }, { width: 7.875 }, { width: 5.375 }, { width: 9 },
+    { width: 8.5 }, { width: 6.25 }, { width: 8.125 }, { width: 6.875 }, { width: 9.5 }, { width: 1.25 },
   ]
 
+  // Logo real (extraído del archivo de Contabilidad) anclado igual que en
+  // el original: fila 1, arrancando en la columna B.
+  const logoBuffer = await (await fetch(logoGalvi)).arrayBuffer()
+  const logoId = wb.addImage({ buffer: logoBuffer, extension: 'png' })
+  ws.addImage(logoId, { tl: { col: 1, row: 0 }, ext: { width: 216, height: 113 } })
+  ws.getRow(1).height = 87
+
   const titulo = ronda.tipo === 'factura' ? 'FACTURA' : 'PROFORMA'
-  ws.mergeCells('F1:I1')
-  const celdaTitulo = ws.getCell('F1')
+  ws.mergeCells('G1:J1')
+  const celdaTitulo = ws.getCell('G1')
   celdaTitulo.value = titulo
-  celdaTitulo.font = { bold: true, size: 18 }
-  celdaTitulo.alignment = { horizontal: 'center' }
+  celdaTitulo.font = { name: 'Calibri', bold: true, size: 20, color: { argb: TEXTO_MARCA } }
+  celdaTitulo.alignment = { horizontal: 'center', vertical: 'middle' }
 
-  // Emisor (izquierda) y cliente (derecha), lado a lado — igual que el
-  // formato real en vez de todo apilado en una sola columna.
-  const filasEmisor = [EMISOR.nombre, EMISOR.direccion, EMISOR.localidad, EMISOR.contacto, EMISOR.nif]
-  filasEmisor.forEach((texto, i) => {
-    const celda = ws.getCell(`A${2 + i}`)
+  // Emisor (columna B, filas 2-9) y cliente (columna J, filas 3-5) — misma
+  // disposición que el original.
+  const fuenteEmisor = { name: 'Calibri', size: 9, bold: true }
+  ;[[2, EMISOR.nombre], [3, EMISOR.direccion], [4, EMISOR.localidad], [5, EMISOR.movil], [6, EMISOR.telefono], [7, EMISOR.fax], [8, EMISOR.email], [9, EMISOR.nif]].forEach(([fila, texto]) => {
+    const celda = ws.getCell(`B${fila}`)
     celda.value = texto
-    if (i === 0) celda.font = { bold: true }
+    celda.font = fuenteEmisor
   })
 
-  ws.mergeCells('F2:I2')
-  const celdaClienteNombre = ws.getCell('F2')
-  celdaClienteNombre.value = datosCliente?.razon_social || 'Cliente sin datos cargados'
-  celdaClienteNombre.font = { bold: true }
-  if (datosCliente?.direccion_fiscal) {
-    ws.mergeCells('F3:I3')
-    ws.getCell('F3').value = datosCliente.direccion_fiscal
-  }
+  const fuenteCliente = { name: 'Calibri', size: 11, bold: true }
+  const [direccionLinea1, direccionLinea2] = splitDireccionFiscal(datosCliente?.direccion_fiscal)
+  ws.getCell('J3').value = datosCliente?.razon_social || 'Cliente sin datos cargados'
+  ws.getCell('J3').font = fuenteCliente
+  ws.getCell('J4').value = direccionLinea1
+  ws.getCell('J4').font = fuenteCliente
+  ws.getCell('J5').value = direccionLinea2
+  ws.getCell('J5').font = fuenteCliente
 
-  ws.getCell('F5').value = 'FECHA:'
-  ws.getCell('F5').font = { bold: true }
-  ws.getCell('G5').value = formatoFecha(ronda.fecha)
-  ws.getCell('F6').value = ronda.tipo === 'factura' ? 'Nº FACTURA:' : 'Nº PROFORMA:'
-  ws.getCell('F6').font = { bold: true }
-  ws.getCell('G6').value = ronda.numero_factura || `(ronda ${ronda.numero})`
-  if (datosCliente?.nif) {
-    ws.getCell('F7').value = 'NIF/CIF:'
-    ws.getCell('F7').font = { bold: true }
-    ws.getCell('G7').value = datosCliente.nif
-  }
+  const fuenteDato = { name: 'Calibri (Cuerpo)', size: 11, bold: true }
+  ws.getCell('H9').value = 'FECHA:'
+  ws.getCell('H9').font = fuenteDato
+  ws.mergeCells('I9:J9')
+  ws.getCell('I9').value = formatoFecha(ronda.fecha)
+  ws.getCell('I9').font = fuenteDato
+  ws.getCell('I9').alignment = { horizontal: 'center' }
 
-  ws.getCell('A9').value = `Ref: ${obra}`
-  ws.getCell('A9').font = { bold: true }
+  ws.getCell('H10').value = ronda.tipo === 'factura' ? 'Nº FACTURA:' : 'Nº PROFORMA:'
+  ws.getCell('H10').font = fuenteDato
+  ws.getCell('J10').value = ronda.numero_factura || ''
+  ws.getCell('J10').font = fuenteDato
 
-  // Fila de agrupación arriba de los encabezados de columna — "Presupuestado"
-  // / "Origen" / "Mes", igual que el original (ahí es donde más se nota la
-  // diferencia si falta: sin esto la tabla se ve toda al mismo nivel).
-  const filaGrupo = 11
-  ws.mergeCells(filaGrupo, 2, filaGrupo, 4)
-  ws.mergeCells(filaGrupo, 5, filaGrupo, 6)
-  ws.mergeCells(filaGrupo, 7, filaGrupo, 9)
-  ;[[2, 'Presupuestado'], [5, 'Origen'], [7, 'Mes']].forEach(([col, texto]) => {
-    const celda = ws.getRow(filaGrupo).getCell(col)
+  ws.getCell('H11').value = 'NIF:'
+  ws.getCell('H11').font = fuenteDato
+  ws.mergeCells('J11:K11')
+  ws.getCell('J11').value = datosCliente?.nif || ''
+  ws.getCell('J11').font = fuenteDato
+
+  ws.mergeCells('B13:J13')
+  ws.getCell('B13').value = `Ref: ${obra}`
+  ws.getCell('B13').font = { name: 'Calibri', size: 11, bold: true }
+
+  // Fila de agrupación ("Presupuestado" / "Origen" / "Mes") y cabecera de
+  // columnas — mismo fondo celeste de marca y mismos tamaños de letra por
+  // columna que el archivo real (por eso varían entre 5 y 8pt).
+  ws.getRow(14).height = 23.25
+  const gruposFila14 = [['C14:E14', 'Presupuestado'], ['F14:H14', 'Origen'], ['I14:J14', 'Mes']]
+  gruposFila14.forEach(([rango, texto]) => {
+    ws.mergeCells(rango)
+    const primeraCol = rango.split(':')[0]
+    const celda = ws.getCell(primeraCol)
     celda.value = texto
-    celda.font = { bold: true, italic: true }
-    celda.alignment = { horizontal: 'center' }
+    celda.font = { name: 'Calibri', bold: true, size: 12, color: { argb: 'FFFFFFFF' } }
+    celda.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+    const [, colIni, colFin] = rango.match(/^([A-Z]+)\d+:([A-Z]+)\d+$/)
+    for (let c = colIni.charCodeAt(0); c <= colFin.charCodeAt(0); c++) {
+      const cel = ws.getCell(`${String.fromCharCode(c)}14`)
+      cel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL } }
+      cel.border = { bottom: BORDE_FINO, left: c === colIni.charCodeAt(0) ? BORDE_FINO : undefined }
+    }
   })
 
-  const encabezados = ['CONCEPTO', 'IMPORTE UNIT.', 'UDS.', 'TOTAL A FACTURAR', 'FACT. ANTERIOR', 'UDS FACTURADAS', 'UDS PENDIENTES', 'UDS MENSUAL', 'TOTAL FACTURAR MES ACTUAL']
-  const filaEncabezado = ws.getRow(filaGrupo + 1)
-  encabezados.forEach((texto, i) => {
-    const celda = filaEncabezado.getCell(i + 1)
+  ws.getRow(15).height = 31.5
+  const encabezados = [
+    ['B', 'CONCEPTO', 8], ['C', 'IMPORTE UNIT.', 6], ['D', 'UDS.', 6], ['E', ' TOTAL  A FACTURAR', 6],
+    ['F', 'FACT. ANTERIOR', 6], ['G', 'UDS FACTURADAS', 5], ['H', 'UDS PENDIENTES', 6],
+    ['I', ' UDS MENSUAL', 6], ['J', 'TOTAL FACTURAR MES ACTUAL', 5],
+  ]
+  encabezados.forEach(([col, texto, size]) => {
+    const celda = ws.getCell(`${col}15`)
     celda.value = texto
-    celda.font = { bold: true, color: { argb: 'FFFFFFFF' } }
-    celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } }
-    celda.alignment = { horizontal: i === 0 ? 'left' : 'center', vertical: 'middle', wrapText: true }
-    celda.border = BORDE_TABLA
+    celda.font = { name: 'Calibri', bold: true, size, color: { argb: 'FFFFFFFF' } }
+    celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL } }
+    celda.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+    celda.border = { top: BORDE_FINO, left: BORDE_FINO, right: BORDE_FINO }
   })
-  filaEncabezado.height = 30
 
-  let filaActual = filaGrupo + 2
+  let filaActual = 16
   let baseImponible = 0
   let facturacionOrigen = 0
+  const fuenteLinea = { name: 'Calibri', bold: true, size: 9, color: { argb: TEXTO_MARCA } }
+  const fuenteConcepto = { name: 'Calibri', bold: true, size: 8, color: { argb: TEXTO_MARCA } }
+  const fuenteMes = { name: 'Calibri', bold: true, size: 9, color: { argb: 'FF808080' } }
   for (const l of lineas) {
     const importeEstaRonda = (ronda.lineas || []).find((rl) => rl.linea_id === l.id)?.importe || 0
     if (importeEstaRonda === 0 && Number(l.total) === 0) continue
@@ -588,22 +630,24 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
     const udsPendientes = udsTotal - udsFacturadas
 
     const fila = ws.getRow(filaActual)
-    fila.getCell(1).value = l.concepto
-    fila.getCell(2).value = precioUnit
-    fila.getCell(3).value = udsTotal
-    fila.getCell(4).value = Number(l.total)
-    fila.getCell(5).value = factAnterior
-    fila.getCell(6).value = udsFacturadas
-    fila.getCell(7).value = udsPendientes
-    fila.getCell(8).value = udsMensual
-    fila.getCell(9).value = importeEstaRonda
-    for (let c = 1; c <= 9; c++) {
-      const celda = fila.getCell(c)
-      celda.border = BORDE_TABLA
-      if (c === 2 || c === 4 || c === 5 || c === 9) celda.numFmt = MONEY_FMT
-      if (c === 3 || c === 6 || c === 7 || c === 8) celda.numFmt = UDS_FMT
-      if (c >= 7) celda.fill = FILL_MES
-      if (c >= 2) celda.alignment = { horizontal: 'right' }
+    const valores = {
+      B: [l.concepto, fuenteConcepto, undefined, { horizontal: 'left', vertical: 'middle', wrapText: true }, { left: BORDE_FINO, right: BORDE_FINO }],
+      C: [precioUnit, fuenteLinea, MONEY_FMT, { horizontal: 'right', vertical: 'middle' }, { right: BORDE_FINO }],
+      D: [udsTotal, fuenteLinea, '#,##0', { horizontal: 'right', vertical: 'middle' }, { right: BORDE_FINO }],
+      E: [Number(l.total), fuenteLinea, MONEY_FMT, { horizontal: 'right', vertical: 'middle' }, { right: BORDE_FINO }],
+      F: [factAnterior, fuenteLinea, MONEY_FMT, { horizontal: 'right', vertical: 'middle' }, { right: BORDE_FINO }],
+      G: [udsFacturadas, fuenteLinea, UDS_FMT, { horizontal: 'right', vertical: 'middle' }, { right: BORDE_FINO }],
+      H: [udsPendientes, fuenteLinea, UDS_FMT, { horizontal: 'right', vertical: 'middle' }, { left: BORDE_FINO, right: BORDE_FINO }],
+      I: [udsMensual, fuenteLinea, '0.00', { horizontal: 'right', vertical: 'middle' }, { right: BORDE_FINO }],
+      J: [importeEstaRonda, fuenteMes, MONEY_FMT, { horizontal: 'right', vertical: 'middle' }, { left: BORDE_FINO, right: BORDE_FINO }],
+    }
+    for (const [col, [valor, font, numFmt, alignment, border]] of Object.entries(valores)) {
+      const celda = fila.getCell(col)
+      celda.value = valor
+      celda.font = font
+      if (numFmt) celda.numFmt = numFmt
+      celda.alignment = alignment
+      celda.border = border
     }
     filaActual++
 
@@ -612,9 +656,8 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   }
 
   filaActual += 1
-  ws.getCell(`A${filaActual}`).value = 'Nº de Cuenta:'
-  ws.getCell(`A${filaActual}`).font = { bold: true }
-  ws.getCell(`B${filaActual}`).value = EMISOR.cuenta
+  ws.getCell(`B${filaActual}`).value = `Nº de Cuenta: ${EMISOR.cuenta}`
+  ws.getCell(`B${filaActual}`).font = { name: 'Calibri', bold: true, size: 8 }
   filaActual += 2
 
   let amortizacionTotal = 0
@@ -622,12 +665,12 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
     amortizacionTotal += Number(am.monto)
   }
   if (amortizacionTotal > 0) {
-    ws.getCell(`A${filaActual}`).value = 'Amortización de anticipo'
-    ws.getCell(`A${filaActual}`).font = { italic: true }
-    const celdaMonto = ws.getCell(`I${filaActual}`)
+    ws.getCell(`B${filaActual}`).value = 'Amortización de anticipo'
+    ws.getCell(`B${filaActual}`).font = { name: 'Calibri', italic: true, size: 8 }
+    const celdaMonto = ws.getCell(`J${filaActual}`)
     celdaMonto.value = -amortizacionTotal
     celdaMonto.numFmt = MONEY_FMT
-    celdaMonto.font = { italic: true }
+    celdaMonto.font = { name: 'Calibri', italic: true, size: 9 }
     filaActual++
   }
 
@@ -639,26 +682,41 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   const totalFacturar = baseTrasAnticipo + ivaMonto - retencionMonto
 
   function filaTotalCon(etiqueta, valorCol, colLetra, opciones = {}) {
-    ws.getCell(`A${filaActual}`).value = etiqueta
-    ws.getCell(`A${filaActual}`).font = { bold: !!opciones.bold }
+    const fila = ws.getRow(filaActual)
+    fila.height = opciones.height || 15.75
+    const celdaLabel = ws.getCell(`B${filaActual}`)
+    celdaLabel.value = etiqueta
+    celdaLabel.font = { name: 'Calibri (Cuerpo)', bold: true, size: 8, color: opciones.fill ? { argb: 'FFFFFFFF' } : undefined }
+    celdaLabel.alignment = { vertical: 'middle', wrapText: true }
+    if (opciones.fill) celdaLabel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL } }
     const celda = ws.getCell(`${colLetra}${filaActual}`)
     celda.value = valorCol
     celda.numFmt = MONEY_FMT
-    celda.font = { bold: !!opciones.bold, size: opciones.size }
-    if (opciones.etiqueta2) {
-      ws.getCell(`B${filaActual}`).value = opciones.etiqueta2
+    celda.font = { name: 'Calibri (Cuerpo)', bold: !!opciones.bold, size: opciones.size || 9, color: opciones.fill ? { argb: 'FFFFFFFF' } : { argb: TEXTO_MARCA } }
+    if (opciones.fill) celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL } }
+    if (opciones.pct !== undefined) {
+      const celdaPct = ws.getCell(`C${filaActual}`)
+      celdaPct.value = opciones.pct / 100
+      celdaPct.numFmt = PCT_FMT
+      celdaPct.font = { name: 'Calibri (Cuerpo)', size: 9 }
+      celdaPct.alignment = { horizontal: 'center', vertical: 'middle' }
     }
     filaActual++
   }
 
-  filaTotalCon('PREVISIÓN DE FACTURACIÓN SEGÚN PRESUPUESTO', lineas.reduce((acc, l) => acc + Number(l.total), 0), 'D')
-  if (facturacionOrigen > 0) {
-    filaTotalCon('FACTURACIÓN ORIGEN (RONDAS ANTERIORES)', facturacionOrigen, 'E')
+  filaTotalCon('PREVISIÓN DE FACTURACIÓN SEGÚN PRESUPUESTO', lineas.reduce((acc, l) => acc + Number(l.total), 0), 'E', { height: 21 })
+  filaTotalCon('FACTURACIÓN ORIGEN (MESES ANTERIORES)', facturacionOrigen, 'F', { height: 19.5 })
+  filaTotalCon('BASE IMPONIBLE (MES ACTUAL)', baseTrasAnticipo, 'J', { bold: true })
+  filaTotalCon('IVA', ivaMonto, 'J', { pct: ivaPct })
+  filaTotalCon('RETENCIÓN', -retencionMonto, 'J', { pct: retencionPct })
+  filaTotalCon('TOTAL A FACTURAR', totalFacturar, 'J', { bold: true, fill: true })
+
+  if (ivaPct === 0) {
+    ws.mergeCells(`B${filaActual}:J${filaActual}`)
+    const celdaNota = ws.getCell(`B${filaActual}`)
+    celdaNota.value = 'Operación sujeta a inversión del sujeto pasivo'
+    celdaNota.font = { name: 'Calibri', italic: true, size: 7 }
   }
-  filaTotalCon('BASE IMPONIBLE (ESTA RONDA)', baseTrasAnticipo, 'I', { bold: true })
-  filaTotalCon('IVA', ivaMonto, 'I', { etiqueta2: `${ivaPct}%` })
-  filaTotalCon('RETENCIÓN', -retencionMonto, 'I', { etiqueta2: `${retencionPct}%` })
-  filaTotalCon('TOTAL A FACTURAR', totalFacturar, 'I', { bold: true, size: 13 })
 
   const buffer = await wb.xlsx.writeBuffer()
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
