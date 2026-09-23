@@ -39,6 +39,7 @@ const EMISOR = {
   email: 'administracion@galvi.es',
   nif: 'N.I.F.: B-84530955',
   cuenta: 'ES35 2100 2530 1813 0054 8475',
+  registroMercantil: 'Inscrita en el Registro Mercantil de Madrid, Tomo 22.071, libro 0, folio 59 de la Sección 8, hoja nº M-393689, inscripción 1ª',
 }
 
 function formatoFecha(iso) {
@@ -503,7 +504,10 @@ const MONEY_FMT = '#,##0.00'
 const UDS_FMT = '#,##0.00'
 const PCT_FMT = '0%'
 const TEAL = 'FF21AEB1'
-const TEXTO_MARCA = 'FF333399'
+// Color real del texto de datos en el archivo original — se verificó
+// abriendo el .xlsx real con Excel (no es un tono "de marca" inventado,
+// es gris 50% liso, Font.Color = RGB(128,128,128) / ColorIndex 16).
+const TEXTO_MARCA = 'FF808080'
 const BORDE_FINO = { style: 'thin', color: { argb: 'FFBFBFBF' } }
 
 function splitDireccionFiscal(direccion) {
@@ -534,7 +538,7 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   ws.mergeCells('G1:J1')
   const celdaTitulo = ws.getCell('G1')
   celdaTitulo.value = titulo
-  celdaTitulo.font = { name: 'Calibri', bold: true, size: 20, color: { argb: TEXTO_MARCA } }
+  celdaTitulo.font = { name: 'Calibri (Cuerpo)', bold: true, size: 20, color: { argb: TEXTO_MARCA } }
   celdaTitulo.alignment = { horizontal: 'center', vertical: 'middle' }
 
   // Emisor (columna B, filas 2-9) y cliente (columna J, filas 3-5) — misma
@@ -546,7 +550,7 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
     celda.font = fuenteEmisor
   })
 
-  const fuenteCliente = { name: 'Calibri', size: 11, bold: true }
+  const fuenteCliente = { name: 'Calibri (Cuerpo)', size: 11, bold: true }
   const [direccionLinea1, direccionLinea2] = splitDireccionFiscal(datosCliente?.direccion_fiscal)
   ws.getCell('J3').value = datosCliente?.razon_social || 'Cliente sin datos cargados'
   ws.getCell('J3').font = fuenteCliente
@@ -618,7 +622,6 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   let facturacionOrigen = 0
   const fuenteLinea = { name: 'Calibri', bold: true, size: 9, color: { argb: TEXTO_MARCA } }
   const fuenteConcepto = { name: 'Calibri', bold: true, size: 8, color: { argb: TEXTO_MARCA } }
-  const fuenteMes = { name: 'Calibri', bold: true, size: 9, color: { argb: 'FF808080' } }
   for (const l of lineas) {
     const importeEstaRonda = (ronda.lineas || []).find((rl) => rl.linea_id === l.id)?.importe || 0
     if (importeEstaRonda === 0 && Number(l.total) === 0) continue
@@ -639,7 +642,7 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
       G: [udsFacturadas, fuenteLinea, UDS_FMT, { horizontal: 'right', vertical: 'middle' }, { right: BORDE_FINO }],
       H: [udsPendientes, fuenteLinea, UDS_FMT, { horizontal: 'right', vertical: 'middle' }, { left: BORDE_FINO, right: BORDE_FINO }],
       I: [udsMensual, fuenteLinea, '0.00', { horizontal: 'right', vertical: 'middle' }, { right: BORDE_FINO }],
-      J: [importeEstaRonda, fuenteMes, MONEY_FMT, { horizontal: 'right', vertical: 'middle' }, { left: BORDE_FINO, right: BORDE_FINO }],
+      J: [importeEstaRonda, fuenteLinea, MONEY_FMT, { horizontal: 'right', vertical: 'middle' }, { left: BORDE_FINO, right: BORDE_FINO }],
     }
     for (const [col, [valor, font, numFmt, alignment, border]] of Object.entries(valores)) {
       const celda = fila.getCell(col)
@@ -656,6 +659,17 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   }
 
   filaActual += 1
+  const ivaPct = Number(datosCliente?.iva_pct ?? 21)
+  // "Operación sujeta a inversión del sujeto pasivo" — en el archivo real
+  // (ver GALVI FRA 007-2026, obra sujeta a IVA 0%) va JUSTO arriba del
+  // Nº de Cuenta, no al final del documento.
+  if (ivaPct === 0) {
+    ws.getCell(`B${filaActual}`).value = 'Operación sujeta a inversión del sujeto pasivo Articulo 84.1,2(s)'
+    ws.getCell(`B${filaActual}`).font = { name: 'Calibri', bold: true, size: 8, color: { argb: TEXTO_MARCA } }
+    ws.getCell(`B${filaActual}`).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }
+    filaActual += 2
+  }
+
   ws.getCell(`B${filaActual}`).value = `Nº de Cuenta: ${EMISOR.cuenta}`
   ws.getCell(`B${filaActual}`).font = { name: 'Calibri', bold: true, size: 8 }
   filaActual += 2
@@ -675,7 +689,6 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   }
 
   const baseTrasAnticipo = baseImponible - amortizacionTotal
-  const ivaPct = Number(datosCliente?.iva_pct ?? 21)
   const retencionPct = Number(datosCliente?.retencion_pct ?? 0)
   const ivaMonto = baseTrasAnticipo * (ivaPct / 100)
   const retencionMonto = baseTrasAnticipo * (retencionPct / 100)
@@ -711,12 +724,15 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   filaTotalCon('RETENCIÓN', -retencionMonto, 'J', { pct: retencionPct })
   filaTotalCon('TOTAL A FACTURAR', totalFacturar, 'J', { bold: true, fill: true })
 
-  if (ivaPct === 0) {
-    ws.mergeCells(`B${filaActual}:J${filaActual}`)
-    const celdaNota = ws.getCell(`B${filaActual}`)
-    celdaNota.value = 'Operación sujeta a inversión del sujeto pasivo'
-    celdaNota.font = { name: 'Calibri', italic: true, size: 7 }
-  }
+  // Franja vertical decorativa del original: el dato del Registro Mercantil
+  // de GALVI corriendo rotado 90º por el borde izquierdo de toda la tabla
+  // (columna A, de la primera línea hasta la última fila con contenido).
+  ws.mergeCells(`A16:A${filaActual - 1}`)
+  const celdaRegistro = ws.getCell('A16')
+  celdaRegistro.value = EMISOR.registroMercantil
+  celdaRegistro.font = { name: 'Calibri', size: 7 }
+  celdaRegistro.alignment = { horizontal: 'center', vertical: 'middle', textRotation: 90 }
+  celdaRegistro.border = { right: BORDE_FINO }
 
   const buffer = await wb.xlsx.writeBuffer()
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
