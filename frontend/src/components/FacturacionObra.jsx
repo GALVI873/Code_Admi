@@ -290,6 +290,13 @@ function NuevaRonda({ obra, accessToken, lineas, anticipos, rondas, onCreada }) 
   const [montoAmortizar, setMontoAmortizar] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
+  // A pedido de Álvaro (2026-09-23): en vez de escribir el importe línea por
+  // línea a mano, se puede tildar un grupo de posiciones y aplicarles un
+  // % de golpe (sobre el TOTAL de cada línea, mismo criterio que "Uds
+  // Mensual" en el MEDYSEG — un % del total, no del pendiente) — el importe
+  // sigue siendo editable a mano después para ajustar puntualmente alguna.
+  const [seleccionadas, setSeleccionadas] = useState(() => new Set())
+  const [porcentaje, setPorcentaje] = useState('')
 
   const lineasConPendiente = lineas.filter((l) => Number(l.pendiente) > 0.01)
   const anticiposConSaldo = anticipos.filter((a) => Number(a.saldo) > 0.01)
@@ -310,6 +317,8 @@ function NuevaRonda({ obra, accessToken, lineas, anticipos, rondas, onCreada }) 
       const data = await crearRondaFacturacion(accessToken, obra, { tipo, fecha, lineas: lineasRonda, amortizaciones })
       onCreada({ ...data.ronda, lineas: lineasRonda.map((l) => ({ ...l, ronda_id: data.ronda.id })), amortizaciones: amortizaciones.map((a) => ({ ...a, ronda_id: data.ronda.id })) })
       setImportes({})
+      setSeleccionadas(new Set())
+      setPorcentaje('')
       setAnticipoId('')
       setMontoAmortizar('')
       setAbierto(false)
@@ -326,6 +335,34 @@ function NuevaRonda({ obra, accessToken, lineas, anticipos, rondas, onCreada }) 
         + Nueva ronda de facturación {lineasConPendiente.length === 0 && '(nada pendiente)'}
       </button>
     )
+  }
+
+  function alternarSeleccion(id) {
+    setSeleccionadas((prev) => {
+      const nuevo = new Set(prev)
+      if (nuevo.has(id)) nuevo.delete(id)
+      else nuevo.add(id)
+      return nuevo
+    })
+  }
+
+  function alternarTodas() {
+    setSeleccionadas((prev) => (
+      prev.size === lineasConPendiente.length ? new Set() : new Set(lineasConPendiente.map((l) => l.id))
+    ))
+  }
+
+  function aplicarPorcentaje() {
+    const pct = Number(porcentaje)
+    if (!pct || seleccionadas.size === 0) return
+    setImportes((prev) => {
+      const nuevo = { ...prev }
+      for (const l of lineasConPendiente) {
+        if (!seleccionadas.has(l.id)) continue
+        nuevo[l.id] = (Number(l.total) * (pct / 100)).toFixed(2)
+      }
+      return nuevo
+    })
   }
 
   return (
@@ -348,11 +385,42 @@ function NuevaRonda({ obra, accessToken, lineas, anticipos, rondas, onCreada }) 
         </div>
       </div>
 
-      <p className="dashboard-nota">Cuánto facturar de cada línea en esta ronda (importe en €, dejar vacío si no aplica):</p>
+      <p className="dashboard-nota">Cuánto facturar de cada línea en esta ronda (importe en €, dejar vacío si no aplica) — tildá varias y aplicales un % de golpe, o escribí el importe línea por línea:</p>
+
+      <div className="facturacion-fila-campos facturacion-aplicar-pct">
+        <div className="filtro-campo">
+          <label>% a aplicar</label>
+          <input
+            type="number"
+            step="0.01"
+            className="input-filtro facturacion-input-pct"
+            placeholder="0"
+            value={porcentaje}
+            onChange={(e) => setPorcentaje(e.target.value)}
+          />
+        </div>
+        <button
+          type="button"
+          className="btn-secundario"
+          onClick={aplicarPorcentaje}
+          disabled={!porcentaje || Number(porcentaje) <= 0 || seleccionadas.size === 0}
+        >
+          Aplicar a {seleccionadas.size} seleccionada{seleccionadas.size === 1 ? '' : 's'}
+        </button>
+      </div>
+
       <div className="tabla-scroll">
         <table className="tabla-adicionales facturacion-tabla-lineas">
           <thead>
             <tr>
+              <th>
+                <input
+                  type="checkbox"
+                  checked={seleccionadas.size > 0 && seleccionadas.size === lineasConPendiente.length}
+                  onChange={alternarTodas}
+                  title="Seleccionar todas"
+                />
+              </th>
               <th>Ref. ppto</th>
               <th>Concepto</th>
               <th>Pendiente</th>
@@ -361,7 +429,10 @@ function NuevaRonda({ obra, accessToken, lineas, anticipos, rondas, onCreada }) 
           </thead>
           <tbody>
             {lineasConPendiente.map((l) => (
-              <tr key={l.id}>
+              <tr key={l.id} className={seleccionadas.has(l.id) ? 'facturacion-fila-seleccionada' : ''}>
+                <td>
+                  <input type="checkbox" checked={seleccionadas.has(l.id)} onChange={() => alternarSeleccion(l.id)} />
+                </td>
                 <td>{l.presupuesto_ref || '—'}</td>
                 <td>{l.concepto}</td>
                 <td>{euros(l.pendiente)}</td>
