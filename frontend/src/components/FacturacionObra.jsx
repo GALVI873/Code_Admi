@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import logoGalvi from '../assets/logo_galvi_factura.png'
+import carlitoRegularUrl from '../assets/carlito-regular.ttf'
+import carlitoBoldUrl from '../assets/carlito-bold.ttf'
 import {
   facturacionObra,
   actualizarDatosClienteFacturacion,
@@ -542,29 +544,30 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   celdaTitulo.alignment = { horizontal: 'center', vertical: 'middle' }
 
   // Emisor (columna B, filas 2-9) y cliente (columna J, filas 3-5) — misma
-  // disposición que el original, pero a pedido de Álvaro (2026-09-23) con
-  // el mismo color/tamaño para los dos bloques y ambos justificados a la
-  // izquierda (el original tiene el bloque cliente en 11pt alineado a la
-  // derecha, acá se unifica con el del emisor para que se vea parejo).
-  const fuenteInfo = { name: 'Calibri', size: 9, bold: true, color: { argb: TEXTO_MARCA } }
-  const alineacionInfo = { horizontal: 'left', vertical: 'middle' }
+  // disposición y alineación que el original (emisor a la izquierda,
+  // cliente a la derecha), pero a pedido de Álvaro (2026-09-23) con
+  // Calibri (Cuerpo) en vez de Calibri liso y sin ninguna letra negra:
+  // todo el bloque de arriba (título, emisor, cliente, fecha/nº/nif,
+  // referencia de obra) usa el mismo gris de marca.
+  const fuenteEmisor = { name: 'Calibri (Cuerpo)', size: 9, bold: true, color: { argb: TEXTO_MARCA } }
   ;[[2, EMISOR.nombre], [3, EMISOR.direccion], [4, EMISOR.localidad], [5, EMISOR.movil], [6, EMISOR.telefono], [7, EMISOR.fax], [8, EMISOR.email], [9, EMISOR.nif]].forEach(([fila, texto]) => {
     const celda = ws.getCell(`B${fila}`)
     celda.value = texto
-    celda.font = fuenteInfo
-    celda.alignment = alineacionInfo
+    celda.font = fuenteEmisor
+    celda.alignment = { horizontal: 'left', vertical: 'middle' }
   })
 
+  const fuenteCliente = { name: 'Calibri (Cuerpo)', size: 11, bold: true, color: { argb: TEXTO_MARCA } }
   const [direccionLinea1, direccionLinea2] = splitDireccionFiscal(datosCliente?.direccion_fiscal)
   ws.getCell('J3').value = datosCliente?.razon_social || 'Cliente sin datos cargados'
   ws.getCell('J4').value = direccionLinea1
   ws.getCell('J5').value = direccionLinea2
   ;['J3', 'J4', 'J5'].forEach((addr) => {
-    ws.getCell(addr).font = fuenteInfo
-    ws.getCell(addr).alignment = alineacionInfo
+    ws.getCell(addr).font = fuenteCliente
+    ws.getCell(addr).alignment = { horizontal: 'right', vertical: 'middle' }
   })
 
-  const fuenteDato = { name: 'Calibri (Cuerpo)', size: 11, bold: true }
+  const fuenteDato = { name: 'Calibri (Cuerpo)', size: 11, bold: true, color: { argb: TEXTO_MARCA } }
   ws.getCell('H9').value = 'FECHA:'
   ws.getCell('H9').font = fuenteDato
   ws.mergeCells('I9:J9')
@@ -585,7 +588,7 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
 
   ws.mergeCells('B13:J13')
   ws.getCell('B13').value = `Ref: ${obra}`
-  ws.getCell('B13').font = { name: 'Calibri', size: 11, bold: true }
+  ws.getCell('B13').font = { name: 'Calibri (Cuerpo)', size: 11, bold: true, color: { argb: TEXTO_MARCA } }
   ws.getCell('B13').alignment = { horizontal: 'center', vertical: 'middle' }
 
   // Fila de agrupación ("Presupuestado" / "Origen" / "Mes") y cabecera de
@@ -677,7 +680,7 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   }
 
   ws.getCell(`B${filaActual}`).value = `Nº de Cuenta: ${EMISOR.cuenta}`
-  ws.getCell(`B${filaActual}`).font = { name: 'Calibri', bold: true, size: 8 }
+  ws.getCell(`B${filaActual}`).font = { name: 'Calibri', bold: true, size: 8, color: { argb: TEXTO_MARCA } }
   filaActual += 2
 
   let amortizacionTotal = 0
@@ -686,11 +689,11 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   }
   if (amortizacionTotal > 0) {
     ws.getCell(`B${filaActual}`).value = 'Amortización de anticipo'
-    ws.getCell(`B${filaActual}`).font = { name: 'Calibri', italic: true, size: 8 }
+    ws.getCell(`B${filaActual}`).font = { name: 'Calibri', italic: true, size: 8, color: { argb: TEXTO_MARCA } }
     const celdaMonto = ws.getCell(`J${filaActual}`)
     celdaMonto.value = -amortizacionTotal
     celdaMonto.numFmt = MONEY_FMT
-    celdaMonto.font = { name: 'Calibri', italic: true, size: 9 }
+    celdaMonto.font = { name: 'Calibri', italic: true, size: 9, color: { argb: TEXTO_MARCA } }
     filaActual++
   }
 
@@ -716,7 +719,7 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
     const relleno = opciones.fillFullRow || opciones.fillValue
     const celdaLabel = ws.getCell(`B${filaActual}`)
     celdaLabel.value = etiqueta
-    celdaLabel.font = { name: 'Calibri (Cuerpo)', bold: true, size: 8, color: opciones.fillFullRow ? { argb: 'FFFFFFFF' } : undefined }
+    celdaLabel.font = { name: 'Calibri (Cuerpo)', bold: true, size: 8, color: { argb: opciones.fillFullRow ? 'FFFFFFFF' : TEXTO_MARCA } }
     celdaLabel.alignment = { vertical: 'middle', wrapText: true }
     const celda = ws.getCell(`${colLetra}${filaActual}`)
     celda.value = valorCol
@@ -727,7 +730,7 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
       const celdaPct = ws.getCell(`C${filaActual}`)
       celdaPct.value = opciones.pct / 100
       celdaPct.numFmt = PCT_FMT
-      celdaPct.font = { name: 'Calibri (Cuerpo)', size: 9 }
+      celdaPct.font = { name: 'Calibri (Cuerpo)', size: 9, color: { argb: TEXTO_MARCA } }
       celdaPct.alignment = { horizontal: 'center', vertical: 'middle' }
     }
     filaActual++
@@ -746,9 +749,11 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
   ws.mergeCells(`A16:A${filaActual - 1}`)
   const celdaRegistro = ws.getCell('A16')
   celdaRegistro.value = EMISOR.registroMercantil
-  celdaRegistro.font = { name: 'Calibri', size: 7 }
+  celdaRegistro.font = { name: 'Calibri', size: 7, color: { argb: TEXTO_MARCA } }
   celdaRegistro.alignment = { horizontal: 'center', vertical: 'middle', textRotation: 90 }
   celdaRegistro.border = { right: BORDE_FINO }
+
+  ws.pageSetup = { fitToPage: true, fitToWidth: 1, fitToHeight: 1, orientation: 'portrait', paperSize: 9, showGridLines: false }
 
   const buffer = await wb.xlsx.writeBuffer()
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
@@ -771,53 +776,67 @@ function arrayBufferABase64(buffer) {
 }
 
 // Versión PDF de la misma ronda — a pedido de Álvaro (2026-09-23), para
-// tener las dos opciones de descarga en el panel. No es una réplica
-// celda a celda como el .xlsx (jsPDF no tiene Calibri ni el motor de
-// celdas de Excel), pero usa el mismo logo, los mismos colores de marca
-// (teal FF21AEB1 / gris de texto) y el mismo orden de datos, para que
-// sirva como vista rápida o para mandar por mail sin abrir Excel.
+// tener las dos opciones de descarga en el panel con el mismo aspecto que
+// el .xlsx: mismo logo, mismo gris de marca (sin letras negras en ningún
+// lado), mismos tamaños por bloque (emisor 9, cliente 11, título 20,
+// referencia de obra 11) y la misma tipografía — Carlito, que es la
+// fuente libre métricamente compatible con Calibri (la usa LibreOffice
+// como reemplazo), embebida acá porque Calibri en sí es una fuente
+// propietaria de Microsoft que no se puede redistribuir.
 const TEAL_RGB = [0x21, 0xae, 0xb1]
 const GRIS_RGB = [0x80, 0x80, 0x80]
+
+async function registrarCarlito(doc) {
+  const [regularBuffer, boldBuffer] = await Promise.all([
+    fetch(carlitoRegularUrl).then((r) => r.arrayBuffer()),
+    fetch(carlitoBoldUrl).then((r) => r.arrayBuffer()),
+  ])
+  doc.addFileToVFS('Carlito-Regular.ttf', arrayBufferABase64(regularBuffer))
+  doc.addFont('Carlito-Regular.ttf', 'Carlito', 'normal')
+  doc.addFileToVFS('Carlito-Bold.ttf', arrayBufferABase64(boldBuffer))
+  doc.addFont('Carlito-Bold.ttf', 'Carlito', 'bold')
+  doc.setFont('Carlito', 'normal')
+}
 
 async function generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas }) {
   const { jsPDF } = await import('jspdf')
   const { default: autoTable } = await import('jspdf-autotable')
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+  await registrarCarlito(doc)
 
   const logoBuffer = await (await fetch(logoGalvi)).arrayBuffer()
   const logoBase64 = `data:image/png;base64,${arrayBufferABase64(logoBuffer)}`
   doc.addImage(logoBase64, 'PNG', 14, 10, 36, 18.8)
 
   const titulo = ronda.tipo === 'factura' ? 'FACTURA' : 'PROFORMA'
-  doc.setFont('helvetica', 'bold')
+  doc.setFont('Carlito', 'bold')
   doc.setFontSize(20)
   doc.setTextColor(...GRIS_RGB)
   doc.text(titulo, 196, 22, { align: 'right' })
 
-  doc.setFontSize(8)
-  doc.setFont('helvetica', 'bold')
-  ;[EMISOR.nombre, EMISOR.direccion, EMISOR.localidad, EMISOR.movil, EMISOR.telefono, EMISOR.fax, EMISOR.email, EMISOR.nif].forEach((texto, i) => {
-    doc.text(texto, 14, 36 + i * 3.6)
-  })
-
-  // Cliente (misma columna, debajo FECHA/Nº/NIF — igual que en el original,
-  // donde esos datos van debajo del bloque del cliente, no al costado).
-  const [direccionLinea1, direccionLinea2] = splitDireccionFiscal(datosCliente?.direccion_fiscal)
   doc.setFontSize(9)
-  ;[datosCliente?.razon_social || 'Cliente sin datos cargados', direccionLinea1, direccionLinea2].filter(Boolean).forEach((texto, i) => {
-    doc.text(texto, 105, 36 + i * 4)
+  ;[EMISOR.nombre, EMISOR.direccion, EMISOR.localidad, EMISOR.movil, EMISOR.telefono, EMISOR.fax, EMISOR.email, EMISOR.nif].forEach((texto, i) => {
+    doc.text(texto, 14, 36 + i * 4)
   })
 
-  doc.setFontSize(8)
-  doc.text('FECHA:', 105, 52)
-  doc.text(formatoFecha(ronda.fecha), 130, 52)
-  doc.text(ronda.tipo === 'factura' ? 'Nº FACTURA:' : 'Nº PROFORMA:', 105, 56)
-  doc.text(ronda.numero_factura || '', 130, 56)
-  doc.text('NIF:', 105, 60)
-  doc.text(datosCliente?.nif || '', 130, 60)
+  // Cliente — misma alineación a la derecha que en el original (y en el
+  // .xlsx), con FECHA/Nº/NIF debajo en la misma columna.
+  const [direccionLinea1, direccionLinea2] = splitDireccionFiscal(datosCliente?.direccion_fiscal)
+  doc.setFontSize(11)
+  ;[datosCliente?.razon_social || 'Cliente sin datos cargados', direccionLinea1, direccionLinea2].filter(Boolean).forEach((texto, i) => {
+    doc.text(texto, 196, 36 + i * 5, { align: 'right' })
+  })
 
-  doc.setFontSize(10)
-  doc.text(`Ref: ${obra}`, 105, 70, { align: 'center' })
+  doc.setFontSize(11)
+  doc.text('FECHA:', 150, 56)
+  doc.text(formatoFecha(ronda.fecha), 196, 56, { align: 'right' })
+  doc.text(ronda.tipo === 'factura' ? 'Nº FACTURA:' : 'Nº PROFORMA:', 150, 61)
+  doc.text(ronda.numero_factura || '', 196, 61, { align: 'right' })
+  doc.text('NIF:', 150, 66)
+  doc.text(datosCliente?.nif || '', 196, 66, { align: 'right' })
+
+  doc.setFontSize(11)
+  doc.text(`Ref: ${obra}`, 105, 76, { align: 'center' })
 
   const filasTabla = []
   let baseImponible = 0
@@ -840,12 +859,12 @@ async function generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas }) {
   }
 
   autoTable(doc, {
-    startY: 74,
+    startY: 80,
     head: [['CONCEPTO', 'IMPORTE UNIT.', 'UDS.', 'TOTAL A FACTURAR', 'FACT. ANTERIOR', 'UDS FACTURADAS', 'UDS PENDIENTES', 'UDS MENSUAL', 'TOTAL MES ACTUAL']],
     body: filasTabla,
     theme: 'grid',
-    styles: { fontSize: 6.5, textColor: GRIS_RGB, lineColor: [191, 191, 191], lineWidth: 0.1 },
-    headStyles: { fillColor: TEAL_RGB, textColor: 255, fontStyle: 'bold', halign: 'center', fontSize: 6 },
+    styles: { font: 'Carlito', fontSize: 6.5, textColor: GRIS_RGB, lineColor: [191, 191, 191], lineWidth: 0.1 },
+    headStyles: { font: 'Carlito', fillColor: TEAL_RGB, textColor: 255, fontStyle: 'bold', halign: 'center', fontSize: 6 },
     columnStyles: {
       0: { halign: 'left', cellWidth: 45 },
       1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' },
@@ -856,7 +875,7 @@ async function generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas }) {
 
   let y = doc.lastAutoTable.finalY + 6
   const ivaPct = Number(datosCliente?.iva_pct ?? 21)
-  doc.setFont('helvetica', 'bold')
+  doc.setFont('Carlito', 'bold')
   doc.setFontSize(8)
   doc.setTextColor(...GRIS_RGB)
   if (ivaPct === 0) {
@@ -869,7 +888,7 @@ async function generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas }) {
   let amortizacionTotal = 0
   for (const am of ronda.amortizaciones || []) amortizacionTotal += Number(am.monto)
   if (amortizacionTotal > 0) {
-    doc.setFont('helvetica', 'italic')
+    doc.setFont('Carlito', 'normal')
     doc.text('Amortización de anticipo', 14, y + 4)
     doc.text(euros(-amortizacionTotal), 196, y + 4, { align: 'right' })
     y += 8
@@ -893,7 +912,7 @@ async function generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas }) {
       ['TOTAL A FACTURAR', euros(totalFacturar)],
     ],
     theme: 'grid',
-    styles: { fontSize: 8, textColor: GRIS_RGB, lineColor: [191, 191, 191], lineWidth: 0.1 },
+    styles: { font: 'Carlito', fontSize: 8, textColor: GRIS_RGB, lineColor: [191, 191, 191], lineWidth: 0.1 },
     columnStyles: { 0: { cellWidth: 130, fontStyle: 'bold' }, 1: { halign: 'right', cellWidth: 38 } },
     margin: { left: 14, right: 14 },
     didParseCell(data) {
