@@ -54,6 +54,18 @@ function euros(n) {
   return (Number(n) || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+// Igual que euros(), pero con el punto de miles y la coma decimal armados
+// a mano en vez de toLocaleString('es-ES') — usado en el PDF (generarPdfRonda)
+// porque el motor de fuentes/PDF de algunos navegadores no resuelve bien
+// el locale es-ES y termina mostrando los números sin separador de miles.
+function eurosPdf(n) {
+  const numero = Number(n) || 0
+  const negativo = numero < 0
+  const [entero, decimales] = Math.abs(numero).toFixed(2).split('.')
+  const enteroConPuntos = entero.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return `${negativo ? '-' : ''}${enteroConPuntos},${decimales}`
+}
+
 function hoyISO() {
   const hoy = new Date()
   return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
@@ -818,7 +830,7 @@ async function generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas }) {
   // más protagonismo en la hoja.
   const logoBuffer = await (await fetch(logoGalvi)).arrayBuffer()
   const logoBase64 = `data:image/png;base64,${arrayBufferABase64(logoBuffer)}`
-  doc.addImage(logoBase64, 'PNG', 14, 9, 26, 13.5)
+  doc.addImage(logoBase64, 'PNG', 14, 8, 32, 16.6)
 
   const titulo = ronda.tipo === 'factura' ? 'FACTURA' : 'PROFORMA'
   doc.setFont('Carlito', 'bold')
@@ -863,8 +875,8 @@ async function generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas }) {
     const udsMensual = precioUnit > 0 ? importeEstaRonda / precioUnit : 0
     const udsPendientes = udsTotal - udsFacturadas
     filasTabla.push([
-      l.concepto, euros(precioUnit), String(udsTotal), euros(l.total), euros(factAnterior),
-      euros(udsFacturadas), euros(udsPendientes), euros(udsMensual), euros(importeEstaRonda),
+      l.concepto, eurosPdf(precioUnit), String(udsTotal), eurosPdf(l.total), eurosPdf(factAnterior),
+      eurosPdf(udsFacturadas), eurosPdf(udsPendientes), eurosPdf(udsMensual), eurosPdf(importeEstaRonda),
     ])
     baseImponible += importeEstaRonda
     facturacionOrigen += factAnterior
@@ -903,7 +915,6 @@ async function generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas }) {
   const ALTURA_PAGINA = doc.internal.pageSize.getHeight()
   const MARGEN_INFERIOR = 14
   let y = doc.lastAutoTable.finalY + 6
-  let paginaDelFooter = doc.internal.getCurrentPageInfo().pageNumber
 
   // Si el bloque de abajo no entra en lo que queda de hoja, se pasa a una
   // nueva página repitiendo un encabezado chico (título + referencia de
@@ -912,7 +923,6 @@ async function generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas }) {
   function asegurarEspacio(alturaNecesaria) {
     if (y + alturaNecesaria <= ALTURA_PAGINA - MARGEN_INFERIOR) return
     doc.addPage()
-    paginaDelFooter = doc.internal.getCurrentPageInfo().pageNumber
     doc.setFont('Carlito', 'bold')
     doc.setFontSize(13)
     doc.setTextColor(...GRIS_RGB)
@@ -923,86 +933,85 @@ async function generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas }) {
   }
 
   const ivaPct = Number(datosCliente?.iva_pct ?? 21)
-  doc.setFont('Carlito', 'bold')
-  doc.setFontSize(9)
-  doc.setTextColor(...GRIS_RGB)
-  if (ivaPct === 0) {
-    asegurarEspacio(6)
-    doc.text('Operación sujeta a inversión del sujeto pasivo Articulo 84.1,2(s)', 14, y)
-    y += 6
-  }
-  asegurarEspacio(5)
-  doc.text(`Nº de Cuenta: ${EMISOR.cuenta}`, 14, y)
-  y += 5
-
+  const retencionPct = Number(datosCliente?.retencion_pct ?? 0)
   let amortizacionTotal = 0
   for (const am of ronda.amortizaciones || []) amortizacionTotal += Number(am.monto)
-  if (amortizacionTotal > 0) {
-    asegurarEspacio(8)
-    doc.setFont('Carlito', 'normal')
-    doc.text('Amortización de anticipo', 14, y + 4)
-    doc.text(euros(-amortizacionTotal), 196, y + 4, { align: 'right' })
-    y += 8
-  }
-
   const baseTrasAnticipo = baseImponible - amortizacionTotal
-  const retencionPct = Number(datosCliente?.retencion_pct ?? 0)
   const ivaMonto = baseTrasAnticipo * (ivaPct / 100)
   const retencionMonto = baseTrasAnticipo * (retencionPct / 100)
   const totalFacturar = baseTrasAnticipo + ivaMonto - retencionMonto
   const totalPresupuesto = lineas.reduce((acc, l) => acc + Number(l.total), 0)
 
-  // Bloque de totales dibujado a mano con la MISMA grilla de 9 columnas que
-  // la tabla de líneas (COLS_X) — igual que el .xlsx, donde cada total cae
-  // bajo su columna real (PREVISIÓN bajo "TOTAL A FACTURAR", FACTURACIÓN
-  // ORIGEN bajo "FACT. ANTERIOR", el resto bajo "TOTAL MES ACTUAL") en vez
-  // de una tabla genérica de 2 columnas — letra más grande (9.5pt) para que
-  // el resumen final tenga el mismo peso visual que la tabla de arriba.
-  const ALTO_FILA_ANCHA = 8
-  const ALTO_FILA = 7
-  const ALTURA_FOOTER = ALTO_FILA_ANCHA * 2 + ALTO_FILA * 4
-  asegurarEspacio(ALTURA_FOOTER)
-  const filaInicioFooter = y + 3
-  function filaFooterPdf(yFila, alto, { etiqueta, colEtiquetaHasta, valor, colValor, pct, fillFullRow, fillValueOnly }) {
+  // A pedido de Álvaro (2026-09-23): "el número de cuenta incorporado
+  // dentro del detalle, que no se vea como si fuera algo aparte" — todo el
+  // bloque de abajo (nota de IVA, Nº de cuenta, amortización y totales) se
+  // dibuja ahora como UNA sola grilla recuadrada con la misma tabla de 9
+  // columnas de arriba, en vez de texto suelto + una tabla aparte. También
+  // se juntan PREVISIÓN + FACTURACIÓN ORIGEN + BASE IMPONIBLE en una sola
+  // fila "TOTALES" (cada valor cae igual bajo su columna real) porque
+  // sobraban líneas.
+  const ALTO_FILA = 7.5
+  function filaFooterPdf({ etiqueta, colEtiquetaHasta = 8, valores = [], pct, fillFullRow, normal, alto = ALTO_FILA }) {
+    asegurarEspacio(alto)
+    const yFila = y
     for (let i = 0; i < 9; i++) {
       const x0 = COLS_X[i]
       const ancho = COLS_X[i + 1] - x0
-      const rellenar = fillFullRow || (fillValueOnly && i === colValor)
+      const valorAqui = valores.find((v) => v.colValor === i)
+      const rellenar = fillFullRow || (valorAqui && valorAqui.resaltado)
       doc.setDrawColor(...BORDE_RGB)
       doc.setLineWidth(0.1)
       if (rellenar) doc.setFillColor(...TEAL_RGB)
       doc.rect(x0, yFila, ancho, alto, rellenar ? 'FD' : 'S')
     }
-    const colorTexto = fillFullRow ? [255, 255, 255] : GRIS_RGB
-    doc.setFont('Carlito', 'bold')
+    const negrita = !normal
+    doc.setFont('Carlito', negrita ? 'bold' : 'normal')
     doc.setFontSize(9.5)
-    doc.setTextColor(...colorTexto)
+    doc.setTextColor(...(fillFullRow ? [255, 255, 255] : GRIS_RGB))
     const textoEtiqueta = doc.splitTextToSize(etiqueta, COLS_X[colEtiquetaHasta] - COLS_X[0] - 2)
     doc.text(textoEtiqueta, COLS_X[0] + 1, yFila + alto / 2 - (textoEtiqueta.length - 1) * 1.5, { baseline: 'middle' })
     if (pct !== undefined) {
       doc.setFont('Carlito', 'normal')
       doc.text(`${pct}%`, (COLS_X[1] + COLS_X[2]) / 2, yFila + alto / 2, { align: 'center', baseline: 'middle' })
     }
-    const colorValor = fillFullRow || fillValueOnly ? [255, 255, 255] : GRIS_RGB
-    doc.setFont('Carlito', fillFullRow ? 'bold' : 'normal')
-    doc.setTextColor(...colorValor)
-    doc.text(valor, COLS_X[colValor + 1] - 1, yFila + alto / 2, { align: 'right', baseline: 'middle' })
+    for (const v of valores) {
+      const resaltado = fillFullRow || v.resaltado
+      doc.setFont('Carlito', negrita || resaltado ? 'bold' : 'normal')
+      doc.setTextColor(...(resaltado ? [255, 255, 255] : GRIS_RGB))
+      doc.text(v.texto, COLS_X[v.colValor + 1] - 1, yFila + alto / 2, { align: 'right', baseline: 'middle' })
+    }
+    y += alto
   }
 
-  filaFooterPdf(filaInicioFooter, ALTO_FILA_ANCHA, { etiqueta: 'PREVISIÓN DE FACTURACIÓN SEGÚN PRESUPUESTO', colEtiquetaHasta: 3, valor: euros(totalPresupuesto), colValor: 3 })
-  filaFooterPdf(filaInicioFooter + ALTO_FILA_ANCHA, ALTO_FILA_ANCHA, { etiqueta: 'FACTURACIÓN ORIGEN (MESES ANTERIORES)', colEtiquetaHasta: 4, valor: euros(facturacionOrigen), colValor: 4 })
-  filaFooterPdf(filaInicioFooter + ALTO_FILA_ANCHA * 2, ALTO_FILA, { etiqueta: 'BASE IMPONIBLE (MES ACTUAL)', colEtiquetaHasta: 8, valor: euros(baseTrasAnticipo), colValor: 8, fillValueOnly: true })
-  filaFooterPdf(filaInicioFooter + ALTO_FILA_ANCHA * 2 + ALTO_FILA, ALTO_FILA, { etiqueta: 'IVA', colEtiquetaHasta: 8, valor: euros(ivaMonto), colValor: 8, pct: ivaPct })
-  filaFooterPdf(filaInicioFooter + ALTO_FILA_ANCHA * 2 + ALTO_FILA * 2, ALTO_FILA, { etiqueta: 'RETENCIÓN', colEtiquetaHasta: 8, valor: euros(-retencionMonto), colValor: 8, pct: retencionPct })
-  filaFooterPdf(filaInicioFooter + ALTO_FILA_ANCHA * 2 + ALTO_FILA * 3, ALTO_FILA, { etiqueta: 'TOTAL A FACTURAR', colEtiquetaHasta: 8, valor: euros(totalFacturar), colValor: 8, fillFullRow: true })
+  if (ivaPct === 0) {
+    filaFooterPdf({ etiqueta: 'Operación sujeta a inversión del sujeto pasivo Articulo 84.1,2(s)' })
+  }
+  filaFooterPdf({ etiqueta: `Nº de Cuenta: ${EMISOR.cuenta}` })
+  if (amortizacionTotal > 0) {
+    filaFooterPdf({ etiqueta: 'Amortización de anticipo', colEtiquetaHasta: 3, valores: [{ colValor: 8, texto: eurosPdf(-amortizacionTotal) }], normal: true })
+  }
+  filaFooterPdf({ etiqueta: 'TOTALES', colEtiquetaHasta: 3, alto: 8, valores: [
+    { colValor: 3, texto: eurosPdf(totalPresupuesto) },
+    { colValor: 4, texto: eurosPdf(facturacionOrigen) },
+    { colValor: 8, texto: eurosPdf(baseTrasAnticipo), resaltado: true },
+  ] })
+  filaFooterPdf({ etiqueta: 'IVA', pct: ivaPct, valores: [{ colValor: 8, texto: eurosPdf(ivaMonto) }] })
+  filaFooterPdf({ etiqueta: 'RETENCIÓN', pct: retencionPct, valores: [{ colValor: 8, texto: eurosPdf(-retencionMonto) }] })
+  filaFooterPdf({ etiqueta: 'TOTAL A FACTURAR', alto: 8, fillFullRow: true, valores: [{ colValor: 8, texto: eurosPdf(totalFacturar) }] })
 
-  // Franja vertical del Registro Mercantil de GALVI, igual que en el
-  // original — corre rotada por el borde izquierdo del bloque de totales.
-  doc.setPage(paginaDelFooter)
+  // Franja vertical del Registro Mercantil de GALVI — a pedido de Álvaro,
+  // ahora se repite en TODAS las páginas del documento, centrada en el
+  // alto de la hoja (no atada a dónde terminó cayendo el bloque de
+  // totales).
+  const totalPaginas = doc.getNumberOfPages()
   doc.setFont('Carlito', 'normal')
   doc.setFontSize(6)
   doc.setTextColor(...GRIS_RGB)
-  doc.text(EMISOR.registroMercantil, 12, filaInicioFooter + ALTURA_FOOTER, { angle: 90 })
+  const anchoTextoRegistro = doc.getTextWidth(EMISOR.registroMercantil)
+  for (let p = 1; p <= totalPaginas; p++) {
+    doc.setPage(p)
+    doc.text(EMISOR.registroMercantil, 12, ALTURA_PAGINA / 2 + anchoTextoRegistro / 2, { angle: 90 })
+  }
 
   const nombreArchivo = `${titulo} - ${obra} - ronda ${ronda.numero}.pdf`
   doc.save(nombreArchivo)
