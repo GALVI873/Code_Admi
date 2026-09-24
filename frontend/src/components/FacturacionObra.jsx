@@ -7,6 +7,7 @@ import {
   actualizarDatosClienteFacturacion,
   agregarLineaFacturacion,
   eliminarLineaFacturacion,
+  editarLineaFacturacion,
   agregarAnticipoFacturacion,
   crearRondaFacturacion,
   asignarNumeroFacturaRonda,
@@ -161,7 +162,79 @@ function FormAgregarLinea({ obra, accessToken, onAgregada }) {
   )
 }
 
-function TablaLineas({ lineas, accessToken, onEliminada }) {
+// Concepto editable en el lugar (a pedido de Álvaro, 2026-09-24): antes la
+// única forma de corregir el texto de una línea era borrarla y cargarla de
+// nuevo — arriesgado si ya se había usado en alguna ronda (eliminar_linea
+// lo bloquea a propósito para proteger el histórico). Click para editar,
+// blur o Enter para guardar, Escape para cancelar — mismo criterio que
+// FilaFicha en Obras Aceptadas. Usa un <textarea> porque el detalle
+// enriquecido (medidas, color) suele ser más largo que "V1".
+function ConceptoEditable({ linea, accessToken, onGuardado }) {
+  const [editando, setEditando] = useState(false)
+  const [texto, setTexto] = useState(linea.concepto)
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState('')
+
+  async function guardar() {
+    const limpio = texto.trim()
+    if (!limpio) {
+      setTexto(linea.concepto)
+      setEditando(false)
+      return
+    }
+    if (limpio === linea.concepto) {
+      setEditando(false)
+      return
+    }
+    setGuardando(true)
+    setError('')
+    try {
+      await editarLineaFacturacion(accessToken, linea.id, { concepto: limpio })
+      onGuardado(linea.id, limpio)
+      setEditando(false)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  if (!editando) {
+    return (
+      <span
+        className="facturacion-concepto-editable"
+        role="button"
+        tabIndex={0}
+        title="Click para editar el detalle"
+        onClick={() => setEditando(true)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setEditando(true) }}
+      >
+        {linea.concepto}
+      </span>
+    )
+  }
+
+  return (
+    <div className="facturacion-concepto-edicion">
+      <textarea
+        className="input-filtro"
+        value={texto}
+        onChange={(e) => setTexto(e.target.value)}
+        onBlur={guardar}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') { setTexto(linea.concepto); setEditando(false) }
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); guardar() }
+        }}
+        disabled={guardando}
+        rows={2}
+        autoFocus
+      />
+      {error && <span className="auth-error">{error}</span>}
+    </div>
+  )
+}
+
+function TablaLineas({ lineas, accessToken, onEliminada, onEditada }) {
   const [error, setError] = useState('')
 
   async function handleEliminar(linea) {
@@ -202,7 +275,7 @@ function TablaLineas({ lineas, accessToken, onEliminada }) {
           {lineas.map((l) => (
             <tr key={l.id}>
               <td>{l.presupuesto_ref || '—'}</td>
-              <td>{l.concepto}</td>
+              <td><ConceptoEditable linea={l} accessToken={accessToken} onGuardado={(id, concepto) => onEditada(id, concepto)} /></td>
               <td>{l.uds}</td>
               <td>{euros(l.precio_unit)}</td>
               <td>{euros(l.total)}</td>
@@ -1221,6 +1294,7 @@ export default function FacturacionObra({ obra, accessToken }) {
         lineas={datos.lineas}
         accessToken={accessToken}
         onEliminada={(id) => setDatos((prev) => ({ ...prev, lineas: prev.lineas.filter((l) => l.id !== id) }))}
+        onEditada={(id, concepto) => setDatos((prev) => ({ ...prev, lineas: prev.lineas.map((l) => (l.id === id ? { ...l, concepto } : l)) }))}
       />
       <FormAgregarLinea obra={obra} accessToken={accessToken} onAgregada={(l) => setDatos((prev) => ({ ...prev, lineas: [...prev.lineas, l] }))} />
 

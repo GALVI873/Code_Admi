@@ -466,6 +466,14 @@ export function eliminarLineaFacturacion(accessToken, id) {
   })
 }
 
+export function editarLineaFacturacion(accessToken, id, campos) {
+  return request('/facturacion_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'editar_linea', id, ...campos }),
+  })
+}
+
 export function agregarAnticipoFacturacion(accessToken, obra, campos) {
   return request('/facturacion_obra.php', {
     method: 'POST',

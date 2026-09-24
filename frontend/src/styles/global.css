@@ -3673,6 +3673,34 @@ select.celda-editable-material {
   white-space: normal;
 }
 
+/* Columna Concepto (a pedido de Álvaro, 2026-09-24): el detalle enriquecido
+   con medidas y color es más largo que "V1", necesita poder envolver en
+   varias líneas en vez de forzar scroll horizontal. */
+.facturacion-tabla-lineas td:nth-child(2) {
+  white-space: normal;
+  max-width: 340px;
+}
+
+.facturacion-concepto-editable {
+  cursor: text;
+  display: inline-block;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+
+.facturacion-concepto-editable:hover {
+  background: #eef2f7;
+}
+
+.facturacion-concepto-edicion textarea {
+  width: 100%;
+  min-width: 260px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: inherit;
+}
+
 .facturacion-pendiente {
   color: var(--rojo);
   font-weight: 700;

@@ -51,6 +51,12 @@ declare(strict_types=1);
 // PATCH {accion:"asignar_numero_factura", ronda_id, numero_factura}: para
 //   cuando Contabilidad ya emitió la factura real y hay que dejar
 //   registrado el número que le puso.
+// PATCH {accion:"editar_linea", id, concepto?, presupuesto_ref?, uds?,
+//   precio_unit?}: edita una línea existente EN EL LUGAR (mismo id) —
+//   a diferencia de eliminar_linea, funciona aunque la línea ya se haya
+//   usado en alguna ronda (no toca el histórico de facturación, solo el
+//   texto/precio de la línea); recalcula "total" si cambian uds o
+//   precio_unit.
 // DELETE {accion:"eliminar_linea", id}: solo si esa línea todavía no se
 //   usó en ninguna ronda (protege el registro histórico).
 // DELETE {accion:"eliminar_ronda", id}: por si se cargó mal — borra la
@@ -278,6 +284,41 @@ try {
             }
             $db->prepare('UPDATE facturacion_ronda SET numero_factura = ? WHERE id = ?')
                 ->execute([$numeroFactura === '' ? null : $numeroFactura, $rondaId]);
+            Response::json(['ok' => true]);
+        }
+
+        // A pedido de Álvaro (2026-09-24): "quiero que en la proforma salga
+        // más detalle de las ventanas, no solo V1 sino las medidas y el
+        // color" — hasta ahora una línea solo se podía borrar y volver a
+        // cargar para cambiarle el concepto (arriesgado si ya se usó en
+        // alguna ronda: eliminar_linea lo bloquea a propósito). Esta acción
+        // edita en el lugar sin tocar el id, así que las rondas ya creadas
+        // que la referencian no se rompen — recalcula "total" si cambian
+        // uds/precio_unit.
+        if ($accion === 'editar_linea') {
+            $id = (int) ($body['id'] ?? 0);
+            if ($id <= 0) {
+                Response::error('Falta "id"', 422);
+            }
+            $stmtActual = $db->prepare('SELECT * FROM facturacion_linea WHERE id = ?');
+            $stmtActual->execute([$id]);
+            $actual = $stmtActual->fetch();
+            if (!$actual) {
+                Response::error('Línea no encontrada', 404);
+            }
+
+            $concepto = array_key_exists('concepto', $body) ? trim((string) $body['concepto']) : $actual['concepto'];
+            $presupuestoRef = array_key_exists('presupuesto_ref', $body) ? trim((string) $body['presupuesto_ref']) : ($actual['presupuesto_ref'] ?? '');
+            $uds = array_key_exists('uds', $body) ? (float) $body['uds'] : (float) $actual['uds'];
+            $precioUnit = array_key_exists('precio_unit', $body) ? (float) $body['precio_unit'] : (float) $actual['precio_unit'];
+            if ($concepto === '') {
+                Response::error('"concepto" no puede quedar vacío', 422);
+            }
+            $total = $uds * $precioUnit;
+
+            $db->prepare('UPDATE facturacion_linea SET concepto = ?, presupuesto_ref = ?, uds = ?, precio_unit = ?, total = ? WHERE id = ?')
+                ->execute([$concepto, $presupuestoRef === '' ? null : $presupuestoRef, $uds, $precioUnit, $total, $id]);
+
             Response::json(['ok' => true]);
         }
 
