@@ -192,6 +192,14 @@ try {
                 Response::json(['ok' => true]);
             }
 
+            // TEMPORAL — debug de lectura para ver el texto real guardado.
+            if (($bodyPost['accion'] ?? '') === 'debug_leer_notas') {
+                $obraDebug = (string) ($bodyPost['obra'] ?? '');
+                $stmtD = $db->prepare('SELECT id, mensaje, es_adicional_aceptado, creado_en FROM comentarios_obra WHERE obra = ? ORDER BY creado_en DESC');
+                $stmtD->execute([$obraDebug]);
+                Response::json(['notas' => $stmtD->fetchAll()]);
+            }
+
             // TEMPORAL — aplica retroactivamente la insignia roja al caso
             // real de Príncipe de Vergara (adicional #11), aceptado antes de
             // que esta función quedara desplegada. Sacar en cuanto se
