@@ -110,6 +110,18 @@ try {
         $db->exec('ALTER TABLE adicionales_obra ADD COLUMN aceptado_en TEXT');
     }
 
+    // "adicional_nuevo" es columna de obras_aceptadas (la dueña real del
+    // ALTER es obras_aceptadas.php), pero este archivo la ESCRIBE al
+    // aceptar un adicional (ver más abajo) — se declara también acá
+    // (idempotente) para que ese UPDATE no falle con "no such column" si
+    // nadie abrió todavía la pantalla de Obras Aceptadas después del
+    // deploy que la agregó (bug real detectado 2026-09-24: el PATCH de
+    // aceptar un adicional fallaba entero en ese caso).
+    $columnasObrasAceptadas = array_column($db->query('PRAGMA table_info(obras_aceptadas)')->fetchAll(), 'name');
+    if (!in_array('adicional_nuevo', $columnasObrasAceptadas, true)) {
+        $db->exec('ALTER TABLE obras_aceptadas ADD COLUMN adicional_nuevo INTEGER NOT NULL DEFAULT 0');
+    }
+
     // Misma tabla que usa "Notas" (comentarios_obra.php) — se declara acá
     // también (idempotente) por si este endpoint corre primero contra una
     // base nueva. "es_adicional_aceptado" (a pedido de Álvaro, 2026-09-24):
@@ -197,7 +209,11 @@ try {
                 }
                 $obraDelAd = (string) $filaAd['obra'];
                 $db->prepare("UPDATE obras_aceptadas SET adicional_nuevo = 1 WHERE obra = ?")->execute([$obraDelAd]);
-                $filas = $db->prepare("UPDATE comentarios_obra SET es_adicional_aceptado = 1 WHERE obra = ? AND mensaje LIKE 'Adicional de Obra Aceptado%'");
+                // Matchea tanto el mensaje viejo ("Adicional aceptado: ...")
+                // como el nuevo ("Adicional de Obra Aceptado, ...") — la
+                // nota real de este caso se insertó antes de cambiar el
+                // texto.
+                $filas = $db->prepare("UPDATE comentarios_obra SET es_adicional_aceptado = 1 WHERE obra = ? AND (mensaje LIKE 'Adicional de Obra Aceptado%' OR mensaje LIKE 'Adicional aceptado%' OR mensaje LIKE 'Se reabre la obra%')");
                 $filas->execute([$obraDelAd]);
                 Response::json(['ok' => true, 'obra' => $obraDelAd, 'notas_marcadas' => $filas->rowCount()]);
             }
