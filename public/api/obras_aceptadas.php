@@ -188,6 +188,15 @@ try {
         $db->exec('ALTER TABLE obras_aceptadas ADD COLUMN sin_medyseg INTEGER NOT NULL DEFAULT 0');
     }
 
+    // "Nuevo adicional" — mismo criterio que "es_nueva": se prende sola
+    // cuando adicionales_obra.php acepta un adicional de esa obra (ver ese
+    // archivo) y se apaga con el mismo PATCH marcar_vista de más abajo (a
+    // pedido de Álvaro, 2026-09-24 — quiere que salte a la vista en la
+    // lista, no solo como nota adentro de la obra).
+    if (!in_array('adicional_nuevo', $columnas, true)) {
+        $db->exec('ALTER TABLE obras_aceptadas ADD COLUMN adicional_nuevo INTEGER NOT NULL DEFAULT 0');
+    }
+
     $db->exec("
         CREATE TABLE IF NOT EXISTS obra_aceptada_confirmaciones (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -386,7 +395,7 @@ try {
             if ($obra === '') {
                 Response::error('Falta "obra"', 422);
             }
-            $db->prepare("UPDATE obras_aceptadas SET es_nueva = 0 WHERE obra = ?")->execute([$obra]);
+            $db->prepare("UPDATE obras_aceptadas SET es_nueva = 0, adicional_nuevo = 0 WHERE obra = ?")->execute([$obra]);
             Response::json(['ok' => true]);
         }
 

@@ -1977,6 +1977,20 @@ select.celda-editable-material {
   color: #999;
 }
 
+/* Nota automática de "adicional aceptado" (a pedido de Álvaro, 2026-09-24)
+   — mismo rojo que badge-obra-sin-medyseg, para que salte a la vista entre
+   el resto de las notas comunes. */
+.notas-obra-item-tag-adicional {
+  display: block;
+  width: fit-content;
+  margin-bottom: 4px;
+}
+
+.notas-obra-item-texto-adicional {
+  color: var(--rojo);
+  font-weight: 700;
+}
+
 .notas-obra-item-hecho {
   background: #f0f4f0;
   border-color: #dbe6db;

@@ -125,6 +125,14 @@ try {
     if (!in_array('categoria', $columnasComentarios, true)) {
         $db->exec("ALTER TABLE comentarios_obra ADD COLUMN categoria TEXT NOT NULL DEFAULT 'tarea'");
     }
+    // "es_adicional_aceptado" (columna nueva): marca la nota automática que
+    // adicionales_obra.php crea al aceptar un adicional — el frontend la
+    // resalta en rojo en vez de una nota común (a pedido de Álvaro,
+    // 2026-09-24). Se declara acá también (idempotente) aunque quien la
+    // escribe es adicionales_obra.php.
+    if (!in_array('es_adicional_aceptado', $columnasComentarios, true)) {
+        $db->exec('ALTER TABLE comentarios_obra ADD COLUMN es_adicional_aceptado INTEGER NOT NULL DEFAULT 0');
+    }
     $db->exec("
         CREATE TABLE IF NOT EXISTS comentarios_obra_leido (
           obra TEXT NOT NULL,

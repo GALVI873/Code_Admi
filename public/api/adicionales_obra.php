@@ -110,6 +110,35 @@ try {
         $db->exec('ALTER TABLE adicionales_obra ADD COLUMN aceptado_en TEXT');
     }
 
+    // Misma tabla que usa "Notas" (comentarios_obra.php) — se declara acá
+    // también (idempotente) por si este endpoint corre primero contra una
+    // base nueva. "es_adicional_aceptado" (a pedido de Álvaro, 2026-09-24):
+    // marca la nota automática de "adicional aceptado" para que el
+    // frontend la resalte en rojo en vez de mezclarla con una nota común.
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS comentarios_obra (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          obra TEXT NOT NULL,
+          autor_nombre TEXT NOT NULL,
+          autor_email TEXT NOT NULL,
+          mensaje TEXT NOT NULL,
+          creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    ");
+    $columnasComentarios = array_column($db->query('PRAGMA table_info(comentarios_obra)')->fetchAll(), 'name');
+    if (!in_array('hecho', $columnasComentarios, true)) {
+        $db->exec('ALTER TABLE comentarios_obra ADD COLUMN hecho INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!in_array('archivado', $columnasComentarios, true)) {
+        $db->exec('ALTER TABLE comentarios_obra ADD COLUMN archivado INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!in_array('categoria', $columnasComentarios, true)) {
+        $db->exec("ALTER TABLE comentarios_obra ADD COLUMN categoria TEXT NOT NULL DEFAULT 'tarea'");
+    }
+    if (!in_array('es_adicional_aceptado', $columnasComentarios, true)) {
+        $db->exec('ALTER TABLE comentarios_obra ADD COLUMN es_adicional_aceptado INTEGER NOT NULL DEFAULT 0');
+    }
+
     // Misma tabla que usa "Orden del día" para el orden manual de las obras
     // de presupuesto (presupuestos_en_estudio.php) — un adicional comparte
     // ese mecanismo con la clave "adicional:<id>" en vez de un nombre de
@@ -318,12 +347,21 @@ try {
                     $seReabrio = true;
                 }
 
+                // "Nuevo adicional" — insignia roja en la lista de Obras
+                // Aceptadas (mismo criterio que "es_nueva": se apaga sola al
+                // abrir el detalle de la obra, ver PATCH marcar_vista en
+                // obras_aceptadas.php) para que salte a la vista sin
+                // necesidad de entrar a "Notas".
+                if ($obraActual) {
+                    $db->prepare("UPDATE obras_aceptadas SET adicional_nuevo = 1 WHERE obra = ?")->execute([$obraDelAdicional]);
+                }
+
                 $mensajeBase = "Adicional de Obra Aceptado, \"{$detalleDelAdicional}\", Pdf en su carpeta correspondiente";
                 $mensaje = $seReabrio
                     ? "Se reabre la obra (estaba \"Terminada\") — {$mensajeBase}"
                     : $mensajeBase;
 
-                $db->prepare('INSERT INTO comentarios_obra (obra, autor_nombre, autor_email, mensaje) VALUES (?, ?, ?, ?)')
+                $db->prepare('INSERT INTO comentarios_obra (obra, autor_nombre, autor_email, mensaje, es_adicional_aceptado) VALUES (?, ?, ?, ?, 1)')
                     ->execute([$obraDelAdicional, $usuario['nombre'] ?? 'Sistema', $usuario['email'] ?? '', $mensaje]);
             }
         }

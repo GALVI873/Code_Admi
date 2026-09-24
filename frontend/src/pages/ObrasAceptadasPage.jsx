@@ -170,6 +170,9 @@ function ObraItemCompacto({ presupuesto, numero, onAbrir, onCambiarEstatus }) {
       {Boolean(presupuesto.sin_medyseg) && (
         <span className="badge-obra-sin-medyseg" title="Todavía no tiene el archivo MEDYSEG en Drive">Sin MEDYSEG</span>
       )}
+      {Boolean(presupuesto.adicional_nuevo) && (
+        <span className="badge-obra-sin-medyseg" title="Se aceptó un adicional, todavía no la abriste">Nuevo adicional</span>
+      )}
       {presupuesto.tiene_mensajes_sin_leer && (
         <span className="obra-item-compacto-mensaje" title="Tiene mensajes nuevos en la conversación">💬</span>
       )}
@@ -1942,7 +1945,7 @@ export default function ObrasAceptadasPage() {
   // hace falta esperar respuesta del PATCH para sacarla de la lista,
   // Alfredo ya la está viendo en este mismo momento.
   function handleVista(obra) {
-    setFilas((fs) => fs.map((f) => (f.obra === obra ? { ...f, es_nueva: 0 } : f)))
+    setFilas((fs) => fs.map((f) => (f.obra === obra ? { ...f, es_nueva: 0, adicional_nuevo: 0 } : f)))
     marcarObraAceptadaVista(accessToken, obra).catch(() => {})
   }
 
