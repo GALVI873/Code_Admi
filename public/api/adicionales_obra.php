@@ -143,6 +143,25 @@ try {
                 Response::json(['ok' => true]);
             }
 
+            // TEMPORAL — debug para revisar un caso real (Príncipe de
+            // Vergara) sin necesitar sesión. Sacar en cuanto se confirme.
+            if (($bodyPost['accion'] ?? '') === 'debug_buscar') {
+                $texto = (string) ($bodyPost['texto'] ?? '');
+                $stmtA = $db->prepare("SELECT id, obra, detalle, estatus, actualizado_en FROM adicionales_obra WHERE obra LIKE ? ORDER BY actualizado_en DESC");
+                $stmtA->execute(['%' . $texto . '%']);
+                $encontrados = $stmtA->fetchAll();
+                foreach ($encontrados as &$fila) {
+                    $stmtO = $db->prepare('SELECT estatus, actualizado_en FROM obras_aceptadas WHERE obra = ?');
+                    $stmtO->execute([$fila['obra']]);
+                    $fila['obra_info'] = $stmtO->fetch() ?: null;
+                    $stmtN = $db->prepare("SELECT mensaje, creado_en FROM comentarios_obra WHERE obra = ? ORDER BY creado_en DESC LIMIT 5");
+                    $stmtN->execute([$fila['obra']]);
+                    $fila['ultimas_notas'] = $stmtN->fetchAll();
+                }
+                unset($fila);
+                Response::json(['encontrados' => $encontrados]);
+            }
+
             Response::error('Acción no reconocida', 422);
         }
     }
