@@ -754,19 +754,6 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
 
   filaActual += 1
   const ivaPct = Number(datosCliente?.iva_pct ?? 21)
-  // "Operación sujeta a inversión del sujeto pasivo" — en el archivo real
-  // (ver GALVI FRA 007-2026, obra sujeta a IVA 0%) va JUSTO arriba del
-  // Nº de Cuenta, no al final del documento.
-  if (ivaPct === 0) {
-    ws.getCell(`B${filaActual}`).value = 'Operación sujeta a inversión del sujeto pasivo Articulo 84.1,2(s)'
-    ws.getCell(`B${filaActual}`).font = { name: 'Calibri', bold: true, size: 8, color: { argb: TEXTO_MARCA } }
-    ws.getCell(`B${filaActual}`).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }
-    filaActual += 2
-  }
-
-  ws.getCell(`B${filaActual}`).value = `Nº de Cuenta: ${EMISOR.cuenta}`
-  ws.getCell(`B${filaActual}`).font = { name: 'Calibri', bold: true, size: 8, color: { argb: TEXTO_MARCA } }
-  filaActual += 2
 
   let amortizacionTotal = 0
   for (const am of ronda.amortizaciones || []) {
@@ -830,13 +817,42 @@ async function generarDocumentoRonda({ obra, datosCliente, lineas, ronda, rondas
 
   // Franja vertical decorativa del original: el dato del Registro Mercantil
   // de GALVI corriendo rotado 90º por el borde izquierdo de toda la tabla
-  // (columna A, de la primera línea hasta la última fila con contenido).
-  ws.mergeCells(`A16:A${filaActual - 1}`)
+  // (columna A, de la primera línea hasta el TOTAL A FACTURAR) — no baja
+  // hasta la caja de comentario de más abajo, que queda afuera a propósito.
+  const filaFinalFactura = filaActual - 1
+  ws.mergeCells(`A16:A${filaFinalFactura}`)
   const celdaRegistro = ws.getCell('A16')
   celdaRegistro.value = EMISOR.registroMercantil
   celdaRegistro.font = { name: 'Calibri', size: 7, color: { argb: TEXTO_MARCA } }
   celdaRegistro.alignment = { horizontal: 'center', vertical: 'middle', textRotation: 90 }
   celdaRegistro.border = { right: BORDE_FINO }
+
+  // Caja de comentario gris al final, separada de la factura (a pedido de
+  // Álvaro, 2026-09-24): Nº de Cuenta y la nota de IVA 0% ya no van
+  // incorporadas al recuadro de la factura — quedan aparte, con un salto
+  // antes para que no la toquen, como si fuera una nota al margen.
+  filaActual += 2
+  const FILL_COMENTARIO = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } }
+  const lineasComentario = [`Nº de Cuenta: ${EMISOR.cuenta}`]
+  if (ivaPct === 0) lineasComentario.push('Operación sujeta a inversión del sujeto pasivo Articulo 84.1,2(s)')
+  lineasComentario.forEach((texto, i) => {
+    for (let c = 2; c <= 10; c++) {
+      const cel = ws.getRow(filaActual).getCell(c)
+      cel.fill = FILL_COMENTARIO
+      cel.border = {
+        top: i === 0 ? BORDE_FINO : undefined,
+        bottom: i === lineasComentario.length - 1 ? BORDE_FINO : undefined,
+        left: c === 2 ? BORDE_FINO : undefined,
+        right: c === 10 ? BORDE_FINO : undefined,
+      }
+    }
+    ws.mergeCells(`B${filaActual}:J${filaActual}`)
+    const celda = ws.getCell(`B${filaActual}`)
+    celda.value = texto
+    celda.font = { name: 'Calibri', italic: true, size: 8, color: { argb: TEXTO_MARCA } }
+    celda.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }
+    filaActual++
+  })
 
   ws.pageSetup = { fitToPage: true, fitToWidth: 1, fitToHeight: 1, orientation: 'portrait', paperSize: 9, showGridLines: false }
 
@@ -1056,10 +1072,6 @@ async function generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas }) {
     y += alto
   }
 
-  if (ivaPct === 0) {
-    filaFooterPdf({ etiqueta: 'Operación sujeta a inversión del sujeto pasivo Articulo 84.1,2(s)' })
-  }
-  filaFooterPdf({ etiqueta: `Nº de Cuenta: ${EMISOR.cuenta}` })
   if (amortizacionTotal > 0) {
     filaFooterPdf({ etiqueta: 'Amortización de anticipo', colEtiquetaHasta: 3, valores: [{ colValor: 8, texto: eurosPdf(-amortizacionTotal) }], normal: true })
   }
@@ -1071,6 +1083,28 @@ async function generarPdfRonda({ obra, datosCliente, lineas, ronda, rondas }) {
   filaFooterPdf({ etiqueta: 'IVA', pct: ivaPct, valores: [{ colValor: 8, texto: eurosPdf(ivaMonto) }] })
   filaFooterPdf({ etiqueta: 'RETENCIÓN', pct: retencionPct, valores: [{ colValor: 8, texto: eurosPdf(-retencionMonto) }] })
   filaFooterPdf({ etiqueta: 'TOTAL A FACTURAR', alto: 8, fillFullRow: true, valores: [{ colValor: 8, texto: eurosPdf(totalFacturar) }] })
+
+  // Caja de comentario gris al final, separada de la factura (a pedido de
+  // Álvaro, 2026-09-24): Nº de Cuenta y la nota de IVA 0% ya no van
+  // incorporadas al recuadro de la factura — quedan aparte, con un salto
+  // antes para que no la toquen, como si fuera una nota al margen.
+  const lineasComentario = [`Nº de Cuenta: ${EMISOR.cuenta}`]
+  if (ivaPct === 0) lineasComentario.push('Operación sujeta a inversión del sujeto pasivo Articulo 84.1,2(s)')
+  const ALTO_LINEA_COMENTARIO = 5
+  const altoCaja = lineasComentario.length * ALTO_LINEA_COMENTARIO + 4
+  asegurarEspacio(altoCaja + 6)
+  y += 6
+  doc.setFillColor(242, 242, 242)
+  doc.setDrawColor(...BORDE_RGB)
+  doc.setLineWidth(0.1)
+  doc.rect(14, y, 182, altoCaja, 'FD')
+  doc.setFont('Carlito', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(...GRIS_RGB)
+  lineasComentario.forEach((texto, i) => {
+    doc.text(texto, 17, y + 5 + i * ALTO_LINEA_COMENTARIO)
+  })
+  y += altoCaja
 
   // Franja vertical del Registro Mercantil de GALVI — a pedido de Álvaro,
   // ahora se repite en TODAS las páginas del documento, centrada en el
