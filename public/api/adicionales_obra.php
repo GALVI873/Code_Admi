@@ -180,6 +180,28 @@ try {
                 Response::json(['ok' => true]);
             }
 
+            // TEMPORAL — aplica retroactivamente la insignia roja al caso
+            // real de Príncipe de Vergara (adicional #11), aceptado antes de
+            // que esta función quedara desplegada. Sacar en cuanto se
+            // confirme.
+            if (($bodyPost['accion'] ?? '') === 'debug_marcar_adicional_rojo') {
+                $idAd = (int) ($bodyPost['id'] ?? 0);
+                if ($idAd <= 0) {
+                    Response::error('Falta "id"', 422);
+                }
+                $stmtA = $db->prepare('SELECT obra FROM adicionales_obra WHERE id = ?');
+                $stmtA->execute([$idAd]);
+                $filaAd = $stmtA->fetch();
+                if (!$filaAd) {
+                    Response::error('Adicional no encontrado', 404);
+                }
+                $obraDelAd = (string) $filaAd['obra'];
+                $db->prepare("UPDATE obras_aceptadas SET adicional_nuevo = 1 WHERE obra = ?")->execute([$obraDelAd]);
+                $filas = $db->prepare("UPDATE comentarios_obra SET es_adicional_aceptado = 1 WHERE obra = ? AND mensaje LIKE 'Adicional de Obra Aceptado%'");
+                $filas->execute([$obraDelAd]);
+                Response::json(['ok' => true, 'obra' => $obraDelAd, 'notas_marcadas' => $filas->rowCount()]);
+            }
+
             Response::error('Acción no reconocida', 422);
         }
     }
