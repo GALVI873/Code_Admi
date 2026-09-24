@@ -284,6 +284,31 @@ try {
         foreach ($stmtLectura->fetchAll() as $r) {
             $lecturaPorObra[$r['obra']] = $r['ultima_lectura'];
         }
+
+        // Adicionales ya aceptados, agrupados por obra — a pedido de Álvaro
+        // (2026-09-24): se muestran en el encabezado de la obra ("Adicional
+        // de Obra Nº1", "Nº2"...) junto al Nº de presupuesto y su fecha,
+        // para que se vea de un vistazo cuántos "presupuestos" tiene en
+        // total una obra entre el original y sus adicionales. Usa
+        // aceptado_en (fecha fija de cuando pasó a "Aceptado") con
+        // actualizado_en como respaldo para adicionales aceptados antes de
+        // que esa columna existiera. adicionales_obra puede no existir
+        // todavía en una base recién creada (la crea adicionales_obra.php)
+        // — se chequea antes de consultarla para no romper esta pantalla.
+        $adicionalesAceptadosPorObra = [];
+        $tablaAdicionalesExiste = (bool) $db->query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'adicionales_obra'")->fetchColumn();
+        if ($tablaAdicionalesExiste) {
+            $stmtAdic = $db->query("
+                SELECT obra, detalle, COALESCE(aceptado_en, actualizado_en) AS fecha
+                FROM adicionales_obra
+                WHERE estatus = 'Aceptado'
+                ORDER BY obra ASC, fecha ASC, id ASC
+            ");
+            foreach ($stmtAdic->fetchAll() as $r) {
+                $adicionalesAceptadosPorObra[$r['obra']][] = ['detalle' => $r['detalle'], 'fecha' => $r['fecha']];
+            }
+        }
+
         foreach ($obras as &$o) {
             $base = nombreBaseObra($o['obra']);
             $ultimo = $ultimoMensajePorObra[$base] ?? null;
@@ -293,6 +318,14 @@ try {
             // siendo la insignia/punto rojo de notificación.
             $o['tiene_mensajes'] = $ultimo !== null;
             $o['tiene_mensajes_sin_leer'] = $ultimo !== null && ($leido === null || $ultimo > $leido);
+
+            $numero = 1;
+            $conNumero = [];
+            foreach ($adicionalesAceptadosPorObra[$o['obra']] ?? [] as $a) {
+                $conNumero[] = ['numero' => $numero, 'detalle' => $a['detalle'], 'fecha_aprobacion' => $a['fecha']];
+                $numero++;
+            }
+            $o['adicionales_aceptados'] = $conNumero;
         }
         unset($o);
 

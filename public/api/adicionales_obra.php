@@ -101,6 +101,14 @@ try {
     if (!in_array('estatus_antes_de_alvarada', $columnasAdicionales, true)) {
         $db->exec('ALTER TABLE adicionales_obra ADD COLUMN estatus_antes_de_alvarada TEXT');
     }
+    if (!in_array('aceptado_en', $columnasAdicionales, true)) {
+        // Fecha exacta en la que el adicional PASÓ a "Aceptado" — a
+        // diferencia de actualizado_en (que se pisa con cualquier cambio
+        // posterior, como subir el PDF), esta queda fija y es la que se usa
+        // como "Fecha de aprobación" en el encabezado de Obras Aceptadas
+        // (a pedido de Álvaro, 2026-09-24).
+        $db->exec('ALTER TABLE adicionales_obra ADD COLUMN aceptado_en TEXT');
+    }
 
     // Misma tabla que usa "Orden del día" para el orden manual de las obras
     // de presupuesto (presupuestos_en_estudio.php) — un adicional comparte
@@ -285,14 +293,19 @@ try {
             // ver_seguimiento, permisos que su rol gestion_obras no tiene).
             // Si la obra ya estaba "Terminada" se reabre a "Activo" (un
             // adicional aceptado implica que sigue habiendo trabajo) y la
-            // nota lo aclara. El PDF firmado en sí lo sube a Drive
+            // nota lo aclara. También se guarda aceptado_en (fecha fija de
+            // aprobación, no se pisa con cambios posteriores) — usada como
+            // "Fecha de aprobación" en el encabezado de Obras Aceptadas, ver
+            // obras_aceptadas.php. El PDF firmado en sí lo sube a Drive
             // enviar_adicionales_aceptados.js en la siguiente sincronización
-            // — ya sube a la carpeta de ESA obra puntual
-            // ("1.Organización/Adicionales" dentro de su propia carpeta, ver
-            // ese script), no hace falta tocar nada ahí.
+            // — directo en la carpeta de ESA obra puntual, junto con el PDF
+            // principal (a pedido de Álvaro, 2026-09-24: ya no en una
+            // subcarpeta aparte), con el nombre "Adicional de obra - ...".
             if ($estatus === 'Aceptado' && $actual['estatus'] !== 'Aceptado') {
                 $obraDelAdicional = (string) $actual['obra'];
                 $detalleDelAdicional = (string) $actual['detalle'];
+
+                $db->prepare("UPDATE adicionales_obra SET aceptado_en = datetime('now') WHERE id = ?")->execute([$id]);
 
                 $stmtObraActual = $db->prepare('SELECT estatus FROM obras_aceptadas WHERE obra = ?');
                 $stmtObraActual->execute([$obraDelAdicional]);
@@ -305,9 +318,10 @@ try {
                     $seReabrio = true;
                 }
 
+                $mensajeBase = "Adicional de Obra Aceptado, \"{$detalleDelAdicional}\", Pdf en su carpeta correspondiente";
                 $mensaje = $seReabrio
-                    ? "Se reabre la obra (estaba \"Terminada\") por un adicional recién aceptado: \"{$detalleDelAdicional}\". El PDF firmado sube a Drive (1.Organización/Adicionales) en la próxima sincronización."
-                    : "Adicional aceptado: \"{$detalleDelAdicional}\". El PDF firmado sube a Drive (1.Organización/Adicionales) en la próxima sincronización.";
+                    ? "Se reabre la obra (estaba \"Terminada\") — {$mensajeBase}"
+                    : $mensajeBase;
 
                 $db->prepare('INSERT INTO comentarios_obra (obra, autor_nombre, autor_email, mensaje) VALUES (?, ?, ?, ?)')
                     ->execute([$obraDelAdicional, $usuario['nombre'] ?? 'Sistema', $usuario['email'] ?? '', $mensaje]);

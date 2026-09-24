@@ -1670,6 +1670,9 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, direccio
             {presupuesto.cliente || 'Sin cliente'}
             {presupuesto.numero_ppto && ` · Nº Ppto ${presupuesto.numero_ppto}`}
             {presupuesto.fecha_ppto && ` · Presupuesto ${formatoFecha(presupuesto.fecha_ppto)}`}
+            {(presupuesto.adicionales_aceptados || []).map((a) => (
+              <span key={a.numero}> · Adicional de Obra Nº{a.numero} · Fecha de aprobación {formatoFechaHora(a.fecha_aprobacion)}</span>
+            ))}
           </p>
         </div>
       </header>

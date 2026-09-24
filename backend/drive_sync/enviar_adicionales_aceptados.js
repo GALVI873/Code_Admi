@@ -3,9 +3,11 @@
 // un adicional a "Aceptado" (ver AdicionalesDeObra.jsx / adicionales_obra.php)
 // le pide el panel que cargue el PDF firmado; ese PDF queda guardado en
 // base64 en la fila y este script lo recoge en la próxima sincronización y
-// lo sube a la carpeta "1.Organización/Adicionales" de esa obra en Drive,
-// como "Adicional de obra - <detalle>.pdf" — mismo patrón que
-// enviar_medidas_taller.js (el panel no tiene acceso directo a Drive).
+// lo sube directo a la carpeta RAÍZ de esa obra en Drive (a pedido de
+// Álvaro, 2026-09-24: al lado del PDF principal del presupuesto, sin
+// subcarpeta aparte), como "Adicional de obra - <detalle>.pdf" — mismo
+// patrón que enviar_medidas_taller.js (el panel no tiene acceso directo a
+// Drive).
 //
 // Uso:
 //   node enviar_adicionales_aceptados.js
@@ -45,30 +47,6 @@ async function buscarObra(drive, nombreObra) {
     }
   }
   return null;
-}
-
-// Mismo typo tolerado que el resto de scripts de Drive ("1.Orgazanización"
-// real en Drive).
-async function buscarOCrearCarpetaAdicionales(drive, obraFolderId) {
-  const hijos = await listarHijos(drive, obraFolderId, true);
-  let organizacion = hijos.find((f) => /orga.{0,3}ni/i.test(f.name));
-  if (!organizacion) {
-    const creada = await drive.files.create({
-      resource: { name: '1.Organización', mimeType: CARPETA_FOLDER, parents: [obraFolderId] },
-      fields: 'id, name',
-    });
-    organizacion = creada.data;
-  }
-
-  const nietos = await listarHijos(drive, organizacion.id, true);
-  const adicionales = nietos.find((f) => /adicional/i.test(f.name));
-  if (adicionales) return adicionales;
-
-  const creada = await drive.files.create({
-    resource: { name: 'Adicionales', mimeType: CARPETA_FOLDER, parents: [organizacion.id] },
-    fields: 'id, name',
-  });
-  return creada.data;
 }
 
 // data:application/pdf;base64,xxxx -> Buffer.
@@ -139,9 +117,8 @@ async function main() {
         continue;
       }
 
-      const carpetaAdicionales = await buscarOCrearCarpetaAdicionales(drive, info.folderId);
       const nombreArchivo = nombreArchivoSeguro(pedido.detalle);
-      await subirPdf(drive, carpetaAdicionales.id, nombreArchivo, buffer);
+      await subirPdf(drive, info.folderId, nombreArchivo, buffer);
       await marcarEnviado(pedido.id);
       console.log(`  OK: subido "${nombreArchivo}".`);
     } catch (err) {
