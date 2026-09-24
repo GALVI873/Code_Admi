@@ -162,6 +162,51 @@ try {
                 Response::json(['encontrados' => $encontrados]);
             }
 
+            // TEMPORAL — aplica retroactivamente la notificación de
+            // "Aceptado" (nota a Alfredo + reapertura si corresponde) a un
+            // adicional puntual que ya se había marcado Aceptado ANTES de
+            // que este cambio quedara desplegado (caso real: Príncipe de
+            // Vergara, 185, 9ºC, id 11, aceptado 2026-09-24 06:40, minutos
+            // antes del deploy). Sacar en cuanto se confirme.
+            if (($bodyPost['accion'] ?? '') === 'debug_aplicar_retroactivo') {
+                $idRetro = (int) ($bodyPost['id'] ?? 0);
+                if ($idRetro <= 0) {
+                    Response::error('Falta "id"', 422);
+                }
+                $stmtR = $db->prepare("SELECT obra, detalle, estatus FROM adicionales_obra WHERE id = ?");
+                $stmtR->execute([$idRetro]);
+                $adicionalRetro = $stmtR->fetch();
+                if (!$adicionalRetro) {
+                    Response::error('Adicional no encontrado', 404);
+                }
+                if ($adicionalRetro['estatus'] !== 'Aceptado') {
+                    Response::error('Este adicional no está en estatus "Aceptado"', 422);
+                }
+
+                $obraDelAdicional = (string) $adicionalRetro['obra'];
+                $detalleDelAdicional = (string) $adicionalRetro['detalle'];
+
+                $stmtObraActual = $db->prepare('SELECT estatus FROM obras_aceptadas WHERE obra = ?');
+                $stmtObraActual->execute([$obraDelAdicional]);
+                $obraActual = $stmtObraActual->fetch();
+
+                $seReabrio = false;
+                if ($obraActual && $obraActual['estatus'] === 'Terminada') {
+                    $db->prepare("UPDATE obras_aceptadas SET estatus = 'Activo', actualizado_en = datetime('now') WHERE obra = ?")
+                        ->execute([$obraDelAdicional]);
+                    $seReabrio = true;
+                }
+
+                $mensaje = $seReabrio
+                    ? "Se reabre la obra (estaba \"Terminada\") por un adicional recién aceptado: \"{$detalleDelAdicional}\". El PDF firmado sube a Drive (1.Organización/Adicionales) en la próxima sincronización."
+                    : "Adicional aceptado: \"{$detalleDelAdicional}\". El PDF firmado sube a Drive (1.Organización/Adicionales) en la próxima sincronización.";
+
+                $db->prepare('INSERT INTO comentarios_obra (obra, autor_nombre, autor_email, mensaje) VALUES (?, ?, ?, ?)')
+                    ->execute([$obraDelAdicional, 'Geraldinne', '', $mensaje]);
+
+                Response::json(['ok' => true, 'se_reabrio' => $seReabrio, 'mensaje' => $mensaje]);
+            }
+
             Response::error('Acción no reconocida', 422);
         }
     }
