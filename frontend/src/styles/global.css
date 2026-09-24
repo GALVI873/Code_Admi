@@ -2634,6 +2634,13 @@ select.celda-editable-material {
   background: #f4f6f9;
 }
 
+.adicionales-obra-pdf-subido-con-reemplazo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .badge-estatus-oferta-select {
   font-size: 10.5px;
   font-weight: 700;

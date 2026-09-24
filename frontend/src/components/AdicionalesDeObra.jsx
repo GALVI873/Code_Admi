@@ -132,20 +132,22 @@ function SelectEstatusAdicional({ adicional, onCambio, puedeCambiar, puedeMarcar
 // enviar_adicionales_aceptados.js (el panel no sube a Drive al toque, el
 // PDF viaja como base64 y un script aparte lo manda en la próxima
 // sincronización).
+//
+// "Reemplazar" (a pedido de Álvaro, 2026-09-24): por si se cargó el PDF
+// equivocado — el PATCH de adicionales_obra.php ya soportaba pisar el
+// archivo (vuelve a marcarlo pendiente de enviar aunque ya se hubiera
+// mandado uno antes), pero acá no había forma de disparlo una vez que
+// "tiene_pdf" quedaba en true. enviar_adicionales_aceptados.js de paso
+// borra (a la papelera, no en forma permanente) cualquier PDF viejo con
+// el mismo nombre en Drive antes de subir el nuevo, para que no queden
+// los dos archivos juntos si el reemplazo pasa después de que ya se
+// había sincronizado el primero.
 function PdfAdicional({ adicional, puedeSubir, onSubir }) {
   const inputRef = useRef(null)
   const [subiendo, setSubiendo] = useState(false)
   const [error, setError] = useState('')
 
   if (adicional.estatus !== 'Aceptado') return null
-
-  if (adicional.tiene_pdf) {
-    return <span className="adicionales-obra-pdf-subido" title={adicional.pdf_nombre_original || undefined}>✓ PDF cargado</span>
-  }
-
-  if (!puedeSubir) {
-    return <span className="adicionales-obra-pdf-falta">Falta subir el PDF</span>
-  }
 
   async function handleElegirArchivo(e) {
     const archivo = e.target.files?.[0]
@@ -170,6 +172,32 @@ function PdfAdicional({ adicional, puedeSubir, onSubir }) {
     } finally {
       setSubiendo(false)
     }
+  }
+
+  if (adicional.tiene_pdf) {
+    if (!puedeSubir) {
+      return <span className="adicionales-obra-pdf-subido" title={adicional.pdf_nombre_original || undefined}>✓ PDF cargado</span>
+    }
+    return (
+      <div className="adicionales-obra-pdf-subido-con-reemplazo">
+        <span className="adicionales-obra-pdf-subido" title={adicional.pdf_nombre_original || undefined}>✓ PDF cargado</span>
+        <button
+          type="button"
+          className="adicionales-obra-pdf-boton"
+          onClick={() => inputRef.current?.click()}
+          disabled={subiendo}
+          title="Por si se cargó el PDF equivocado"
+        >
+          {subiendo ? 'Subiendo…' : 'Reemplazar'}
+        </button>
+        <input ref={inputRef} type="file" accept="application/pdf" hidden onChange={handleElegirArchivo} />
+        {error && <span className="auth-error">{error}</span>}
+      </div>
+    )
+  }
+
+  if (!puedeSubir) {
+    return <span className="adicionales-obra-pdf-falta">Falta subir el PDF</span>
   }
 
   return (

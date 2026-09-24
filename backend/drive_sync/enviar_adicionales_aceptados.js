@@ -9,6 +9,15 @@
 // patrón que enviar_medidas_taller.js (el panel no tiene acceso directo a
 // Drive).
 //
+// Reemplazo (a pedido de Álvaro, 2026-09-24): en el panel se puede volver
+// a subir el PDF de un adicional que ya tenía uno cargado (por si se
+// equivocaron de archivo) — adicionales_obra.php vuelve a marcarlo
+// pendiente de enviar. Como el nombre de archivo es siempre el mismo
+// (depende del detalle, no cambia), antes de subir el nuevo se manda a la
+// papelera cualquier archivo existente con ESE mismo nombre en la carpeta
+// de la obra, para no terminar con el PDF viejo y el nuevo los dos ahí —
+// a la papelera y no borrado definitivo, por si hiciera falta recuperarlo.
+//
 // Uso:
 //   node enviar_adicionales_aceptados.js
 const path = require('path');
@@ -61,6 +70,18 @@ function decodificarPdfBase64(dataUrl) {
 function nombreArchivoSeguro(detalle) {
   const limpio = String(detalle || '').replace(/[\\/:*?"<>|]/g, ' ').trim().slice(0, 120);
   return `Adicional de obra - ${limpio || 'sin detalle'}.pdf`;
+}
+
+async function enviarAPapeleraSiExiste(drive, carpetaId, nombreArchivo) {
+  const res = await drive.files.list({
+    q: `'${carpetaId}' in parents and trashed = false and name = '${nombreArchivo.replace(/'/g, "\\'")}'`,
+    fields: 'files(id, name)',
+    pageSize: 10,
+  });
+  for (const archivo of res.data.files) {
+    await drive.files.update({ fileId: archivo.id, resource: { trashed: true } });
+  }
+  return res.data.files.length;
 }
 
 async function subirPdf(drive, carpetaId, nombreArchivo, buffer) {
@@ -118,9 +139,10 @@ async function main() {
       }
 
       const nombreArchivo = nombreArchivoSeguro(pedido.detalle);
+      const reemplazados = await enviarAPapeleraSiExiste(drive, info.folderId, nombreArchivo);
       await subirPdf(drive, info.folderId, nombreArchivo, buffer);
       await marcarEnviado(pedido.id);
-      console.log(`  OK: subido "${nombreArchivo}".`);
+      console.log(`  OK: subido "${nombreArchivo}"${reemplazados > 0 ? ` (se mandó a la papelera ${reemplazados} archivo(s) viejo(s) con ese nombre)` : ''}.`);
     } catch (err) {
       console.error(`  ERROR con el adicional #${pedido.id}:`, err.message);
     }
