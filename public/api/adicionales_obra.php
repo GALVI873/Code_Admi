@@ -36,7 +36,11 @@ declare(strict_types=1);
 // único otro caso permitido sin ver_seguimiento, y solo mientras el
 // adicional siga en "Alvarada" (si Geraldinne ya lo movió para adelante, se
 // pierde la posibilidad de deshacer). Cualquier otro valor mandado por
-// alguien sin ver_seguimiento se rechaza. {id, prioridad} cambia la
+// alguien sin ver_seguimiento se rechaza. Al ENTRAR a "Aceptado" (a pedido
+// de Álvaro, 2026-09-24) se le crea a Alfredo una nota/tarea automática en
+// "Notas" de esa obra (Alfredo no tiene acceso a esta pestaña ni se
+// enteraba de otra forma) y, si la obra ya estaba "Terminada", se reabre a
+// "Activo" — ver el bloque de más abajo. {id, prioridad} cambia la
 // prioridad ("Alta"/"Normal") — esa es exclusiva de Álvaro/Valentina
 // (requiere presupuestos.gestionar_prioridad), mismo criterio que la
 // prioridad de Presupuesto: decide si el adicional aparece en el bloque de
@@ -245,7 +249,7 @@ try {
                 Response::error('"estatus" debe ser una de: ' . implode(', ', ESTATUS_ADICIONAL_VALIDOS), 422);
             }
 
-            $stmtActual = $db->prepare('SELECT estatus, estatus_antes_de_alvarada FROM adicionales_obra WHERE id = ?');
+            $stmtActual = $db->prepare('SELECT obra, detalle, estatus, estatus_antes_de_alvarada FROM adicionales_obra WHERE id = ?');
             $stmtActual->execute([$id]);
             $actual = $stmtActual->fetch();
             if (!$actual) {
@@ -272,6 +276,42 @@ try {
 
             $db->prepare("UPDATE adicionales_obra SET estatus = ?, estatus_antes_de_alvarada = ?, actualizado_en = datetime('now') WHERE id = ?")
                 ->execute([$estatus, $estatusAntesDeAlvarada, $id]);
+
+            // A pedido de Álvaro (2026-09-24): en cuanto un adicional pasa a
+            // "Aceptado" (recién ahí, no de nuevo si ya estaba Aceptado), se
+            // le crea a Alfredo una nota/tarea automática en "Notas" de esa
+            // obra — hasta ahora no se enteraba de ningún adicional (ni
+            // tiene acceso a esta pestaña: pide presupuestos.ver_todos/
+            // ver_seguimiento, permisos que su rol gestion_obras no tiene).
+            // Si la obra ya estaba "Terminada" se reabre a "Activo" (un
+            // adicional aceptado implica que sigue habiendo trabajo) y la
+            // nota lo aclara. El PDF firmado en sí lo sube a Drive
+            // enviar_adicionales_aceptados.js en la siguiente sincronización
+            // — ya sube a la carpeta de ESA obra puntual
+            // ("1.Organización/Adicionales" dentro de su propia carpeta, ver
+            // ese script), no hace falta tocar nada ahí.
+            if ($estatus === 'Aceptado' && $actual['estatus'] !== 'Aceptado') {
+                $obraDelAdicional = (string) $actual['obra'];
+                $detalleDelAdicional = (string) $actual['detalle'];
+
+                $stmtObraActual = $db->prepare('SELECT estatus FROM obras_aceptadas WHERE obra = ?');
+                $stmtObraActual->execute([$obraDelAdicional]);
+                $obraActual = $stmtObraActual->fetch();
+
+                $seReabrio = false;
+                if ($obraActual && $obraActual['estatus'] === 'Terminada') {
+                    $db->prepare("UPDATE obras_aceptadas SET estatus = 'Activo', actualizado_en = datetime('now') WHERE obra = ?")
+                        ->execute([$obraDelAdicional]);
+                    $seReabrio = true;
+                }
+
+                $mensaje = $seReabrio
+                    ? "Se reabre la obra (estaba \"Terminada\") por un adicional recién aceptado: \"{$detalleDelAdicional}\". El PDF firmado sube a Drive (1.Organización/Adicionales) en la próxima sincronización."
+                    : "Adicional aceptado: \"{$detalleDelAdicional}\". El PDF firmado sube a Drive (1.Organización/Adicionales) en la próxima sincronización.";
+
+                $db->prepare('INSERT INTO comentarios_obra (obra, autor_nombre, autor_email, mensaje) VALUES (?, ?, ?, ?)')
+                    ->execute([$obraDelAdicional, $usuario['nombre'] ?? 'Sistema', $usuario['email'] ?? '', $mensaje]);
+            }
         }
 
         if (array_key_exists('prioridad', $body)) {
