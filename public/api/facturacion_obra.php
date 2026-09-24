@@ -145,6 +145,24 @@ try {
                 $stmtDebug->execute([(string) ($bodyDebug['obra'] ?? '')]);
                 Response::json(['lineas' => $stmtDebug->fetchAll()]);
             }
+
+            // TEMPORAL — carga en batch el detalle real (medidas + color)
+            // de las 21 ventanas de Jose Abascal, 57 tomado de la hoja
+            // "Maestro" del CALCULO real y "Color Carpinteria" de la Ficha.
+            // Sacar en cuanto se confirme.
+            if (($bodyDebug['accion'] ?? '') === 'debug_editar_lineas') {
+                $items = $bodyDebug['items'] ?? [];
+                $aplicados = 0;
+                foreach ($items as $item) {
+                    $idItem = (int) ($item['id'] ?? 0);
+                    $conceptoItem = trim((string) ($item['concepto'] ?? ''));
+                    if ($idItem <= 0 || $conceptoItem === '') continue;
+                    $db->prepare('UPDATE facturacion_linea SET concepto = ? WHERE id = ?')->execute([$conceptoItem, $idItem]);
+                    $aplicados++;
+                }
+                Response::json(['ok' => true, 'aplicados' => $aplicados]);
+            }
+
             Response::error('Acción no reconocida', 422);
         }
     }
