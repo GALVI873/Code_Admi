@@ -134,33 +134,6 @@ try {
         )
     ");
 
-    // TEMPORAL — corrige el formato del detalle de las 21 ventanas de Jose
-    // Abascal, 57 (mismo dato, formato pedido por Álvaro). Sacar después.
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $bodyDebug = json_decode((string) file_get_contents('php://input'), true) ?? [];
-        $tokenDebug = $_GET['token'] ?? $bodyDebug['token'] ?? '';
-        if ($config['sync_token'] !== '' && hash_equals($config['sync_token'], (string) $tokenDebug)) {
-            if (($bodyDebug['accion'] ?? '') === 'debug_editar_lineas') {
-                $items = $bodyDebug['items'] ?? [];
-                $aplicados = 0;
-                foreach ($items as $item) {
-                    $idItem = (int) ($item['id'] ?? 0);
-                    $conceptoItem = trim((string) ($item['concepto'] ?? ''));
-                    if ($idItem <= 0 || $conceptoItem === '') continue;
-                    $db->prepare('UPDATE facturacion_linea SET concepto = ? WHERE id = ?')->execute([$conceptoItem, $idItem]);
-                    $aplicados++;
-                }
-                Response::json(['ok' => true, 'aplicados' => $aplicados]);
-            }
-            if (($bodyDebug['accion'] ?? '') === 'debug_lineas') {
-                $stmtDebug = $db->prepare('SELECT id, concepto FROM facturacion_linea WHERE obra = ? ORDER BY orden ASC, id ASC');
-                $stmtDebug->execute([(string) ($bodyDebug['obra'] ?? '')]);
-                Response::json(['lineas' => $stmtDebug->fetchAll()]);
-            }
-            Response::error('Acción no reconocida', 422);
-        }
-    }
-
     $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
     AuthMiddleware::requierePermiso($usuario, 'obras.ver_aceptadas');
 
