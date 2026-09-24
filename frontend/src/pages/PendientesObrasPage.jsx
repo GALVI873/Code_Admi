@@ -151,7 +151,7 @@ function NotaPendiente({ nota, accessToken, puedeMarcarHecho, puedeCategorizar, 
       />
       <div className="notas-obra-item-cuerpo" role="button" tabIndex={0} onClick={() => onAbrir(nota)}>
         {Boolean(nota.es_adicional_aceptado) && <span className="badge-obra-sin-medyseg notas-obra-item-tag-adicional">Nuevo adicional</span>}
-        <p className={`notas-obra-item-texto ${nota.es_adicional_aceptado ? 'notas-obra-item-texto-adicional' : ''}`}>{nota.mensaje}</p>
+        <p className="notas-obra-item-texto">{nota.mensaje}</p>
         <span className="notas-obra-item-meta">{nota.autor_nombre} · {formatoFechaHora(nota.creado_en)}</span>
 
         {nota.respuestas?.length > 0 && (

@@ -192,6 +192,15 @@ try {
                 Response::json(['ok' => true]);
             }
 
+            // TEMPORAL — acorta el texto de la nota #53 ya insertada
+            // (Príncipe de Vergara, formato viejo) para que quede igual al
+            // nuevo mensaje corto. Sacar en cuanto se confirme.
+            if (($bodyPost['accion'] ?? '') === 'debug_acortar_nota_53') {
+                $db->prepare("UPDATE comentarios_obra SET mensaje = ? WHERE id = 53")
+                    ->execute(['Adicional aceptado "Cambio venta corvision"']);
+                Response::json(['ok' => true]);
+            }
+
             Response::error('Acción no reconocida', 422);
         }
     }
@@ -368,7 +377,7 @@ try {
                     $db->prepare("UPDATE obras_aceptadas SET adicional_nuevo = 1 WHERE obra = ?")->execute([$obraDelAdicional]);
                 }
 
-                $mensajeBase = "Adicional de Obra Aceptado, \"{$detalleDelAdicional}\", Pdf en su carpeta correspondiente";
+                $mensajeBase = "Adicional aceptado \"{$detalleDelAdicional}\"";
                 $mensaje = $seReabrio
                     ? "Se reabre la obra (estaba \"Terminada\") — {$mensajeBase}"
                     : $mensajeBase;

@@ -1978,17 +1978,13 @@ select.celda-editable-material {
 }
 
 /* Nota automática de "adicional aceptado" (a pedido de Álvaro, 2026-09-24)
-   — mismo rojo que badge-obra-sin-medyseg, para que salte a la vista entre
-   el resto de las notas comunes. */
+   — la etiqueta "Nuevo adicional" alcanza para que salte a la vista entre
+   el resto de las notas comunes; a pedido de Álvaro (2026-09-24) el texto
+   del mensaje en sí queda con el color normal, sin resaltar en rojo. */
 .notas-obra-item-tag-adicional {
   display: block;
   width: fit-content;
   margin-bottom: 4px;
-}
-
-.notas-obra-item-texto-adicional {
-  color: var(--rojo);
-  font-weight: 700;
 }
 
 .notas-obra-item-hecho {
