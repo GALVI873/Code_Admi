@@ -128,6 +128,21 @@ try {
         )
     ");
 
+    // TEMPORAL — debug para revisar los conceptos reales de Jose Abascal
+    // sin necesitar sesión. Sacar en cuanto se confirme.
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $bodyDebug = json_decode((string) file_get_contents('php://input'), true) ?? [];
+        $tokenDebug = $_GET['token'] ?? $bodyDebug['token'] ?? '';
+        if ($config['sync_token'] !== '' && hash_equals($config['sync_token'], (string) $tokenDebug)) {
+            if (($bodyDebug['accion'] ?? '') === 'debug_lineas') {
+                $stmtDebug = $db->prepare('SELECT id, concepto, presupuesto_ref, uds, precio_unit, total, orden FROM facturacion_linea WHERE obra = ? ORDER BY orden ASC, id ASC');
+                $stmtDebug->execute([(string) ($bodyDebug['obra'] ?? '')]);
+                Response::json(['lineas' => $stmtDebug->fetchAll()]);
+            }
+            Response::error('Acción no reconocida', 422);
+        }
+    }
+
     $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
     AuthMiddleware::requierePermiso($usuario, 'obras.ver_aceptadas');
 
