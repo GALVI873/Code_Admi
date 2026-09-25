@@ -498,6 +498,22 @@ export function asignarNumeroFacturaRonda(accessToken, rondaId, numeroFactura) {
   })
 }
 
+export function editarRondaFacturacion(accessToken, id, campos) {
+  return request('/facturacion_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'editar_ronda', id, ...campos }),
+  })
+}
+
+export function convertirAFacturaRonda(accessToken, id, numeroFactura, fecha) {
+  return request('/facturacion_obra.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'convertir_a_factura', id, numero_factura: numeroFactura, fecha }),
+  })
+}
+
 export function eliminarRondaFacturacion(accessToken, id) {
   return request('/facturacion_obra.php', {
     method: 'DELETE',

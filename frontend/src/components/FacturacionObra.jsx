@@ -11,6 +11,8 @@ import {
   agregarAnticipoFacturacion,
   crearRondaFacturacion,
   asignarNumeroFacturaRonda,
+  editarRondaFacturacion,
+  convertirAFacturaRonda,
   eliminarRondaFacturacion,
 } from '../api/client.js'
 
@@ -568,6 +570,139 @@ function NuevaRonda({ obra, accessToken, lineas, anticipos, rondas, onCreada }) 
       <div className="facturacion-nueva-ronda-acciones">
         <button type="submit" className="btn-secundario" disabled={enviando}>Crear ronda</button>
         <button type="button" className="btn-secundario" onClick={() => setAbierto(false)} disabled={enviando}>Cancelar</button>
+      </div>
+    </form>
+  )
+}
+
+// Editar una ronda ya creada (a pedido de Álvaro, 2026-09-25): antes la
+// única forma de corregir una proforma armada mal era borrarla y
+// rehacerla — acá reemplaza en el lugar el detalle de líneas/amortización
+// y la fecha, sin perder el número de ronda ni el histórico. Muestra las
+// líneas que ya están en esta ronda más las que todavía tengan pendiente
+// (por si se quiere sumar una nueva) — "Pendiente" se muestra sumando de
+// vuelta lo que ESTA ronda ya factura de esa línea, porque el valor que
+// manda el servidor ya lo tiene descontado.
+function EditarRonda({ ronda, obra, accessToken, lineas, anticipos, onGuardada, onCerrar }) {
+  const importePorLineaEnRonda = new Map((ronda.lineas || []).map((rl) => [rl.linea_id, Number(rl.importe)]))
+  const amortizacionActual = (ronda.amortizaciones || [])[0]
+
+  const [fecha, setFecha] = useState(ronda.fecha)
+  const [importes, setImportes] = useState(() => {
+    const inicial = {}
+    for (const [id, importe] of importePorLineaEnRonda) inicial[id] = String(importe)
+    return inicial
+  })
+  const [anticipoId, setAnticipoId] = useState(() => (amortizacionActual ? String(amortizacionActual.anticipo_id) : ''))
+  const [montoAmortizar, setMontoAmortizar] = useState(() => (amortizacionActual ? String(amortizacionActual.monto) : ''))
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState('')
+
+  const lineasMostrar = lineas.filter((l) => importePorLineaEnRonda.has(l.id) || Number(l.pendiente) > 0.01)
+  // Saldo del anticipo sin contar lo que esta MISMA ronda ya tenía amortizado
+  // (se va a reemplazar, no sumar encima).
+  const anticiposConSaldo = anticipos
+    .map((a) => (a.id === amortizacionActual?.anticipo_id ? { ...a, saldo: Number(a.saldo) + Number(amortizacionActual.monto) } : a))
+    .filter((a) => Number(a.saldo) > 0.01)
+
+  async function guardar(e) {
+    e.preventDefault()
+    const lineasRonda = Object.entries(importes)
+      .map(([linea_id, importe]) => ({ linea_id: Number(linea_id), importe: Number(importe) || 0 }))
+      .filter((l) => l.importe !== 0)
+    if (lineasRonda.length === 0 || guardando) return
+    setGuardando(true)
+    setError('')
+    try {
+      const amortizaciones = anticipoId && Number(montoAmortizar) > 0
+        ? [{ anticipo_id: Number(anticipoId), monto: Number(montoAmortizar) }]
+        : []
+      await editarRondaFacturacion(accessToken, ronda.id, { fecha, lineas: lineasRonda, amortizaciones })
+      onGuardada()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <form className="facturacion-nueva-ronda" onSubmit={guardar}>
+      <div className="facturacion-fila-campos">
+        <div className="filtro-campo">
+          <label>Ronda nº</label>
+          <span className="facturacion-numero-ronda">{ronda.numero}</span>
+        </div>
+        <div className="filtro-campo">
+          <label>Tipo</label>
+          <span className={`facturacion-ronda-tipo facturacion-ronda-tipo-${ronda.tipo}`}>{ronda.tipo === 'factura' ? 'Factura' : 'Proforma'}</span>
+        </div>
+        <div className="filtro-campo">
+          <label>Fecha</label>
+          <input type="date" className="input-filtro input-fecha-limite" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="tabla-scroll">
+        <table className="tabla-adicionales facturacion-tabla-lineas">
+          <thead>
+            <tr>
+              <th>Ref. ppto</th>
+              <th>Concepto</th>
+              <th>Pendiente</th>
+              <th>A facturar en esta ronda</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lineasMostrar.map((l) => {
+              const yaEnRonda = importePorLineaEnRonda.get(l.id) || 0
+              const pendienteMostrar = Number(l.pendiente) + yaEnRonda
+              return (
+                <tr key={l.id}>
+                  <td>{l.presupuesto_ref || '—'}</td>
+                  <td>{l.concepto}</td>
+                  <td>{euros(pendienteMostrar)}</td>
+                  <td>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="input-filtro facturacion-input-precio"
+                      placeholder="0.00"
+                      value={importes[l.id] ?? ''}
+                      onChange={(e) => setImportes((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                    />
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {anticiposConSaldo.length > 0 && (
+        <div className="facturacion-fila-campos">
+          <div className="filtro-campo">
+            <label>Amortizar anticipo</label>
+            <select className="select-inline" value={anticipoId} onChange={(e) => setAnticipoId(e.target.value)}>
+              <option value="">Ninguno</option>
+              {anticiposConSaldo.map((a) => (
+                <option key={a.id} value={a.id}>{a.descripcion || 'Anticipo'} (saldo {euros(a.saldo)} €)</option>
+              ))}
+            </select>
+          </div>
+          {anticipoId && (
+            <div className="filtro-campo">
+              <label>Monto a amortizar</label>
+              <input type="number" step="0.01" className="input-filtro facturacion-input-precio" value={montoAmortizar} onChange={(e) => setMontoAmortizar(e.target.value)} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && <div className="auth-error">{error}</div>}
+      <div className="facturacion-nueva-ronda-acciones">
+        <button type="submit" className="btn-secundario" disabled={guardando}>Guardar cambios</button>
+        <button type="button" className="btn-secundario" onClick={onCerrar} disabled={guardando}>Cancelar</button>
       </div>
     </form>
   )
@@ -1151,9 +1286,10 @@ function ResumenRondas({ rondas }) {
   )
 }
 
-function HistorialRondas({ obra, accessToken, rondas, lineas, datosCliente, onCambiadas }) {
+function HistorialRondas({ obra, accessToken, rondas, lineas, anticipos, datosCliente, onCambiadas, onRecargar }) {
   const [error, setError] = useState('')
   const [descargando, setDescargando] = useState(null)
+  const [editandoId, setEditandoId] = useState(null)
 
   async function handleDescargarExcel(ronda) {
     setDescargando(`${ronda.id}-xlsx`)
@@ -1202,6 +1338,23 @@ function HistorialRondas({ obra, accessToken, rondas, lineas, datosCliente, onCa
     }
   }
 
+  // "Facturar" (a pedido de Álvaro, 2026-09-25): convierte una proforma en
+  // factura preguntando el número en el momento — antes había que borrar
+  // la proforma y crear una ronda nueva de tipo factura a mano para poder
+  // ponerle un número.
+  async function handleFacturar(ronda) {
+    const numero = window.prompt('¿Con qué número de factura la registramos?', '')
+    if (numero === null) return
+    if (!numero.trim()) return
+    setError('')
+    try {
+      await convertirAFacturaRonda(accessToken, ronda.id, numero.trim())
+      onRecargar()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
   if (rondas.length === 0) {
     return <p className="dashboard-nota">Todavía no se cargó ninguna ronda de facturación.</p>
   }
@@ -1212,6 +1365,21 @@ function HistorialRondas({ obra, accessToken, rondas, lineas, datosCliente, onCa
       {error && <div className="auth-error">{error}</div>}
       <ul className="facturacion-lista-rondas">
         {[...rondas].sort((a, b) => b.numero - a.numero).map((r) => {
+          if (editandoId === r.id) {
+            return (
+              <li key={r.id} className="facturacion-ronda-item-editando">
+                <EditarRonda
+                  ronda={r}
+                  obra={obra}
+                  accessToken={accessToken}
+                  lineas={lineas}
+                  anticipos={anticipos}
+                  onGuardada={() => { setEditandoId(null); onRecargar() }}
+                  onCerrar={() => setEditandoId(null)}
+                />
+              </li>
+            )
+          }
           const total = totalRonda(r)
           return (
             <li key={r.id} className="facturacion-ronda-item">
@@ -1226,6 +1394,10 @@ function HistorialRondas({ obra, accessToken, rondas, lineas, datosCliente, onCa
               <button type="button" className="btn-secundario" onClick={() => handleDescargarPdf(r)} disabled={descargando === `${r.id}-pdf`}>
                 {descargando === `${r.id}-pdf` ? 'Generando…' : '⬇ PDF'}
               </button>
+              <button type="button" className="btn-secundario" onClick={() => setEditandoId(r.id)}>Editar</button>
+              {r.tipo === 'proforma' && (
+                <button type="button" className="btn-secundario" onClick={() => handleFacturar(r)}>Facturar</button>
+              )}
               {r.tipo === 'factura' && (
                 <button type="button" className="btn-secundario" onClick={() => handleAsignarNumero(r)}>Nº factura</button>
               )}
@@ -1275,6 +1447,16 @@ export default function FacturacionObra({ obra, accessToken }) {
   const [datos, setDatos] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
+
+  // Extraída aparte (a pedido de Álvaro, 2026-09-25) porque editar o
+  // convertir una ronda cambia "facturado"/"pendiente" en varias líneas y
+  // anticipos a la vez — más simple y confiable recalcular todo desde el
+  // servidor que tratar de parchear el estado local a mano en cada caso.
+  function recargar() {
+    return facturacionObra(accessToken, obra)
+      .then((data) => setDatos(data))
+      .catch((err) => setError(err.message))
+  }
 
   useEffect(() => {
     let activo = true
@@ -1363,8 +1545,10 @@ export default function FacturacionObra({ obra, accessToken }) {
         accessToken={accessToken}
         rondas={datos.rondas || []}
         lineas={datos.lineas}
+        anticipos={datos.anticipos || []}
         datosCliente={datos.datos_cliente}
         onCambiadas={(rondas) => setDatos((prev) => ({ ...prev, rondas }))}
+        onRecargar={recargar}
       />
     </div>
   )

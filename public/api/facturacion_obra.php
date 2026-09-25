@@ -51,6 +51,20 @@ declare(strict_types=1);
 // PATCH {accion:"asignar_numero_factura", ronda_id, numero_factura}: para
 //   cuando Contabilidad ya emitió la factura real y hay que dejar
 //   registrado el número que le puso.
+// PATCH {accion:"editar_ronda", id, fecha?, lineas?:[{linea_id, uds,
+//   importe}], amortizaciones?:[{anticipo_id, monto}]}: edita una ronda YA
+//   creada (a pedido de Álvaro, 2026-09-25) — antes la única forma de
+//   corregir una proforma armada mal era borrarla y rehacerla. Si se manda
+//   "lineas", REEMPLAZA por completo el detalle anterior de esa ronda (no
+//   suma); mismo criterio con "amortizaciones". Valida el saldo del
+//   anticipo igual que crear_ronda, pero sin contar la amortización previa
+//   de ESTA misma ronda (se está reemplazando, no sumando encima).
+// PATCH {accion:"convertir_a_factura", id, numero_factura, fecha?}: pasa
+//   una proforma a factura de una sola vez (a pedido de Álvaro,
+//   2026-09-25) — hasta ahora no había forma de decir "esto ya se
+//   facturó" sin borrar la proforma y crear una ronda nueva de tipo
+//   factura a mano. Pide el número de factura en el momento (obligatorio);
+//   la fecha es opcional, si no se manda queda la misma de la proforma.
 // PATCH {accion:"editar_linea", id, concepto?, presupuesto_ref?, uds?,
 //   precio_unit?}: edita una línea existente EN EL LUGAR (mismo id) —
 //   a diferencia de eliminar_linea, funciona aunque la línea ya se haya
@@ -269,6 +283,119 @@ try {
             }
             $db->prepare('UPDATE facturacion_ronda SET numero_factura = ? WHERE id = ?')
                 ->execute([$numeroFactura === '' ? null : $numeroFactura, $rondaId]);
+            Response::json(['ok' => true]);
+        }
+
+        if ($accion === 'editar_ronda') {
+            $id = (int) ($body['id'] ?? 0);
+            if ($id <= 0) {
+                Response::error('Falta "id"', 422);
+            }
+            $stmtRonda = $db->prepare('SELECT * FROM facturacion_ronda WHERE id = ?');
+            $stmtRonda->execute([$id]);
+            $rondaActual = $stmtRonda->fetch();
+            if (!$rondaActual) {
+                Response::error('Ronda no encontrada', 404);
+            }
+            $obraRonda = (string) $rondaActual['obra'];
+
+            $fecha = array_key_exists('fecha', $body) ? trim((string) $body['fecha']) : (string) $rondaActual['fecha'];
+            if ($fecha === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)) {
+                Response::error('"fecha" debe tener formato AAAA-MM-DD', 422);
+            }
+
+            $lineasRonda = array_key_exists('lineas', $body) ? $body['lineas'] : null;
+            if ($lineasRonda !== null && (!is_array($lineasRonda) || count($lineasRonda) === 0)) {
+                Response::error('"lineas" debe traer al menos una', 422);
+            }
+
+            $amortizaciones = array_key_exists('amortizaciones', $body) ? $body['amortizaciones'] : null;
+            if ($amortizaciones !== null && !is_array($amortizaciones)) {
+                $amortizaciones = [];
+            }
+
+            // Mismo chequeo de saldo que crear_ronda, pero sin contar la
+            // amortización previa de ESTA ronda (se reemplaza, no se suma).
+            if ($amortizaciones !== null) {
+                foreach ($amortizaciones as $am) {
+                    $anticipoId = (int) ($am['anticipo_id'] ?? 0);
+                    $monto = (float) ($am['monto'] ?? 0);
+                    if ($anticipoId <= 0 || $monto <= 0) {
+                        continue;
+                    }
+                    $stmtAnt = $db->prepare('SELECT monto FROM facturacion_anticipo WHERE id = ? AND obra = ?');
+                    $stmtAnt->execute([$anticipoId, $obraRonda]);
+                    $anticipo = $stmtAnt->fetch();
+                    if (!$anticipo) {
+                        Response::error("El anticipo #$anticipoId no existe en esta obra", 422);
+                    }
+                    $stmtAmortizado = $db->prepare('SELECT COALESCE(SUM(monto), 0) AS total FROM facturacion_anticipo_amortizacion WHERE anticipo_id = ? AND ronda_id != ?');
+                    $stmtAmortizado->execute([$anticipoId, $id]);
+                    $yaAmortizado = (float) $stmtAmortizado->fetch()['total'];
+                    $saldo = (float) $anticipo['monto'] - $yaAmortizado;
+                    if ($monto > $saldo + 0.01) {
+                        Response::error("La amortización de $monto € supera el saldo pendiente del anticipo #$anticipoId ($saldo €)", 422);
+                    }
+                }
+            }
+
+            $db->prepare('UPDATE facturacion_ronda SET fecha = ? WHERE id = ?')->execute([$fecha, $id]);
+
+            if ($lineasRonda !== null) {
+                $db->prepare('DELETE FROM facturacion_ronda_linea WHERE ronda_id = ?')->execute([$id]);
+                $stmtInsLinea = $db->prepare('INSERT INTO facturacion_ronda_linea (ronda_id, linea_id, uds, importe) VALUES (?, ?, ?, ?)');
+                foreach ($lineasRonda as $lr) {
+                    $lineaId = (int) ($lr['linea_id'] ?? 0);
+                    $uds = (float) ($lr['uds'] ?? 0);
+                    $importe = (float) ($lr['importe'] ?? 0);
+                    if ($lineaId <= 0 || $importe == 0) {
+                        continue;
+                    }
+                    $stmtInsLinea->execute([$id, $lineaId, $uds, $importe]);
+                }
+            }
+
+            if ($amortizaciones !== null) {
+                $db->prepare('DELETE FROM facturacion_anticipo_amortizacion WHERE ronda_id = ?')->execute([$id]);
+                $stmtInsAmort = $db->prepare('INSERT INTO facturacion_anticipo_amortizacion (anticipo_id, ronda_id, monto) VALUES (?, ?, ?)');
+                foreach ($amortizaciones as $am) {
+                    $anticipoId = (int) ($am['anticipo_id'] ?? 0);
+                    $monto = (float) ($am['monto'] ?? 0);
+                    if ($anticipoId <= 0 || $monto <= 0) {
+                        continue;
+                    }
+                    $stmtInsAmort->execute([$anticipoId, $id, $monto]);
+                }
+            }
+
+            Response::json(['ok' => true]);
+        }
+
+        if ($accion === 'convertir_a_factura') {
+            $id = (int) ($body['id'] ?? 0);
+            $numeroFactura = trim((string) ($body['numero_factura'] ?? ''));
+            if ($id <= 0) {
+                Response::error('Falta "id"', 422);
+            }
+            if ($numeroFactura === '') {
+                Response::error('Falta "numero_factura"', 422);
+            }
+            $stmtRonda = $db->prepare('SELECT id FROM facturacion_ronda WHERE id = ?');
+            $stmtRonda->execute([$id]);
+            if (!$stmtRonda->fetch()) {
+                Response::error('Ronda no encontrada', 404);
+            }
+            $fecha = trim((string) ($body['fecha'] ?? ''));
+            if ($fecha !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)) {
+                Response::error('"fecha" debe tener formato AAAA-MM-DD', 422);
+            }
+            if ($fecha !== '') {
+                $db->prepare("UPDATE facturacion_ronda SET tipo = 'factura', numero_factura = ?, fecha = ? WHERE id = ?")
+                    ->execute([$numeroFactura, $fecha, $id]);
+            } else {
+                $db->prepare("UPDATE facturacion_ronda SET tipo = 'factura', numero_factura = ? WHERE id = ?")
+                    ->execute([$numeroFactura, $id]);
+            }
             Response::json(['ok' => true]);
         }
 

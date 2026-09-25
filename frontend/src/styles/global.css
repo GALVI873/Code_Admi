@@ -3824,6 +3824,13 @@ select.celda-editable-material {
   flex-wrap: wrap;
 }
 
+/* Ronda en modo edición (a pedido de Álvaro, 2026-09-25): ocupa el
+   ancho completo de la lista en vez de la fila angosta normal, porque
+   adentro va el mismo formulario que "Nueva ronda". */
+.facturacion-ronda-item-editando {
+  list-style: none;
+}
+
 .facturacion-ronda-numero {
   font-weight: 700;
   color: var(--azul);
