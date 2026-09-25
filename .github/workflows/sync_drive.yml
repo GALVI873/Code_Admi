@@ -9,11 +9,17 @@ name: Sincronizar Drive (programado)
 # utils/tesseract (para OCR de PDF escaneados) se instalan solos con
 # apt-get, son paquetes estándar de Ubuntu.
 #
-# 05:00 UTC = 6:00 (CET, invierno) u 7:00 (CEST, verano) hora de Madrid —
-# ajustar el cron si se necesita otro horario.
+# El cron de GitHub Actions es siempre en UTC, no ajusta solo por horario de
+# verano/invierno — a pedido de Álvaro (2026-09-25, tras notar que un día de
+# CEST "no había corrido" cuando en realidad todavía no era la hora real) se
+# corre más temprano, con margen para los dos casos:
+# 04:00 UTC = 5:00 (CET, invierno) o 6:00 (CEST, verano) hora de Madrid —
+# entre los ~20 min que tarda en correr y el margen elegido, queda listo
+# bastante antes de las 6-7 de la mañana en cualquier época del año.
+# Ajustar el cron si se necesita otro horario.
 on:
   schedule:
-    - cron: '0 5 * * *'
+    - cron: '0 4 * * *'
   workflow_dispatch: {}
 
 jobs:
