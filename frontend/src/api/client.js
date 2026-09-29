@@ -521,3 +521,58 @@ export function eliminarRondaFacturacion(accessToken, id) {
     body: JSON.stringify({ accion: 'eliminar_ronda', id }),
   })
 }
+
+// Planificación de obras (cronograma + Gantt) — ver public/api/planificacion.php.
+export function planificacion(accessToken) {
+  return request('/planificacion.php', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
+export function crearObraPlanificacion(accessToken, datos) {
+  return request('/planificacion.php', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'crear_obra', ...datos }),
+  })
+}
+
+export function actualizarObraPlanificacion(accessToken, id, cambios) {
+  return request('/planificacion.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'actualizar_obra', id, ...cambios }),
+  })
+}
+
+export function eliminarObraPlanificacion(accessToken, id) {
+  return request('/planificacion.php', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'eliminar_obra', id }),
+  })
+}
+
+export function agregarTareaPlanificacion(accessToken, obraId, categoria) {
+  return request('/planificacion.php', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'agregar_tarea', obra_id: obraId, categoria }),
+  })
+}
+
+export function actualizarTareaPlanificacion(accessToken, id, cambios) {
+  return request('/planificacion.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'actualizar_tarea', id, ...cambios }),
+  })
+}
+
+export function eliminarTareaPlanificacion(accessToken, id) {
+  return request('/planificacion.php', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'eliminar_tarea', id }),
+  })
+}

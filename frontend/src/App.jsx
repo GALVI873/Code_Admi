@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { AuthProvider, useAuth } from './context/AuthContext.jsx'
+import { AuthProvider } from './context/AuthContext.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import AppLayout from './components/AppLayout.jsx'
 import LoginPage from './pages/LoginPage.jsx'
@@ -10,22 +10,18 @@ import DiarioGeneralPage from './pages/DiarioGeneralPage.jsx'
 import PendientesObrasPage from './pages/PendientesObrasPage.jsx'
 import ContabilidadPage from './pages/ContabilidadPage.jsx'
 import CostesObraPage from './pages/CostesObraPage.jsx'
+import InicioPage from './pages/InicioPage.jsx'
+import PlanificacionPage from './pages/PlanificacionPage.jsx'
 
-// No hay una sola "página principal" para todos: cada perfil tiene acceso a
-// una vista distinta (Presupuesto para admin/Geraldinne, Obras Aceptadas
-// para Alfredo), así que "/" manda a la primera a la que el usuario
-// logueado realmente tenga acceso, en vez de una ruta fija.
+// "/" manda a Inicio (InicioPage.jsx) para todos — a pedido de Álvaro,
+// 2026-09-29: una página común con el Gantt semanal de montaje que puede ver
+// cualquier usuario logueado. Antes cada perfil caía en su propia vista
+// (Presupuesto para admin/Geraldinne, Obras Aceptadas para Alfredo); esas
+// siguen en el menú como siempre.
 // "presupuestos-en-estudio" ya no es el destino de nadie: se sacó del menú
 // (ver AppLayout.jsx) porque duplicaba a "seguimiento" para admin.
 function InicioRedirect() {
-  const { usuario, tienePermiso } = useAuth()
-  if (tienePermiso('presupuestos.ver_todos') || tienePermiso('presupuestos.ver_seguimiento')) return <Navigate to="/seguimiento" replace />
-  if (tienePermiso('obras.ver_aceptadas')) return <Navigate to="/obras-aceptadas" replace />
-  return (
-    <div className="dashboard">
-      <p className="dashboard-nota">Tu usuario ({usuario?.email}) no tiene acceso a ninguna vista todavía.</p>
-    </div>
-  )
+  return <Navigate to="/inicio" replace />
 }
 
 export default function App() {
@@ -36,6 +32,8 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route path="/" element={<InicioRedirect />} />
+            <Route path="/inicio" element={<InicioPage />} />
+            <Route path="/planificacion" element={<PlanificacionPage />} />
             <Route path="/presupuestos-en-estudio" element={<PresupuestosEnEstudioPage />} />
             <Route path="/seguimiento" element={<SeguimientoPage />} />
             <Route path="/obras-aceptadas" element={<ObrasAceptadasPage />} />

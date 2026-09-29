@@ -10,6 +10,9 @@ import { useAuth, MOCK_AUTH } from '../context/AuthContext.jsx'
 // construya — el filtro por permiso ya queda listo para cualquiera de los
 // dos casos.
 const NAV_ITEMS = [
+  // Inicio para todos (Gantt semanal de montaje) — a pedido de Álvaro,
+  // 2026-09-29, ver InicioPage.jsx. Sin permiso: cualquier usuario logueado.
+  { to: '/inicio', label: 'Inicio', icono: '🏠' },
   // Antes había una segunda entrada "Presupuestos" (plural) apuntando a
   // /presupuestos-en-estudio, la vista original de admin — cuando se le dio
   // acceso a Álvaro a esta página (Orden del día / General, antes exclusiva
@@ -41,6 +44,10 @@ const NAV_ITEMS = [
     icono: '🏗️',
     items: [
       { to: '/obras-aceptadas', label: 'Obras Aceptadas', permiso: 'obras.ver_aceptadas' },
+      // Cronograma + Gantt de montaje (reemplaza "Seguimiento Obras" de
+      // Notion, a pedido de Álvaro 2026-09-29) — solo admin edita, ver
+      // public/api/planificacion.php.
+      { to: '/planificacion', label: 'Planificación', permiso: 'obras.ver_aceptadas' },
       { to: '/diario-general', label: 'Diario General', permiso: 'obras.ver_diario_general' },
       { to: '/pendientes', label: 'Notas', permiso: 'obras.ver_aceptadas' },
     ],
