@@ -593,6 +593,40 @@ try {
             if ($estatus === 'Aceptado' && $estatusActual !== 'Aceptado') {
                 $db->prepare("UPDATE presupuestos_en_estudio SET estatus = ?, traspaso_estado = 'pendiente', actualizado_en = datetime('now') WHERE id = ?")
                     ->execute([$estatus, $id]);
+
+                // Alta automática en Planificación (a pedido de Álvaro,
+                // 2026-09-29): la obra aparece ya vinculada, con el mismo
+                // nombre y el cronograma tipo calculado desde hoy (fecha de
+                // aceptación) — ver backend/src/Planificacion.php. Si ya hay
+                // una obra de planificación con ese nombre/vínculo no se
+                // duplica. Un fallo acá nunca debe impedir aceptar el
+                // presupuesto, por eso va aparte.
+                try {
+                    $stmtObra = $db->prepare('SELECT obra, cliente FROM presupuestos_en_estudio WHERE id = ?');
+                    $stmtObra->execute([$id]);
+                    $presupuesto = $stmtObra->fetch();
+                    if ($presupuesto) {
+                        Planificacion::asegurarTablas($db);
+                        $stmtExiste = $db->prepare('SELECT 1 FROM planificacion_obras WHERE obra_panel = ? OR nombre = ?');
+                        $stmtExiste->execute([$presupuesto['obra'], $presupuesto['obra']]);
+                        if (!$stmtExiste->fetchColumn()) {
+                            $db->beginTransaction();
+                            Planificacion::crearObra($db, [
+                                'nombre' => $presupuesto['obra'],
+                                'obra_panel' => $presupuesto['obra'],
+                                'constructora' => $presupuesto['cliente'] ?: null,
+                                'situacion' => 'Obra',
+                                'fecha_aceptacion' => date('Y-m-d'),
+                            ], $usuario['nombre'] ?? null);
+                            $db->commit();
+                        }
+                    }
+                } catch (Throwable $e) {
+                    if ($db->inTransaction()) {
+                        $db->rollBack();
+                    }
+                    error_log('Planificación: no se pudo crear la obra al aceptar: ' . $e->getMessage());
+                }
             } else {
                 $db->prepare("UPDATE presupuestos_en_estudio SET estatus = ?, actualizado_en = datetime('now') WHERE id = ?")
                     ->execute([$estatus, $id]);

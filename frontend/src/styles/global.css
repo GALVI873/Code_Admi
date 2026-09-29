@@ -4618,3 +4618,9 @@ select.celda-editable-material {
   .gantt-etiqueta { flex-basis: 140px; width: 140px; }
   .plan-form-ancho { grid-column: auto; }
 }
+.plan-calcular-fechas {
+  display: flex;
+  align-items: flex-end;
+}
+
+.plan-calcular-fechas .btn-secundario { height: 36px; }

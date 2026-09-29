@@ -21,8 +21,11 @@ declare(strict_types=1);
 //   (para vincular) y si el usuario puede editar.
 // Todo lo que escribe requiere rol admin (Álvaro es quien asigna fechas):
 //   POST {accion:"crear_obra", nombre, constructora?, obra_panel?, tipo?,
-//     situacion?, silicona?, comentario?}: crea la obra + una tarea vacía
-//     por cada categoría.
+//     situacion?, silicona?, comentario?, fecha_aceptacion?}: crea la obra.
+//     Con fecha de aceptación las tareas salen con el cronograma tipo (ver
+//     backend/src/Planificacion.php); sin ella, una tarea vacía por categoría.
+//   POST {accion:"calcular_fechas", id, fecha_aceptacion}: rellena las
+//     fechas de las tareas pendientes de la obra con el cronograma tipo.
 //   PATCH {accion:"actualizar_obra", id, ...campos}
 //   DELETE {accion:"eliminar_obra", id}: borra la obra y sus tareas.
 //   POST {accion:"agregar_tarea", obra_id, categoria}
@@ -35,14 +38,12 @@ declare(strict_types=1);
 //   Idempotente: una tarea con un notion_id ya importado se saltea, y la
 //   obra se busca por nombre + constructora antes de crearla.
 
-const CATEGORIAS_PLANIFICACION = ['Medición', 'Material', 'Fabricación', 'Chapas', 'Composite', 'Transporte', 'Grúa', 'Montaje', 'Facturar', 'Varios'];
-// Las que se crean solas al dar de alta una obra ("Varios" queda para
-// agregar a mano si hace falta).
-const CATEGORIAS_ALTA_OBRA = ['Medición', 'Material', 'Fabricación', 'Chapas', 'Composite', 'Transporte', 'Grúa', 'Montaje', 'Facturar'];
-const ESTADOS_TAREA = ['Pendiente', 'Terminado'];
-const CAMPOS_OBRA = ['nombre', 'constructora', 'obra_panel', 'tipo', 'situacion', 'silicona', 'comentario', 'estado'];
-
 $config = require __DIR__ . '/../../backend/bootstrap.php';
+
+// Después del bootstrap: la clase Planificacion se carga ahí.
+const CATEGORIAS_PLANIFICACION = Planificacion::CATEGORIAS;
+const ESTADOS_TAREA = ['Pendiente', 'Terminado'];
+const CAMPOS_OBRA = ['nombre', 'constructora', 'obra_panel', 'tipo', 'situacion', 'silicona', 'comentario', 'estado', 'fecha_aceptacion'];
 
 function fechaValidaPlanificacion(?string $valor, string $campo): ?string
 {
@@ -62,60 +63,10 @@ function textoONull($valor): ?string
     return $valor === '' ? null : $valor;
 }
 
-function insertarTareaPlanificacion(PDO $db, int $obraId, array $t, ?string $autor): void
-{
-    $db->prepare("
-        INSERT INTO planificacion_tareas (obra_id, categoria, fecha_inicio, fecha_fin, responsable, estado, comentario, notion_id, actualizado_por)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ")->execute([
-        $obraId,
-        $t['categoria'],
-        $t['fecha_inicio'] ?? null,
-        $t['fecha_fin'] ?? null,
-        $t['responsable'] ?? null,
-        $t['estado'] ?? 'Pendiente',
-        $t['comentario'] ?? null,
-        $t['notion_id'] ?? null,
-        $autor,
-    ]);
-}
-
 try {
     $db = Database::connection($config);
 
-    $db->exec("
-        CREATE TABLE IF NOT EXISTS planificacion_obras (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          nombre TEXT NOT NULL,
-          constructora TEXT,
-          obra_panel TEXT,
-          tipo TEXT,
-          situacion TEXT,
-          silicona TEXT,
-          comentario TEXT,
-          estado TEXT NOT NULL DEFAULT 'Activa',
-          creado_por TEXT,
-          creado_en TEXT NOT NULL DEFAULT (datetime('now')),
-          actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-    ");
-    $db->exec("
-        CREATE TABLE IF NOT EXISTS planificacion_tareas (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          obra_id INTEGER NOT NULL,
-          categoria TEXT NOT NULL,
-          fecha_inicio TEXT,
-          fecha_fin TEXT,
-          responsable TEXT,
-          estado TEXT NOT NULL DEFAULT 'Pendiente',
-          comentario TEXT,
-          notion_id TEXT UNIQUE,
-          actualizado_por TEXT,
-          actualizado_en TEXT NOT NULL DEFAULT (datetime('now')),
-          FOREIGN KEY (obra_id) REFERENCES planificacion_obras(id) ON DELETE CASCADE
-        )
-    ");
-    $db->exec('CREATE INDEX IF NOT EXISTS idx_planificacion_tareas_obra ON planificacion_tareas(obra_id)');
+    Planificacion::asegurarTablas($db);
 
     // SYNC_TOKEN (sin sesión) — carga inicial desde Notion. Mismo patrón que
     // montaje_obra.php: se resuelve ANTES del chequeo de sesión.
@@ -170,7 +121,7 @@ try {
                             continue;
                         }
                     }
-                    insertarTareaPlanificacion($db, $obraId, [
+                    Planificacion::insertarTarea($db, $obraId, [
                         'categoria' => $categoria,
                         'fecha_inicio' => textoONull($t['fecha_inicio'] ?? null),
                         'fecha_fin' => textoONull($t['fecha_fin'] ?? null),
@@ -251,23 +202,16 @@ try {
             Response::error('Falta el nombre de la obra', 422);
         }
         $db->beginTransaction();
-        $db->prepare("
-            INSERT INTO planificacion_obras (nombre, constructora, obra_panel, tipo, situacion, silicona, comentario, creado_por)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ")->execute([
-            $nombre,
-            textoONull($body['constructora'] ?? null),
-            textoONull($body['obra_panel'] ?? null),
-            textoONull($body['tipo'] ?? null),
-            textoONull($body['situacion'] ?? null),
-            textoONull($body['silicona'] ?? null),
-            textoONull($body['comentario'] ?? null),
-            $autor,
-        ]);
-        $obraId = (int) $db->lastInsertId();
-        foreach (CATEGORIAS_ALTA_OBRA as $categoria) {
-            insertarTareaPlanificacion($db, $obraId, ['categoria' => $categoria], $autor);
-        }
+        $obraId = Planificacion::crearObra($db, [
+            'nombre' => $nombre,
+            'constructora' => textoONull($body['constructora'] ?? null),
+            'obra_panel' => textoONull($body['obra_panel'] ?? null),
+            'tipo' => textoONull($body['tipo'] ?? null),
+            'situacion' => textoONull($body['situacion'] ?? null),
+            'silicona' => textoONull($body['silicona'] ?? null),
+            'comentario' => textoONull($body['comentario'] ?? null),
+            'fecha_aceptacion' => fechaValidaPlanificacion($body['fecha_aceptacion'] ?? null, 'fecha_aceptacion'),
+        ], $autor);
         $db->commit();
 
         $stmtObra = $db->prepare('SELECT * FROM planificacion_obras WHERE id = ?');
@@ -292,6 +236,9 @@ try {
             if ($campo === 'nombre' && $valor === null) {
                 Response::error('El nombre de la obra no puede quedar vacío', 422);
             }
+            if ($campo === 'fecha_aceptacion') {
+                $valor = fechaValidaPlanificacion($valor, 'fecha_aceptacion');
+            }
             if ($campo === 'estado' && !in_array($valor, ['Activa', 'Terminada'], true)) {
                 Response::error('"estado" debe ser Activa o Terminada', 422);
             }
@@ -306,6 +253,22 @@ try {
         $stmt = $db->prepare('SELECT * FROM planificacion_obras WHERE id = ?');
         $stmt->execute([$id]);
         Response::json(['obra' => $stmt->fetch()]);
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && $accion === 'calcular_fechas') {
+        $id = (int) ($body['id'] ?? 0);
+        $fechaAceptacion = fechaValidaPlanificacion($body['fecha_aceptacion'] ?? null, 'fecha_aceptacion');
+        if ($id <= 0 || $fechaAceptacion === null) {
+            Response::error('Faltan "id" y/o "fecha_aceptacion"', 422);
+        }
+        $db->beginTransaction();
+        Planificacion::recalcularFechas($db, $id, $fechaAceptacion, $autor);
+        $db->commit();
+        $stmtObra = $db->prepare('SELECT * FROM planificacion_obras WHERE id = ?');
+        $stmtObra->execute([$id]);
+        $stmtTareas = $db->prepare('SELECT * FROM planificacion_tareas WHERE obra_id = ? ORDER BY id');
+        $stmtTareas->execute([$id]);
+        Response::json(['obra' => $stmtObra->fetch(), 'tareas' => $stmtTareas->fetchAll()]);
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'DELETE' && $accion === 'eliminar_obra') {
@@ -324,7 +287,7 @@ try {
         if ($obraId <= 0 || !in_array($categoria, CATEGORIAS_PLANIFICACION, true)) {
             Response::error('Faltan "obra_id" y/o una "categoria" válida', 422);
         }
-        insertarTareaPlanificacion($db, $obraId, ['categoria' => $categoria], $autor);
+        Planificacion::insertarTarea($db, $obraId, ['categoria' => $categoria], $autor);
         $stmt = $db->prepare('SELECT * FROM planificacion_tareas WHERE id = ?');
         $stmt->execute([(int) $db->lastInsertId()]);
         Response::json(['tarea' => $stmt->fetch()]);

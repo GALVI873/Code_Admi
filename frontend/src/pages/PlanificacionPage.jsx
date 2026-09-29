@@ -9,6 +9,7 @@ import {
   agregarTareaPlanificacion,
   actualizarTareaPlanificacion,
   eliminarTareaPlanificacion,
+  calcularFechasPlanificacion,
 } from '../api/client.js'
 import DiagramaGantt, { diaANumero, numeroADia, hoyIso, lunesDe, formatoCorto } from '../components/DiagramaGantt.jsx'
 import {
@@ -54,6 +55,10 @@ function normalizar(texto) {
     .trim()
 }
 
+// Al vincular una obra aceptada, la obra de planificación pasa a llamarse
+// igual que en el panel (a pedido de Álvaro, 2026-09-29) — así se busca con
+// el mismo nombre en todas las vistas. Desvincular no toca el nombre.
+//
 // Obras aceptadas del panel cuyo nombre se parece al de la obra de
 // planificación — los nombres de Notion no coinciden exacto con los del
 // panel ("Jose Abascal" vs "8 Viv. Jose Abascal, 57"), así que se sugieren
@@ -156,7 +161,7 @@ function FiltroCategorias({ categorias, seleccionadas, onCambiar }) {
 }
 
 function NuevaObra({ obrasPanel, onCrear, onCancelar }) {
-  const [form, setForm] = useState({ nombre: '', constructora: '', situacion: 'Obra', obra_panel: '' })
+  const [form, setForm] = useState({ nombre: '', constructora: '', situacion: 'Obra', obra_panel: '', fecha_aceptacion: hoyIso() })
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
   const sugeridas = useMemo(() => sugerirObrasPanel(form.nombre, obrasPanel), [form.nombre, obrasPanel])
@@ -177,7 +182,7 @@ function NuevaObra({ obrasPanel, onCrear, onCancelar }) {
   return (
     <form className="plan-nueva-obra" onSubmit={handleSubmit}>
       <h3 className="montaje-subtitulo">Nueva obra</h3>
-      <p className="dashboard-nota plan-nota-sin-margen">Se crea con todas las categorías (Medición, Material, Fabricación, Chapas, Composite, Transporte, Grúa, Montaje y Facturar) para ponerles fecha después.</p>
+      <p className="dashboard-nota plan-nota-sin-margen">Se crea con todas las categorías (Medición, Material, Fabricación, Chapas, Composite, Transporte, Grúa, Montaje y Facturar). Con fecha de aceptación, las fechas se calculan solas con el cronograma tipo; sin ella, quedan vacías.</p>
       <div className="plan-form-grilla">
         <label>
           Nombre *
@@ -194,8 +199,12 @@ function NuevaObra({ obrasPanel, onCrear, onCancelar }) {
           </select>
         </label>
         <label>
+          Fecha de aceptación
+          <input type="date" className="input-filtro" value={form.fecha_aceptacion} onChange={(e) => setForm({ ...form, fecha_aceptacion: e.target.value })} />
+        </label>
+        <label>
           Obra aceptada del panel
-          <SelectObraPanel valor={form.obra_panel} sugeridas={sugeridas} obrasPanel={obrasPanel} onCambio={(v) => setForm({ ...form, obra_panel: v })} />
+          <SelectObraPanel valor={form.obra_panel} sugeridas={sugeridas} obrasPanel={obrasPanel} onCambio={(v) => setForm({ ...form, obra_panel: v, nombre: v || form.nombre })} />
         </label>
       </div>
       {error && <div className="auth-error">{error}</div>}
@@ -243,10 +252,12 @@ function CampoTexto({ valor, onGuardar, disabled, placeholder, list, className =
   )
 }
 
-function EditorObra({ obra, tareas, datos, puedeEditar, onMoverObra, onActualizarObra, onEliminarObra, onActualizarTarea, onAgregarTarea, onEliminarTarea, onVolver }) {
+function EditorObra({ obra, tareas, datos, puedeEditar, onMoverObra, onCalcularFechas, onActualizarObra, onEliminarObra, onActualizarTarea, onAgregarTarea, onEliminarTarea, onVolver }) {
   const navigate = useNavigate()
   const [error, setError] = useState('')
   const [categoriaNueva, setCategoriaNueva] = useState('Varios')
+  const [fechaAceptacion, setFechaAceptacion] = useState(obra.fecha_aceptacion || '')
+  useEffect(() => setFechaAceptacion(obra.fecha_aceptacion || ''), [obra.fecha_aceptacion])
   const sugeridas = useMemo(() => sugerirObrasPanel(obra.nombre, datos.obras_panel), [obra.nombre, datos.obras_panel])
   const obraPanel = datos.obras_panel.find((o) => o.obra === obra.obra_panel)
 
@@ -342,9 +353,34 @@ function EditorObra({ obra, tareas, datos, puedeEditar, onMoverObra, onActualiza
           Silicona
           <CampoTexto valor={obra.silicona} disabled={!puedeEditar} placeholder="Ej. 7022, Blanco…" onGuardar={(v) => ejecutar(onActualizarObra(obra.id, { silicona: v }))} />
         </label>
+        <label>
+          Fecha de aceptación
+          <input type="date" className="input-filtro" value={fechaAceptacion} disabled={!puedeEditar}
+            onChange={(e) => {
+              setFechaAceptacion(e.target.value)
+              ejecutar(onActualizarObra(obra.id, { fecha_aceptacion: e.target.value }))
+            }} />
+        </label>
+        {puedeEditar && (
+          <div className="plan-calcular-fechas">
+            <button
+              type="button"
+              className="btn-secundario plan-boton-principal"
+              disabled={!fechaAceptacion}
+              title={fechaAceptacion ? '' : 'Primero pon la fecha de aceptación'}
+              onClick={() => {
+                if (window.confirm('Se van a reemplazar las fechas de todas las tareas PENDIENTES de esta obra con el cronograma tipo desde la fecha de aceptación. Las terminadas no se tocan. ¿Seguir?')) {
+                  ejecutar(onCalcularFechas(obra.id, fechaAceptacion))
+                }
+              }}
+            >
+              Calcular fechas
+            </button>
+          </div>
+        )}
         <label className="plan-form-ancho">
           Obra aceptada del panel
-          <SelectObraPanel valor={obra.obra_panel} sugeridas={sugeridas} obrasPanel={datos.obras_panel} disabled={!puedeEditar} onCambio={(v) => ejecutar(onActualizarObra(obra.id, { obra_panel: v }))} />
+          <SelectObraPanel valor={obra.obra_panel} sugeridas={sugeridas} obrasPanel={datos.obras_panel} disabled={!puedeEditar} onCambio={(v) => ejecutar(onActualizarObra(obra.id, v ? { obra_panel: v, nombre: v } : { obra_panel: v }))} />
         </label>
         <label className="plan-form-ancho">
           Comentario
@@ -589,6 +625,19 @@ export default function PlanificacionPage() {
     irA('Obras', obra.id)
   }
 
+  // Rellena las fechas de la obra con el cronograma tipo desde la fecha de
+  // aceptación (lo calcula el servidor, ver backend/src/Planificacion.php).
+  async function calcularFechas(obraId, fechaAceptacion) {
+    const r = await calcularFechasPlanificacion(accessToken, obraId, fechaAceptacion)
+    const obra = obraNum(r.obra)
+    const tareas = r.tareas.map(tareaNum)
+    setDatos((prev) => ({
+      ...prev,
+      obras: prev.obras.map((o) => (o.id === obraId ? obra : o)),
+      tareas: [...prev.tareas.filter((t) => t.obra_id !== obraId), ...tareas],
+    }))
+  }
+
   async function eliminarObra(id) {
     await eliminarObraPlanificacion(accessToken, id)
     setDatos((prev) => ({ ...prev, obras: prev.obras.filter((o) => o.id !== id), tareas: prev.tareas.filter((t) => t.obra_id !== id) }))
@@ -819,6 +868,7 @@ export default function PlanificacionPage() {
             datos={datos}
             puedeEditar={puedeEditar}
             onMoverObra={moverObra}
+            onCalcularFechas={calcularFechas}
             onActualizarObra={actualizarObra}
             onEliminarObra={eliminarObra}
             onActualizarTarea={actualizarTarea}

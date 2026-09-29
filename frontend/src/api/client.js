@@ -576,3 +576,10 @@ export function eliminarTareaPlanificacion(accessToken, id) {
     body: JSON.stringify({ accion: 'eliminar_tarea', id }),
   })
 }
+export function calcularFechasPlanificacion(accessToken, id, fechaAceptacion) {
+  return request('/planificacion.php', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion: 'calcular_fechas', id, fecha_aceptacion: fechaAceptacion }),
+  })
+}

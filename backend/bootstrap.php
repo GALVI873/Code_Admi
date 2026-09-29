@@ -34,5 +34,6 @@ require __DIR__ . '/src/Jwt.php';
 require __DIR__ . '/src/Response.php';
 require __DIR__ . '/src/AuthService.php';
 require __DIR__ . '/src/AuthMiddleware.php';
+require __DIR__ . '/src/Planificacion.php';
 
 return $config;
