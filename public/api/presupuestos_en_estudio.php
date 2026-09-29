@@ -628,9 +628,10 @@ try {
             Response::json(['presupuestos' => $stmt->fetchAll()]);
         }
 
-        // Usado por traspasar_obras_aceptadas.js (corre a mano en la
-        // máquina de Valentina) para saber qué obras recién "Aceptado"
-        // todavía no tuvieron su carpeta movida a "Seguimiento de obra".
+        // Usado por traspasar_obras_aceptadas.js para saber qué obras recién
+        // "Aceptado" todavía no tuvieron su carpeta movida a "Seguimiento de
+        // obra" (fase 1: mover el contenido — ver comentario de cabecera de
+        // ese script sobre por qué el traspaso quedó partido en dos fases).
         if (($body['accion'] ?? '') === 'listar_pendientes_traspaso') {
             $stmt = $db->query("
                 SELECT id, obra, categoria, contacto
@@ -640,11 +641,44 @@ try {
             Response::json(['presupuestos' => $stmt->fetchAll()]);
         }
 
-        // El script llama esto por cada obra apenas termina de moverla y
-        // crear su MEDYSEG — "procesado" saca la obra de
-        // listar_pendientes_traspaso y (del lado de obras_aceptadas.php)
-        // la próxima sincronización normal de Alfredo ya la va a encontrar
-        // en su nueva carpeta y la va a marcar "es_nueva".
+        // El script llama esto por cada obra apenas termina de mover el
+        // contenido a su carpeta nueva (Excel, PDF, "1.Organización", "Doc")
+        // pero ANTES de vaciar/eliminar la carpeta de origen — esa parte
+        // queda para el día siguiente (ver listar_pendientes_limpieza_
+        // traspaso). "movido" ya alcanza para que la sincronización normal
+        // de Alfredo (sync_obras_aceptadas.js) encuentre la obra en su
+        // carpeta nueva y la marque "es_nueva" — no hace falta esperar a que
+        // se limpie el origen para eso.
+        if (($body['accion'] ?? '') === 'marcar_traspaso_movido') {
+            $obra = trim((string) ($body['obra'] ?? ''));
+            if ($obra === '') {
+                Response::error('Falta "obra"', 422);
+            }
+            $db->prepare("UPDATE presupuestos_en_estudio SET traspaso_estado = 'movido', actualizado_en = datetime('now') WHERE obra = ?")
+                ->execute([$obra]);
+            Response::json(['ok' => true]);
+        }
+
+        // Fase 2 del traspaso (ver traspasar_obras_aceptadas.js): obras cuyo
+        // contenido ya se movió ("movido") hace al menos un día — el margen
+        // de un día es a propósito, para darle tiempo a Google Drive
+        // Desktop de terminar de sincronizar el movimiento antes de que la
+        // carpeta de origen desaparezca (a pedido de Álvaro, 2026-09-29,
+        // tras un caso donde mover y eliminar casi al mismo tiempo dejó una
+        // subcarpeta sin sincronizar en el equipo local).
+        if (($body['accion'] ?? '') === 'listar_pendientes_limpieza_traspaso') {
+            $stmt = $db->query("
+                SELECT id, obra, categoria, contacto
+                FROM presupuestos_en_estudio
+                WHERE traspaso_estado = 'movido' AND actualizado_en <= datetime('now', '-1 day')
+            ");
+            Response::json(['presupuestos' => $stmt->fetchAll()]);
+        }
+
+        // El script llama esto por cada obra apenas termina de vaciar/
+        // eliminar su carpeta de origen (fase 2) — "procesado" saca la obra
+        // de listar_pendientes_limpieza_traspaso, ya no queda nada
+        // pendiente del traspaso.
         if (($body['accion'] ?? '') === 'marcar_traspaso_procesado') {
             $obra = trim((string) ($body['obra'] ?? ''));
             if ($obra === '') {

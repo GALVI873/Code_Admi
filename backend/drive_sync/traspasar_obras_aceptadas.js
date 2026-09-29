@@ -10,6 +10,26 @@
 // Aceptadas, sync_obras_aceptadas.js, para saber en qué obras todavía
 // falta).
 //
+// El traspaso de cada obra corre en DOS FASES, cada una en su propia
+// corrida de este mismo script (ambas en el cron nocturno — ver
+// sync_drive.yml):
+//
+//   Fase 1 (procesarObra): mueve todo lo necesario a la carpeta nueva y
+//   marca la obra "movido" — TODAVÍA NO borra la carpeta de origen.
+//   Fase 2 (limpiarOrigen): un día (o más) después, ya con la obra
+//   "movido", localiza esa misma carpeta de origen (que quedó vacía de lo
+//   importante) y recién ahí la manda a la papelera, marcando "procesado".
+//
+// Antes ambas cosas pasaban juntas, en la misma corrida — mover el
+// contenido y, segundos después, eliminar el origen. A pedido de Álvaro
+// (2026-09-29), se separaron: un caso real (obra "Toni Flores") mostró que
+// Google Drive Desktop a veces no termina de sincronizar el movimiento de
+// una subcarpeta antes de que el cliente local vea desaparecer la carpeta
+// de origen, y esa subcarpeta le queda "invisible" localmente (aunque en el
+// servidor de Drive esté todo bien — confirmado con la API). Dejar pasar un
+// día entero entre mover y eliminar le da tiempo de sobra a Drive Desktop
+// de asentar el cambio antes de que el origen desaparezca.
+//
 // A pedido de Álvaro (2026-09-15), tres cambios sobre la versión anterior:
 //
 // 1. La carpeta de origen se ELIMINA (a la papelera de Drive, no un borrado
@@ -48,11 +68,11 @@
 //
 // Qué obra está pendiente lo decide el panel: presupuestos_en_estudio con
 // estatus "Aceptado" y traspaso_estado "pendiente" (se pone solo al marcar
-// Aceptado desde el panel — ver presupuestos_en_estudio.php). Al terminar
-// cada obra, este script avisa al panel (marcar_traspaso_procesado) — la
-// próxima corrida de sync_obras_aceptadas.js ya la encuentra en su nueva
+// Aceptado desde el panel — ver presupuestos_en_estudio.php). Al terminar la
+// fase 1 de cada obra, este script avisa al panel (marcar_traspaso_movido) —
+// la próxima corrida de sync_obras_aceptadas.js ya la encuentra en su nueva
 // carpeta y la sube a obras_aceptadas.php con la insignia "Nueva" para
-// Alfredo.
+// Alfredo, sin necesidad de esperar a la fase 2 (limpieza del origen).
 //
 // Uso:
 //   node traspasar_obras_aceptadas.js            (simula, no toca nada)
@@ -274,6 +294,29 @@ async function pedirPendientes() {
   return data.presupuestos;
 }
 
+async function marcarMovido(obra) {
+  const url = `${process.env.PANEL_API_URL}/presupuestos_en_estudio.php?token=${process.env.SYNC_TOKEN}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ obra, accion: 'marcar_traspaso_movido' }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(JSON.stringify(data));
+}
+
+async function pedirPendientesLimpieza() {
+  const url = `${process.env.PANEL_API_URL}/presupuestos_en_estudio.php?token=${process.env.SYNC_TOKEN}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accion: 'listar_pendientes_limpieza_traspaso' }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(JSON.stringify(data));
+  return data.presupuestos;
+}
+
 async function marcarProcesado(obra) {
   const url = `${process.env.PANEL_API_URL}/presupuestos_en_estudio.php?token=${process.env.SYNC_TOKEN}`;
   const res = await fetch(url, {
@@ -368,21 +411,48 @@ async function procesarObra(drive, p) {
   // traspaso le deje uno en blanco (ver "Sin MEDYSEG" en Obras Aceptadas,
   // sync_obras_aceptadas.js, para saber en qué obras todavía falta).
 
-  // Una vez movido todo lo necesario, la carpeta de origen (con lo que le
-  // haya quedado adentro: "Enviados" con el resto de PDFs, archivos
-  // sueltos) se manda a la papelera de Drive — no un borrado permanente,
-  // sigue recuperable ahí por un tiempo. El panel sigue mostrando la obra
-  // igual, como "Aceptado" (ver comentario de cabecera).
-  resultados.push(`  eliminar (papelera de Drive) la carpeta de origen completa`);
+  // La carpeta de origen (con lo que le haya quedado adentro: "Enviados"
+  // con el resto de PDFs, archivos sueltos) TODAVÍA NO se toca acá — queda
+  // para limpiarOrigen(), un día después (ver comentario de cabecera sobre
+  // por qué se partió en dos fases). Alcanza con marcar la obra "movido":
+  // ya tiene todo lo necesario en su carpeta nueva.
 
   resultados.forEach((r) => console.log(r));
 
   if (APLICAR) {
+    await marcarMovido(p.obra);
+    console.log('  OK (fase 1) — contenido movido, origen queda para limpiar mañana.');
+  } else {
+    console.log('  (simulado, nada se movió/creó — correr con --aplicar para ejecutar)');
+  }
+
+  return { ok: true };
+}
+
+// Fase 2: obras que ya pasaron por procesarObra() hace al menos un día
+// (ver listar_pendientes_limpieza_traspaso) — localiza la misma carpeta de
+// origen, ya vacía de lo importante, y recién ahí la manda a la papelera.
+async function limpiarOrigen(drive, p) {
+  console.log(`\n=== Limpieza: ${p.obra} ===`);
+
+  const origen = await localizarCarpetaObraOrigen(drive, p.categoria, p.contacto, p.obra);
+  if (origen.error) {
+    // Ya no está donde se la dejó (alguien la movió/borró a mano) — no hay
+    // nada que limpiar, se marca procesado igual para no reintentar por
+    // siempre.
+    console.log(`  AVISO: ${origen.error} — se da por limpia (nada para eliminar)`);
+    if (APLICAR) await marcarProcesado(p.obra);
+    return { ok: true };
+  }
+
+  console.log(`  eliminar (papelera de Drive) la carpeta de origen completa: ${origen.categoriaFolderName}${origen.contactoFolderName ? '/' + origen.contactoFolderName : ''}/${p.obra}`);
+
+  if (APLICAR) {
     await drive.files.update({ fileId: origen.id, resource: { trashed: true }, fields: 'id, trashed' });
     await marcarProcesado(p.obra);
-    console.log('  OK — avisado al panel.');
+    console.log('  OK (fase 2) — origen eliminado, traspaso completo.');
   } else {
-    console.log('  (simulado, nada se movió/creó/eliminó — correr con --aplicar para ejecutar)');
+    console.log('  (simulado, nada se eliminó — correr con --aplicar para ejecutar)');
   }
 
   return { ok: true };
@@ -391,11 +461,10 @@ async function procesarObra(drive, p) {
 async function main() {
   console.log(APLICAR ? 'MODO REAL: se van a mover archivos de verdad en Drive.' : 'MODO SIMULACIÓN (sin --aplicar) — no se toca nada.');
 
-  const pendientes = await pedirPendientes();
-  console.log(`Obras pendientes de traspaso: ${pendientes.length}`);
-  if (pendientes.length === 0) return;
-
   const drive = getDrive();
+
+  const pendientes = await pedirPendientes();
+  console.log(`Obras pendientes de traspaso (fase 1, mover): ${pendientes.length}`);
 
   let ok = 0;
   let omitidas = 0;
@@ -405,9 +474,18 @@ async function main() {
     else omitidas++;
   }
 
+  const pendientesLimpieza = await pedirPendientesLimpieza();
+  console.log(`\nObras pendientes de limpieza (fase 2, eliminar origen): ${pendientesLimpieza.length}`);
+
+  let limpiadas = 0;
+  for (const p of pendientesLimpieza) {
+    await limpiarOrigen(drive, p);
+    limpiadas++;
+  }
+
   console.log(`\n=== Resumen ===`);
-  console.log(`Procesadas: ${ok}`);
-  console.log(`Omitidas (revisar a mano): ${omitidas}`);
+  console.log(`Fase 1 — procesadas: ${ok}, omitidas (revisar a mano): ${omitidas}`);
+  console.log(`Fase 2 — orígenes limpiados: ${limpiadas}`);
 }
 
 main().catch((err) => {
