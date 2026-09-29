@@ -17,6 +17,13 @@ body {
   color: var(--texto);
 }
 
+/* Los navegadores no heredan la fuente en campos y botones (usan la del
+   sistema) — se fuerza la misma tipografía en todo el panel, a pedido de
+   Álvaro (2026-09-29). */
+button, input, select, textarea {
+  font-family: inherit;
+}
+
 .auth-screen {
   min-height: 100vh;
   display: flex;
@@ -4469,10 +4476,17 @@ select.celda-editable-material {
   letter-spacing: .03em;
 }
 
+/* Todos los campos de la ficha (texto, desplegable, fecha) con la misma
+   altura, borde y letra que el desplegable "Obra aceptada del panel" — a
+   pedido de Álvaro (2026-09-29): antes los de texto eran más gruesos. */
 .plan-form-grilla .input-filtro, .plan-form-grilla .select-inline,
 .plan-ventana-form .input-filtro, .plan-ventana-form .select-inline {
   width: 100%;
-  padding: 8px 10px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #dfe6e9;
+  border-radius: 6px;
+  background: white;
   font-size: 13.5px;
   font-weight: 400;
   text-transform: none;
@@ -4480,11 +4494,28 @@ select.celda-editable-material {
   color: var(--texto);
 }
 
+.plan-ventana-form textarea.input-filtro {
+  height: auto;
+  padding: 8px 10px;
+}
+
+.plan-form-grilla .input-filtro:disabled, .plan-form-grilla .select-inline:disabled {
+  background: #f7f9fc;
+  color: var(--texto);
+}
+
 .plan-form-ancho { grid-column: span 2; }
 
 .plan-select-obra-panel { max-width: 100%; }
 
-.plan-tabla-tareas .input-filtro { width: 100%; padding: 6px 8px; font-size: 12.5px; }
+.plan-tabla-tareas .input-filtro {
+  width: 100%;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid #dfe6e9;
+  border-radius: 6px;
+  font-size: 13px;
+}
 .plan-tabla-tareas td { vertical-align: middle; }
 .plan-tarea-terminada td { opacity: .6; }
 .plan-celda-centro { text-align: center; }
