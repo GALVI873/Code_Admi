@@ -9,13 +9,15 @@ import { useRef, useState } from 'react'
 // las fechas nuevas al soltar); un click sin arrastrar llama a onClickBarra.
 //
 // filas: [{ id, etiqueta, subetiqueta?, esGrupo?, marcarSolapes?, barras:
-//   [{ id, inicio, fin, texto, color, titulo?, atenuada?, datos? }] }]
+//   [{ id, inicio, fin, texto, color, titulo?, atenuada?, clase?, ... }] }]
+// (cualquier otro dato de la barra — ej. la tarea o la obra — vuelve tal
+// cual en onMoverBarra/onClickBarra).
 // Las fechas son 'AAAA-MM-DD'; fin null = un solo día. Dentro de una fila,
 // las barras que se pisan se apilan en carriles; con marcarSolapes además
 // se les pone borde rojo (ej. un montador con dos obras el mismo día).
 
 const MS_DIA = 86400000
-const ALTO_BARRA = 24
+const ALTO_BARRA = 28
 const SEPARACION = 4
 const DIAS_SEMANA = ['D', 'L', 'M', 'X', 'J', 'V', 'S']
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -183,7 +185,7 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia, editable =
           {filasCalculadas.length === 0 && <p className="dashboard-nota gantt-vacio">{vacio || 'No hay nada para mostrar.'}</p>}
 
           {filasCalculadas.map((fila) => {
-            const alto = fila.esGrupo ? 30 : fila.carriles * (ALTO_BARRA + SEPARACION) + SEPARACION * 2
+            const alto = fila.esGrupo ? 36 : fila.carriles * (ALTO_BARRA + SEPARACION) + SEPARACION * 2
             return (
               <div key={fila.id} className={`gantt-fila${fila.esGrupo ? ' gantt-fila-grupo' : ''}`} style={{ height: alto }}>
                 <div className="gantt-etiqueta" title={fila.etiqueta}>
@@ -209,7 +211,7 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia, editable =
                     return (
                       <div
                         key={b.id}
-                        className={`gantt-barra${b.atenuada ? ' gantt-barra-atenuada' : ''}${solapada ? ' gantt-barra-solape' : ''}${editable ? ' gantt-barra-editable' : ''}${enArrastre ? ' gantt-barra-arrastrando' : ''}`}
+                        className={`gantt-barra${b.clase ? ` ${b.clase}` : ''}${b.atenuada ? ' gantt-barra-atenuada' : ''}${solapada ? ' gantt-barra-solape' : ''}${editable ? ' gantt-barra-editable' : ''}${enArrastre ? ' gantt-barra-arrastrando' : ''}`}
                         style={{
                           left: (iniVisible - inicioVentana) * anchoDia + 1,
                           width: (finVisible - iniVisible + 1) * anchoDia - 2,
@@ -220,11 +222,11 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia, editable =
                         title={`${b.titulo || b.texto}\n${formatoCorto(numeroADia(ini))}${fin !== ini ? ` → ${formatoCorto(numeroADia(fin))}` : ''}${solapada ? '\n⚠ Se pisa con otra tarea del mismo responsable' : ''}`}
                         onPointerDown={(e) => handlePointerDown(e, b, 'mover')}
                       >
-                        {editable && <span className="gantt-barra-borde gantt-barra-borde-ini" onPointerDown={(e) => handlePointerDown(e, b, 'inicio')} />}
+                        {editable && !b.soloMover && <span className="gantt-barra-borde gantt-barra-borde-ini" onPointerDown={(e) => handlePointerDown(e, b, 'inicio')} />}
                         <span className="gantt-barra-texto">
                           {enArrastre ? `${formatoCorto(numeroADia(ini))} → ${formatoCorto(numeroADia(fin))}` : b.texto}
                         </span>
-                        {editable && <span className="gantt-barra-borde gantt-barra-borde-fin" onPointerDown={(e) => handlePointerDown(e, b, 'fin')} />}
+                        {editable && !b.soloMover && <span className="gantt-barra-borde gantt-barra-borde-fin" onPointerDown={(e) => handlePointerDown(e, b, 'fin')} />}
                       </div>
                     )
                   })}

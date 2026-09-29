@@ -6,27 +6,32 @@ import { formatoCorto } from './DiagramaGantt.jsx'
 // del Gantt de montaje (una por montador) y la ventanita para ver/editar una
 // tarea al hacer click en su barra.
 
+// Tonos pastel con texto oscuro encima (a pedido de Álvaro, 2026-09-29:
+// los colores fuertes con letra blanca cansaban a la vista).
 export const COLOR_CATEGORIA = {
-  'Medición': '#8e44ad',
-  'Material': '#2980b9',
-  'Fabricación': '#16a085',
-  'Chapas': '#7f8c8d',
-  'Composite': '#34495e',
-  'Transporte': '#d35400',
-  'Grúa': '#c0392b',
-  'Montaje': '#27ae60',
-  'Facturar': '#b8860b',
-  'Varios': '#95a5a6',
+  'Medición': '#dccbf0',
+  'Material': '#bfdcf3',
+  'Fabricación': '#bde6d9',
+  'Chapas': '#dde2e7',
+  'Composite': '#cbd3de',
+  'Transporte': '#f8d7bc',
+  'Grúa': '#f5c9c9',
+  'Montaje': '#c6e9cc',
+  'Facturar': '#f4e5ad',
+  'Varios': '#e6e9eb',
 }
+
+// Barras/filas de tareas ya terminadas.
+export const COLOR_TERMINADO = '#eceff3'
 
 // Situación de la obra (Notion "Situación Actual") — colorea las barras del
 // Gantt de montaje para distinguir obra nueva de remates/repasos/avisos.
 export const SITUACIONES = ['Obra', 'Remates', 'Repasos', 'Avisos']
 export const COLOR_SITUACION = {
-  Obra: '#27ae60',
-  Remates: '#e0a100',
-  Repasos: '#8e44ad',
-  Avisos: '#2980b9',
+  Obra: '#c6e9cc',
+  Remates: '#f6e4a4',
+  Repasos: '#dccbf0',
+  Avisos: '#bfdcf3',
 }
 
 // Según la versión de PHP del hosting, SQLite puede devolver los id como
@@ -70,7 +75,7 @@ export function filasMontajePorMontador(tareas, obrasPorId, { incluirTerminadas 
         fin: t.fecha_fin,
         texto: obra.nombre,
         titulo: `${obra.nombre}${obra.constructora ? ` (${obra.constructora})` : ''} — ${obra.situacion || 'Obra'}`,
-        color: t.estado === 'Terminado' ? '#b2bec3' : COLOR_SITUACION[obra.situacion] || COLOR_SITUACION.Obra,
+        color: t.estado === 'Terminado' ? COLOR_TERMINADO : COLOR_SITUACION[obra.situacion] || COLOR_SITUACION.Obra,
         atenuada: t.estado === 'Terminado',
         tarea: t,
       })

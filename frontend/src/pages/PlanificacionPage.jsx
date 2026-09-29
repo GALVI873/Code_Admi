@@ -13,6 +13,7 @@ import {
 import DiagramaGantt, { diaANumero, numeroADia, hoyIso, lunesDe, formatoCorto } from '../components/DiagramaGantt.jsx'
 import {
   COLOR_CATEGORIA,
+  COLOR_TERMINADO,
   COLOR_SITUACION,
   SITUACIONES,
   LeyendaColores,
@@ -76,6 +77,27 @@ function seCruzaConVentana(tarea, inicioVentana, finVentana) {
   const ini = diaANumero(tarea.fecha_inicio)
   const fin = tarea.fecha_fin ? diaANumero(tarea.fecha_fin) : ini
   return fin >= inicioVentana && ini <= finVentana
+}
+
+// Barra "obra completa": va de la primera a la última tarea pendiente con
+// fecha de la obra. Arrastrarla corre TODAS esas tareas los mismos días
+// (a pedido de Álvaro, 2026-09-29: deslizar la obra entera cuando se atrasa
+// o adelanta). Solo se mueve, no se estira (soloMover).
+function barraObraCompleta(obra, tareasObra, texto) {
+  const pendientes = tareasObra.filter((t) => t.estado !== 'Terminado' && t.fecha_inicio)
+  if (pendientes.length === 0) return null
+  const ini = Math.min(...pendientes.map((t) => diaANumero(t.fecha_inicio)))
+  const fin = Math.max(...pendientes.map((t) => diaANumero(t.fecha_fin || t.fecha_inicio)))
+  return {
+    id: `obra-completa-${obra.id}`,
+    inicio: numeroADia(ini),
+    fin: numeroADia(fin),
+    texto,
+    titulo: `${obra.nombre} — arrastrar para mover todas sus tareas pendientes`,
+    clase: 'gantt-barra-obra',
+    soloMover: true,
+    obraId: obra.id,
+  }
 }
 
 function textoFechas(tarea) {
@@ -221,7 +243,7 @@ function CampoTexto({ valor, onGuardar, disabled, placeholder, list, className =
   )
 }
 
-function EditorObra({ obra, tareas, datos, puedeEditar, onActualizarObra, onEliminarObra, onActualizarTarea, onAgregarTarea, onEliminarTarea, onVolver }) {
+function EditorObra({ obra, tareas, datos, puedeEditar, onMoverObra, onActualizarObra, onEliminarObra, onActualizarTarea, onAgregarTarea, onEliminarTarea, onVolver }) {
   const navigate = useNavigate()
   const [error, setError] = useState('')
   const [categoriaNueva, setCategoriaNueva] = useState('Varios')
@@ -254,7 +276,8 @@ function EditorObra({ obra, tareas, datos, puedeEditar, onActualizarObra, onElim
     }
   }
 
-  const filasMini = tareasOrdenadas.map((t) => ({
+  const barraObra = barraObraCompleta(obra, tareas, 'Obra completa')
+  const filasMini = (barraObra ? [{ id: 'obra-completa', etiqueta: 'Obra completa', esGrupo: true, barras: [barraObra] }] : []).concat(tareasOrdenadas.map((t) => ({
     id: t.id,
     etiqueta: t.categoria,
     subetiqueta: t.responsable || '',
@@ -263,11 +286,11 @@ function EditorObra({ obra, tareas, datos, puedeEditar, onActualizarObra, onElim
       inicio: t.fecha_inicio,
       fin: t.fecha_fin,
       texto: t.responsable || t.categoria,
-      color: t.estado === 'Terminado' ? '#b2bec3' : COLOR_CATEGORIA[t.categoria],
+      color: t.estado === 'Terminado' ? COLOR_TERMINADO : COLOR_CATEGORIA[t.categoria],
       atenuada: t.estado === 'Terminado',
       tarea: t,
     }] : [],
-  }))
+  })))
 
   return (
     <div className="plan-editor">
@@ -338,7 +361,11 @@ function EditorObra({ obra, tareas, datos, puedeEditar, onActualizarObra, onElim
         dias={ventana.dias}
         anchoDia={anchoMini}
         editable={puedeEditar}
-        onMoverBarra={(b, inicio, fin) => ejecutar(onActualizarTarea(b.tarea.id, { fecha_inicio: inicio, fecha_fin: fin }))}
+        onMoverBarra={(b, inicio, fin) => ejecutar(
+          b.obraId
+            ? onMoverObra(b.obraId, diaANumero(inicio) - diaANumero(b.inicio))
+            : onActualizarTarea(b.tarea.id, { fecha_inicio: inicio, fecha_fin: fin }),
+        )}
       />
 
       <h3 className="montaje-subtitulo">Tareas por categoría</h3>
@@ -468,7 +495,7 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
                 <tr key={o.id} className="plan-fila-obra" onClick={() => onAbrir(o.id)}>
                   <td className="adicionales-obra-col-obra">{o.nombre}{o.estado === 'Terminada' && <span className="plan-etiqueta-terminada">Terminada</span>}</td>
                   <td>{o.constructora || '—'}</td>
-                  <td>{o.situacion ? <span className="plan-chip" style={{ background: COLOR_SITUACION[o.situacion] || '#95a5a6' }}>{o.situacion}</span> : '—'}</td>
+                  <td>{o.situacion ? <span className="plan-chip" style={{ background: COLOR_SITUACION[o.situacion] || COLOR_CATEGORIA.Varios }}>{o.situacion}</span> : '—'}</td>
                   <td>{proxima ? `${proxima.categoria} · ${textoFechas(proxima)}` : '—'}</td>
                   <td>{montaje ? `${textoFechas(montaje)}${montaje.responsable ? ` · ${montaje.responsable}` : ''}` : '—'}</td>
                   <td>
@@ -578,8 +605,31 @@ export default function PlanificacionPage() {
     setDatos((prev) => ({ ...prev, tareas: prev.tareas.filter((t) => t.id !== id) }))
   }
 
+  // Corre todas las tareas pendientes con fecha de una obra "delta" días.
+  // Se actualiza la pantalla de una vez y después se guarda cada tarea; si
+  // algo falla se recarga todo del servidor para no dejar la obra a medias.
+  async function moverObra(obraId, delta) {
+    if (!delta) return
+    const correr = (iso) => (iso ? numeroADia(diaANumero(iso) + delta) : iso)
+    const cambios = new Map(
+      datos.tareas
+        .filter((t) => t.obra_id === obraId && t.estado !== 'Terminado' && t.fecha_inicio)
+        .map((t) => [t.id, { fecha_inicio: correr(t.fecha_inicio), fecha_fin: correr(t.fecha_fin) }]),
+    )
+    setDatos((prev) => ({ ...prev, tareas: prev.tareas.map((t) => (cambios.has(t.id) ? { ...t, ...cambios.get(t.id) } : t)) }))
+    try {
+      await Promise.all([...cambios].map(([id, c]) => actualizarTareaPlanificacion(accessToken, id, c)))
+    } catch (err) {
+      planificacion(accessToken).then((d) => setDatos(datosNum(d)))
+      throw err
+    }
+  }
+
   function moverBarra(barra, inicio, fin) {
-    actualizarTarea(barra.tarea.id, { fecha_inicio: inicio, fecha_fin: fin }).catch((err) => setError(err.message))
+    const guardado = barra.obraId
+      ? moverObra(barra.obraId, diaANumero(inicio) - diaANumero(barra.inicio))
+      : actualizarTarea(barra.tarea.id, { fecha_inicio: inicio, fecha_fin: fin })
+    guardado.catch((err) => setError(err.message))
   }
 
   // --- Filas del Cronograma (todas las categorías, agrupado por obra).
@@ -608,14 +658,15 @@ export default function PlanificacionPage() {
         fin: t.fecha_fin,
         texto: compacto ? t.categoria : t.responsable || t.categoria,
         titulo: `${o.nombre} — ${t.categoria}${t.responsable ? ` (${t.responsable})` : ''}${t.comentario ? `\n${t.comentario}` : ''}`,
-        color: t.estado === 'Terminado' ? '#b2bec3' : COLOR_CATEGORIA[t.categoria],
+        color: t.estado === 'Terminado' ? COLOR_TERMINADO : COLOR_CATEGORIA[t.categoria],
         atenuada: t.estado === 'Terminado',
         tarea: t,
       })
       if (compacto) {
         filas.push({ id: `obra-${o.id}`, etiqueta: o.nombre, subetiqueta: o.constructora || '', barras: tareas.map(barra) })
       } else {
-        filas.push({ id: `obra-${o.id}`, etiqueta: o.nombre, subetiqueta: o.constructora || '', esGrupo: true, barras: [] })
+        const barraObra = barraObraCompleta(o, tareasPorObra.get(o.id) || [], o.nombre)
+        filas.push({ id: `obra-${o.id}`, etiqueta: o.nombre, subetiqueta: o.constructora || '', esGrupo: true, barras: barraObra ? [barraObra] : [] })
         for (const t of tareas) {
           filas.push({ id: `tarea-${t.id}`, etiqueta: t.categoria, subetiqueta: t.responsable || '', barras: [barra(t)] })
         }
@@ -710,7 +761,7 @@ export default function PlanificacionPage() {
             anchoDia={anchoDia}
             editable={puedeEditar}
             onMoverBarra={moverBarra}
-            onClickBarra={(b) => setTareaAbierta(b.tarea.id)}
+            onClickBarra={(b) => (b.obraId ? irA('Obras', b.obraId) : setTareaAbierta(b.tarea.id))}
             vacio="No hay tareas con fecha en este período con los filtros elegidos."
           />
         </>
@@ -767,6 +818,7 @@ export default function PlanificacionPage() {
             tareas={tareasPorObra.get(obraAbierta.id) || []}
             datos={datos}
             puedeEditar={puedeEditar}
+            onMoverObra={moverObra}
             onActualizarObra={actualizarObra}
             onEliminarObra={eliminarObra}
             onActualizarTarea={actualizarTarea}
