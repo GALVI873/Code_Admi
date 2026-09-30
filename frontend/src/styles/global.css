@@ -248,6 +248,21 @@ button, input, select, textarea {
   flex: none;
 }
 
+/* "Nuevo adicional" (adicional de obra recién aceptado) — antes usaba el
+   mismo rojo que "Sin MEDYSEG"; a pedido de Alfredo (2026-09-30) pasa a
+   azul, el rojo era demasiado llamativo para un aviso informativo. */
+.badge-nuevo-adicional {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 10px;
+  background: #e3effb;
+  color: #2f6190;
+  white-space: nowrap;
+  flex: none;
+}
+
 .dashboard-ancho {
   max-width: none;
   padding-left: 36px;

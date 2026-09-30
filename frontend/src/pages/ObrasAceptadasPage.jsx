@@ -171,7 +171,7 @@ function ObraItemCompacto({ presupuesto, numero, onAbrir, onCambiarEstatus }) {
         <span className="badge-obra-sin-medyseg" title="Todavía no tiene el archivo MEDYSEG en Drive">Sin MEDYSEG</span>
       )}
       {Boolean(presupuesto.adicional_nuevo) && (
-        <span className="badge-obra-sin-medyseg" title="Se aceptó un adicional, todavía no la abriste">Nuevo adicional</span>
+        <span className="badge-nuevo-adicional" title="Se aceptó un adicional, todavía no la abriste">Nuevo adicional</span>
       )}
       {presupuesto.tiene_mensajes_sin_leer && (
         <span className="obra-item-compacto-mensaje" title="Tiene mensajes nuevos en la conversación">💬</span>
