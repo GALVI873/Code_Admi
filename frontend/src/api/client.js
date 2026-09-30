@@ -583,3 +583,20 @@ export function calcularFechasPlanificacion(accessToken, id, fechaAceptacion) {
     body: JSON.stringify({ accion: 'calcular_fechas', id, fecha_aceptacion: fechaAceptacion }),
   })
 }
+
+// Prioridades (obras en fase de finalización, solo admin) — ver
+// public/api/prioridades.php. Un solo helper: GET sin cuerpo, el resto con
+// {accion, ...}.
+export function prioridades(accessToken) {
+  return request('/prioridades.php', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
+export function accionPrioridades(accessToken, method, accion, datos = {}) {
+  return request('/prioridades.php', {
+    method,
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion, ...datos }),
+  })
+}

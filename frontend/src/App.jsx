@@ -12,6 +12,7 @@ import ContabilidadPage from './pages/ContabilidadPage.jsx'
 import CostesObraPage from './pages/CostesObraPage.jsx'
 import InicioPage from './pages/InicioPage.jsx'
 import PlanificacionPage from './pages/PlanificacionPage.jsx'
+import PrioridadesPage from './pages/PrioridadesPage.jsx'
 
 // "/" manda a Inicio (InicioPage.jsx) para todos — a pedido de Álvaro,
 // 2026-09-29: una página común con el Gantt semanal de montaje que puede ver
@@ -34,6 +35,7 @@ export default function App() {
             <Route path="/" element={<InicioRedirect />} />
             <Route path="/inicio" element={<InicioPage />} />
             <Route path="/planificacion" element={<PlanificacionPage />} />
+            <Route path="/prioridades" element={<PrioridadesPage />} />
             <Route path="/presupuestos-en-estudio" element={<PresupuestosEnEstudioPage />} />
             <Route path="/seguimiento" element={<SeguimientoPage />} />
             <Route path="/obras-aceptadas" element={<ObrasAceptadasPage />} />

@@ -73,7 +73,10 @@ function asignarCarriles(barras) {
   return { carriles: Math.max(finCarril.length, 1), conSolape }
 }
 
-export default function DiagramaGantt({ filas, desde, dias, anchoDia, editable = false, onMoverBarra, onClickBarra, vacio }) {
+// anchoEtiqueta / encabezadoEtiqueta / fila.etiquetaNode: para vistas que
+// necesitan más que un nombre en la columna izquierda (ej. Prioridades:
+// categoría, tarea, responsable y fechas, como su planilla de Excel).
+export default function DiagramaGantt({ filas, desde, dias, anchoDia, editable = false, onMoverBarra, onClickBarra, vacio, anchoEtiqueta = 230, encabezadoEtiqueta = null }) {
   const [arrastre, setArrastre] = useState(null)
   const arrastreRef = useRef(null)
 
@@ -156,9 +159,9 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia, editable =
   return (
     <div className="gantt">
       <div className="gantt-scroll" onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}>
-        <div className="gantt-lienzo" style={{ width: 230 + anchoTotal }}>
+        <div className="gantt-lienzo" style={{ width: anchoEtiqueta + anchoTotal }}>
           <div className="gantt-encabezado">
-            <div className="gantt-etiqueta gantt-etiqueta-encabezado" />
+            <div className="gantt-etiqueta gantt-etiqueta-encabezado" style={{ width: anchoEtiqueta, flexBasis: anchoEtiqueta }}>{encabezadoEtiqueta}</div>
             <div className="gantt-escala" style={{ width: anchoTotal }}>
               <div className="gantt-meses">
                 {meses.map((m) => (
@@ -185,12 +188,16 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia, editable =
           {filasCalculadas.length === 0 && <p className="dashboard-nota gantt-vacio">{vacio || 'No hay nada para mostrar.'}</p>}
 
           {filasCalculadas.map((fila) => {
-            const alto = fila.esGrupo ? 36 : fila.carriles * (ALTO_BARRA + SEPARACION) + SEPARACION * 2
+            const alto = Math.max(fila.esGrupo ? 36 : fila.carriles * (ALTO_BARRA + SEPARACION) + SEPARACION * 2, fila.altoMinimo || 0)
             return (
-              <div key={fila.id} className={`gantt-fila${fila.esGrupo ? ' gantt-fila-grupo' : ''}`} style={{ height: alto }}>
-                <div className="gantt-etiqueta" title={fila.etiqueta}>
-                  <span className="gantt-etiqueta-texto">{fila.etiqueta}</span>
-                  {fila.subetiqueta && <span className="gantt-etiqueta-sub">{fila.subetiqueta}</span>}
+              <div key={fila.id} className={`gantt-fila${fila.esGrupo ? ' gantt-fila-grupo' : ''}${fila.clase ? ` ${fila.clase}` : ''}`} style={{ height: alto }}>
+                <div className="gantt-etiqueta" title={fila.etiquetaNode ? undefined : fila.etiqueta} style={{ width: anchoEtiqueta, flexBasis: anchoEtiqueta }}>
+                  {fila.etiquetaNode || (
+                    <>
+                      <span className="gantt-etiqueta-texto">{fila.etiqueta}</span>
+                      {fila.subetiqueta && <span className="gantt-etiqueta-sub">{fila.subetiqueta}</span>}
+                    </>
+                  )}
                 </div>
                 <div className="gantt-pista" style={{ width: anchoTotal }}>
                   {columnas.map((c) => (

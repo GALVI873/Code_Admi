@@ -57,6 +57,15 @@ const NAV_ITEMS = [
   // permiso, porque por ahora es exclusivamente exploratorio para admin;
   // cuando se diseñe de verdad, contabilidad.ver se puede otorgar a otros
   // roles sin tocar este archivo.
+  // Obras en fase de finalización (a pedido de Álvaro, 2026-09-30) — por
+  // ahora suelto y solo admin, para tenerlo independiente; se puede mover a
+  // un grupo después. Ver PrioridadesPage.jsx / prioridades.php.
+  {
+    to: '/prioridades',
+    label: 'Prioridades',
+    icono: '🎯',
+    soloRol: 'admin',
+  },
   {
     to: '/contabilidad',
     label: 'Contabilidad',
