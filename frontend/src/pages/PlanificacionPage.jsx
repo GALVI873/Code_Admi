@@ -472,12 +472,23 @@ function EditorObra({ obra, tareas, datos, puedeEditar, onMoverObra, onCalcularF
 function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, onCrear }) {
   const [buscar, setBuscar] = useState('')
   const [verTerminadas, setVerTerminadas] = useState(false)
+  const [soloSinResponsable, setSoloSinResponsable] = useState(false)
   const [creando, setCreando] = useState(false)
   const hoy = hoyIso()
+
+  // Tareas pendientes sin responsable — a pedido de Álvaro (2026-09-29):
+  // las obras recién aceptadas se crean solas con todas las categorías sin
+  // responsable, y este filtro las junta para asignarlas rápido.
+  const sinResponsable = (o) => (tareasPorObra.get(o.id) || []).filter((t) => t.estado !== 'Terminado' && !t.responsable).length
+  const activas = obras.filter((o) => o.estado !== 'Terminada')
+  const cantidadSinResponsable = activas.filter((o) => sinResponsable(o) > 0).length
 
   const filtradas = obras
     .filter((o) => verTerminadas || o.estado !== 'Terminada')
     .filter((o) => !buscar || normalizar(`${o.nombre} ${o.constructora} ${o.obra_panel}`).includes(normalizar(buscar)))
+    .filter((o) => !soloSinResponsable || sinResponsable(o) > 0)
+  // Con el filtro activo, las más nuevas primero (las recién aceptadas).
+  if (soloSinResponsable) filtradas.sort((a, b) => String(b.creado_en).localeCompare(String(a.creado_en)))
 
   return (
     <div>
@@ -489,6 +500,14 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
         <label className="plan-check">
           <input type="checkbox" checked={verTerminadas} onChange={(e) => setVerTerminadas(e.target.checked)} /> Ver terminadas
         </label>
+        <button
+          type="button"
+          className={`plan-filtro-sin-responsable${soloSinResponsable ? ' plan-filtro-sin-responsable-activo' : ''}`}
+          onClick={() => setSoloSinResponsable((v) => !v)}
+          title="Obras con tareas pendientes a las que todavía no se les asignó responsable"
+        >
+          👤 Sin responsable <span className="plan-filtro-contador">{cantidadSinResponsable}</span>
+        </button>
         {puedeEditar && !creando && (
           <button type="button" className="btn-secundario plan-boton-principal" onClick={() => setCreando(true)}>+ Nueva obra</button>
         )}
@@ -527,6 +546,7 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
                 .sort((a, b) => a.fecha_inicio.localeCompare(b.fecha_inicio))[0]
               const montaje = tareas.find((t) => t.categoria === 'Montaje' && t.estado !== 'Terminado') || tareas.find((t) => t.categoria === 'Montaje')
               const vencidas = pendientes.filter((t) => t.fecha_inicio && (t.fecha_fin || t.fecha_inicio) < hoy).length
+              const faltanResponsable = pendientes.filter((t) => !t.responsable).length
               return (
                 <tr key={o.id} className="plan-fila-obra" onClick={() => onAbrir(o.id)}>
                   <td className="adicionales-obra-col-obra">{o.nombre}{o.estado === 'Terminada' && <span className="plan-etiqueta-terminada">Terminada</span>}</td>
@@ -537,6 +557,7 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
                   <td>
                     {pendientes.length}
                     {vencidas > 0 && <span className="plan-vencidas" title="Tareas pendientes con la fecha ya pasada">{vencidas} vencida{vencidas === 1 ? '' : 's'}</span>}
+                    {faltanResponsable > 0 && <span className="plan-sin-responsable" title="Tareas pendientes sin responsable asignado">{faltanResponsable} sin responsable</span>}
                   </td>
                   <td>{o.obra_panel ? '🔗' : ''}</td>
                 </tr>
@@ -545,7 +566,7 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
           </tbody>
         </table>
       </div>
-      {filtradas.length === 0 && <p className="dashboard-nota">No hay obras{buscar ? ' que coincidan con la búsqueda' : ''}.</p>}
+      {filtradas.length === 0 && <p className="dashboard-nota">{soloSinResponsable ? 'Todas las obras activas tienen responsable asignado. 👍' : `No hay obras${buscar ? ' que coincidan con la búsqueda' : ''}.`}</p>}
     </div>
   )
 }
