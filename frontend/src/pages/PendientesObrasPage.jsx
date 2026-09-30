@@ -109,7 +109,14 @@ function FiltroObrasMultiple({ obrasDisponibles, seleccionadas, onCambiar }) {
   )
 }
 
-function NotaPendiente({ nota, accessToken, puedeMarcarHecho, puedeCategorizar, puedeArchivar, onMarcarHecho, onAbrir, onArchivar, onNuevaRespuesta }) {
+// Último mensaje del hilo de una nota: la última respuesta, o la nota misma
+// si todavía no tiene respuestas.
+function ultimoMensaje(nota) {
+  const respuestas = nota.respuestas || []
+  return respuestas.length > 0 ? respuestas[respuestas.length - 1] : nota
+}
+
+function NotaPendiente({ nota, accessToken, puedeMarcarHecho, puedeCategorizar, puedeArchivar, emailUsuario, marcarEsperaRespuesta, onMarcarHecho, onAbrir, onArchivar, onNuevaRespuesta }) {
   const [respuesta, setRespuesta] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
@@ -151,6 +158,9 @@ function NotaPendiente({ nota, accessToken, puedeMarcarHecho, puedeCategorizar, 
       />
       <div className="notas-obra-item-cuerpo" role="button" tabIndex={0} onClick={() => onAbrir(nota)}>
         {Boolean(nota.es_adicional_aceptado) && <span className="badge-obra-sin-medyseg notas-obra-item-tag-adicional">Nuevo adicional</span>}
+        {marcarEsperaRespuesta && !nota.hecho && ultimoMensaje(nota).autor_email !== emailUsuario && (
+          <span className="notas-espera-respuesta">💬 {ultimoMensaje(nota).autor_nombre} espera tu respuesta</span>
+        )}
         <p className="notas-obra-item-texto">{nota.mensaje}</p>
         <span className="notas-obra-item-meta">{nota.autor_nombre} · {formatoFechaHora(nota.creado_en)}</span>
 
@@ -255,6 +265,16 @@ export default function PendientesObrasPage() {
   const puedeMarcarHecho = usuario?.roles?.includes('gestion_obras')
   const puedeCategorizar = usuario?.roles?.includes('gestion_obras') || usuario?.roles?.includes('admin')
   const puedeArchivar = puedeCategorizar
+  // A pedido de Álvaro (2026-09-30): para Alfredo, una nota cuyo último
+  // mensaje es suyo (respondió, o él mismo creó la tarea/recordatorio) ya
+  // no depende de él — sale de "Pendientes" y pasa a "Esperando a Álvaro"
+  // hasta que Álvaro conteste (ahí el último mensaje vuelve a ser de otro y
+  // reaparece sola). Solo en esta vista; la pestaña Notas de cada obra
+  // sigue mostrando todo. Álvaro (admin) ve todo como siempre, con una
+  // etiqueta en las notas donde el último mensaje es de otro.
+  const esAlfredo = usuario?.roles?.includes('gestion_obras')
+  const marcarEsperaRespuesta = !esAlfredo && usuario?.roles?.includes('admin')
+  const esperandoAlvaro = (p) => esAlfredo && !p.hecho && ultimoMensaje(p).autor_email === usuario?.email
 
   const [pendientes, setPendientes] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -276,8 +296,13 @@ export default function PendientesObrasPage() {
   }, [pendientes])
 
   const segunVista = useMemo(
-    () => pendientes.filter((p) => (vista === 'hechas' ? p.hecho : !p.hecho)),
-    [pendientes, vista],
+    () => pendientes.filter((p) => {
+      if (vista === 'hechas') return p.hecho
+      if (vista === 'esperando') return esperandoAlvaro(p)
+      return !p.hecho && !esperandoAlvaro(p)
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pendientes, vista, esAlfredo, usuario?.email],
   )
 
   const visibles = useMemo(
@@ -387,6 +412,16 @@ export default function PendientesObrasPage() {
             >
               Pendientes
             </button>
+            {esAlfredo && (
+              <button
+                type="button"
+                className={`pestanas-vista-boton ${vista === 'esperando' ? 'pestanas-vista-boton-activa' : ''}`}
+                onClick={() => setVista('esperando')}
+                title="Notas en las que el último mensaje es tuyo — vuelven a Pendientes cuando Álvaro responde"
+              >
+                Esperando a Álvaro <span className="obras-seccion-contador">{pendientes.filter(esperandoAlvaro).length}</span>
+              </button>
+            )}
             <button
               type="button"
               className={`pestanas-vista-boton ${vista === 'hechas' ? 'pestanas-vista-boton-activa' : ''}`}
@@ -404,10 +439,10 @@ export default function PendientesObrasPage() {
         <p className="dashboard-nota">No hay pendientes — está todo al día.</p>
       )}
       {!cargando && !error && pendientes.length > 0 && segunVista.length === 0 && (
-        <p className="dashboard-nota">{vista === 'hechas' ? 'Todavía no se marcó nada como hecho.' : '¡Está todo al día! No hay pendientes.'}</p>
+        <p className="dashboard-nota">{vista === 'hechas' ? 'Todavía no se marcó nada como hecho.' : vista === 'esperando' ? 'No hay notas esperando respuesta de Álvaro.' : '¡Está todo al día! No hay pendientes.'}</p>
       )}
       {!cargando && !error && segunVista.length > 0 && visibles.length === 0 && (
-        <p className="dashboard-nota">Ninguna obra seleccionada tiene {vista === 'hechas' ? 'hechas' : 'pendientes'}.</p>
+        <p className="dashboard-nota">Ninguna obra seleccionada tiene {vista === 'hechas' ? 'hechas' : vista === 'esperando' ? 'notas esperando a Álvaro' : 'pendientes'}.</p>
       )}
 
       {!cargando && !error && gruposObra.length > 0 && (
@@ -424,6 +459,8 @@ export default function PendientesObrasPage() {
               puedeMarcarHecho={puedeMarcarHecho}
               puedeCategorizar={puedeCategorizar}
               puedeArchivar={puedeArchivar}
+              emailUsuario={usuario?.email}
+              marcarEsperaRespuesta={marcarEsperaRespuesta}
               onMarcarHecho={handleMarcarHecho}
               onAbrir={handleAbrir}
               onSoltarNota={handleSoltarNota}

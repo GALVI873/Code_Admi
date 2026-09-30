@@ -4661,3 +4661,16 @@ select.celda-editable-material {
   font-weight: 700;
   color: #b7791f;
 }
+
+/* Etiqueta para Álvaro en Seguimiento → Notas: el último mensaje de la
+   nota es de otro (típicamente Alfredo) y le toca responder a él. */
+.notas-espera-respuesta {
+  display: inline-block;
+  margin-bottom: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #fdf1d8;
+  color: #7a5a12;
+  font-size: 11.5px;
+  font-weight: 700;
+}
