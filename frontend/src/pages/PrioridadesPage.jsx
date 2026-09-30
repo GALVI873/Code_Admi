@@ -7,28 +7,35 @@ import { COLOR_TERMINADO } from '../components/PlanificacionComun.jsx'
 
 // Prioridades — obras en fase de finalización (a pedido de Álvaro,
 // 2026-09-30), solo admin. Reemplaza su planilla "Cronograma de obra —
-// Vallehermoso, CEA, Manipa y Archanda": cada obra aceptada que se agrega
-// acá tiene sus propias categorías (arranca con Mano de obra y Composite,
-// se agregan/renombran/colorean por obra) y sus tareas de cierre con
-// responsable, fechas, estado y marcas de "Falta material", "Pend. Ppto" y
-// "Destacada" (el resaltado amarillo de la planilla). Un Gantt por obra con
-// la tarea a la izquierda (mismo DiagramaGantt de Planificación, columna
-// izquierda más ancha) y, arriba de cada obra, el fin previsto contra la
-// fecha objetivo ("N días por encima del objetivo"). Datos:
-// public/api/prioridades.php.
+// Vallehermoso, CEA, Manipa y Archanda".
+//
+// Un solo Gantt con todas las obras (segunda versión, a pedido de Álvaro):
+//   - Cada OBRA es una fila que se despliega con un click; su barra es el
+//     tiempo total de cierre (de la primera a la última tarea pendiente) y
+//     arrastrarla corre todas sus tareas juntas.
+//   - Adentro, sus FACHADAS (zonas, ej. Cea Bermudez → CEA y Vallehermoso),
+//     también desplegables y con su propia barra de tiempo total.
+//   - Debajo, las TAREAS: categoría, descripción (con marcas Falta
+//     material / Pend. Ppto / En curso y el resaltado amarillo de
+//     "Destacada"), responsable y fechas; la barra se arrastra/estira y un
+//     click abre la tarea para editarla.
+// Categorías y fachadas son de cada obra (se agregan, renombran y borran
+// desde "Categorías y fachadas"). Datos: public/api/prioridades.php.
 
 const ESCALAS = {
   Semana: { dias: 14, anchoDia: 56, paso: 7 },
   Mes: { dias: 35, anchoDia: 26, paso: 14 },
   Trimestre: { dias: 91, anchoDia: 12, paso: 28 },
 }
-const ANCHO_ETIQUETA = 560
+const ANCHO_ETIQUETA = 600
+const CLAVE_DESPLEGADAS = 'prioridades.obrasDesplegadas'
 
 function conIds(d) {
   return {
     ...d,
     obras: d.obras.map((o) => ({ ...o, id: Number(o.id) })),
     categorias: d.categorias.map((c) => ({ ...c, id: Number(c.id), obra_id: Number(c.obra_id) })),
+    zonas: (d.zonas || []).map((z) => ({ ...z, id: Number(z.id), obra_id: Number(z.obra_id) })),
     tareas: d.tareas.map(tareaConIds),
   }
 }
@@ -39,6 +46,7 @@ function tareaConIds(t) {
     id: Number(t.id),
     obra_id: Number(t.obra_id),
     categoria_id: t.categoria_id ? Number(t.categoria_id) : null,
+    zona_id: t.zona_id ? Number(t.zona_id) : null,
     falta_material: Number(t.falta_material),
     pendiente_ppto: Number(t.pendiente_ppto),
     destacada: Number(t.destacada),
@@ -56,30 +64,58 @@ function formatoLargo(iso) {
   return `${d}/${m}/${a}`
 }
 
-// Fin previsto = la fecha más tardía entre las tareas no terminadas con
-// fecha; se compara con la fecha objetivo de la obra.
-function resumenFin(obra, tareas) {
-  const pendientes = tareas.filter((t) => t.estado !== 'Terminado')
-  const conFecha = pendientes.filter((t) => t.fecha_inicio)
-  const sinFecha = pendientes.length - conFecha.length
-  if (conFecha.length === 0) return { texto: pendientes.length ? 'Sin fechas asignadas' : 'Sin tareas pendientes', clase: '', sinFecha }
-  const fin = Math.max(...conFecha.map((t) => diaANumero(t.fecha_fin || t.fecha_inicio)))
-  let texto = `Fin previsto: ${formatoLargo(numeroADia(fin))}`
-  let clase = ''
-  if (obra.fecha_objetivo) {
-    const diff = fin - diaANumero(obra.fecha_objetivo)
-    if (diff > 0) {
-      texto += ` · ${diff} día${diff === 1 ? '' : 's'} por encima del objetivo`
-      clase = 'prio-resumen-tarde'
-    } else if (diff < 0) {
-      texto += ` · ${-diff} día${diff === -1 ? '' : 's'} antes del objetivo`
-      clase = 'prio-resumen-bien'
-    } else {
-      texto += ' · justo en el objetivo'
-      clase = 'prio-resumen-bien'
-    }
+function diasHabiles(ini, fin) {
+  let n = 0
+  for (let d = ini; d <= fin; d++) {
+    const dia = new Date(d * 86400000).getUTCDay()
+    if (dia !== 0 && dia !== 6) n++
   }
-  return { texto, clase, sinFecha }
+  return n
+}
+
+// Tramo total de un grupo de tareas (obra o fachada): de la primera a la
+// última PENDIENTE con fecha (si ya están todas terminadas, de todas).
+function tramo(tareas) {
+  const pendientes = tareas.filter((t) => t.estado !== 'Terminado' && t.fecha_inicio)
+  const base = pendientes.length ? pendientes : tareas.filter((t) => t.fecha_inicio)
+  if (base.length === 0) return null
+  const ini = Math.min(...base.map((t) => diaANumero(t.fecha_inicio)))
+  const fin = Math.max(...base.map((t) => diaANumero(t.fecha_fin || t.fecha_inicio)))
+  return { ini, fin, ids: pendientes.map((t) => t.id), habiles: diasHabiles(ini, fin), terminado: pendientes.length === 0 }
+}
+
+function resumenObra(obra, tareas) {
+  const pendientes = tareas.filter((t) => t.estado !== 'Terminado')
+  const t = tramo(tareas)
+  const partes = [`${pendientes.length} pendiente${pendientes.length === 1 ? '' : 's'} de ${tareas.length}`]
+  let clase = ''
+  if (t && !t.terminado) {
+    partes.push(`cierre ${formatoLargo(numeroADia(t.fin))} (${t.habiles} días háb.)`)
+    if (obra.fecha_objetivo) {
+      const diff = t.fin - diaANumero(obra.fecha_objetivo)
+      if (diff > 0) {
+        partes.push(`${diff} día${diff === 1 ? '' : 's'} por encima del objetivo`)
+        clase = 'prio-resumen-tarde'
+      } else {
+        partes.push(diff === 0 ? 'justo en el objetivo' : `${-diff} día${diff === -1 ? '' : 's'} antes del objetivo`)
+        clase = 'prio-resumen-bien'
+      }
+    }
+  } else if (tareas.length > 0 && pendientes.length === 0) {
+    partes.push('todo terminado')
+    clase = 'prio-resumen-bien'
+  }
+  const sinFecha = pendientes.filter((x) => !x.fecha_inicio).length
+  if (sinFecha) partes.push(`${sinFecha} sin fecha`)
+  return { texto: partes.join(' · '), clase }
+}
+
+function leerDesplegadas() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(CLAVE_DESPLEGADAS) || '[]'))
+  } catch {
+    return new Set()
+  }
 }
 
 // Campo de texto que guarda al salir, no en cada tecla.
@@ -99,41 +135,73 @@ function CampoTexto({ valor, onGuardar, placeholder, className = 'input-filtro' 
   )
 }
 
-function Categorias({ obra, categorias, colores, onAccion }) {
-  const [nueva, setNueva] = useState('')
+// Ventana para administrar las categorías y las fachadas de una obra.
+function VentanaCategoriasFachadas({ obra, categorias, zonas, colores, onAccion, onCerrar }) {
+  const [nuevaCategoria, setNuevaCategoria] = useState('')
+  const [nuevaZona, setNuevaZona] = useState('')
   return (
-    <div className="prio-categorias">
-      {categorias.map((c) => (
-        <div key={c.id} className="prio-categoria">
-          <span className="prio-categoria-color" style={{ background: c.color }} />
-          <CampoTexto className="input-filtro prio-categoria-nombre" valor={c.nombre}
-            onGuardar={(v) => v && onAccion('PATCH', 'actualizar_categoria', { id: c.id, nombre: v })} />
-          <div className="prio-colores">
-            {colores.map((col) => (
-              <button key={col} type="button" className={`prio-color${col === c.color ? ' prio-color-activo' : ''}`} style={{ background: col }}
-                title="Cambiar color" onClick={() => onAccion('PATCH', 'actualizar_categoria', { id: c.id, color: col })} />
-            ))}
-          </div>
-          <button type="button" className="boton-icono boton-icono-eliminar" title="Eliminar categoría (sus tareas quedan sin categoría)"
-            onClick={() => { if (window.confirm(`¿Eliminar la categoría "${c.nombre}"? Sus tareas quedan sin categoría.`)) onAccion('DELETE', 'eliminar_categoria', { id: c.id }) }}>−</button>
+    <div className="plan-ventana-fondo" onClick={onCerrar}>
+      <div className="plan-ventana prio-ventana-grande" onClick={(e) => e.stopPropagation()}>
+        <div className="plan-ventana-encabezado">
+          <h2>{obra.alias || obra.obra}</h2>
+          <button type="button" className="plan-ventana-cerrar" onClick={onCerrar} title="Cerrar">✕</button>
         </div>
-      ))}
-      <form className="prio-categoria-nueva" onSubmit={(e) => {
-        e.preventDefault()
-        if (!nueva.trim()) return
-        onAccion('POST', 'agregar_categoria', { obra_id: obra.id, nombre: nueva.trim() }).then(() => setNueva(''))
-      }}>
-        <input type="text" className="input-filtro" placeholder="Nueva categoría (ej. Cristalería, Limpieza…)" value={nueva} onChange={(e) => setNueva(e.target.value)} />
-        <button type="submit" className="btn-secundario" disabled={!nueva.trim()}>+ Agregar</button>
-      </form>
+
+        <h3 className="montaje-subtitulo">Fachadas / zonas</h3>
+        <p className="dashboard-nota plan-nota-sin-margen">Dividen la obra en partes (ej. CEA y Vallehermoso). Al borrar una, sus tareas quedan en la obra.</p>
+        <div className="prio-categorias">
+          {zonas.map((z) => (
+            <div key={z.id} className="prio-categoria">
+              <CampoTexto className="input-filtro prio-categoria-nombre" valor={z.nombre}
+                onGuardar={(v) => v && onAccion('PATCH', 'actualizar_zona', { id: z.id, nombre: v })} />
+              <button type="button" className="boton-icono boton-icono-eliminar" title="Eliminar fachada"
+                onClick={() => { if (window.confirm(`¿Eliminar la fachada "${z.nombre}"? Sus tareas quedan en la obra.`)) onAccion('DELETE', 'eliminar_zona', { id: z.id }) }}>−</button>
+            </div>
+          ))}
+          <form className="prio-categoria-nueva" onSubmit={(e) => {
+            e.preventDefault()
+            if (nuevaZona.trim()) onAccion('POST', 'agregar_zona', { obra_id: obra.id, nombre: nuevaZona.trim() }).then(() => setNuevaZona(''))
+          }}>
+            <input type="text" className="input-filtro" placeholder="Nueva fachada (ej. Fachada norte, Portal 2…)" value={nuevaZona} onChange={(e) => setNuevaZona(e.target.value)} />
+            <button type="submit" className="btn-secundario" disabled={!nuevaZona.trim()}>+ Agregar</button>
+          </form>
+        </div>
+
+        <h3 className="montaje-subtitulo">Categorías</h3>
+        <div className="prio-categorias">
+          {categorias.map((c) => (
+            <div key={c.id} className="prio-categoria">
+              <span className="prio-categoria-color" style={{ background: c.color }} />
+              <CampoTexto className="input-filtro prio-categoria-nombre" valor={c.nombre}
+                onGuardar={(v) => v && onAccion('PATCH', 'actualizar_categoria', { id: c.id, nombre: v })} />
+              <div className="prio-colores">
+                {colores.map((col) => (
+                  <button key={col} type="button" className={`prio-color${col === c.color ? ' prio-color-activo' : ''}`} style={{ background: col }}
+                    title="Cambiar color" onClick={() => onAccion('PATCH', 'actualizar_categoria', { id: c.id, color: col })} />
+                ))}
+              </div>
+              <button type="button" className="boton-icono boton-icono-eliminar" title="Eliminar categoría"
+                onClick={() => { if (window.confirm(`¿Eliminar la categoría "${c.nombre}"? Sus tareas quedan sin categoría.`)) onAccion('DELETE', 'eliminar_categoria', { id: c.id }) }}>−</button>
+            </div>
+          ))}
+          <form className="prio-categoria-nueva" onSubmit={(e) => {
+            e.preventDefault()
+            if (nuevaCategoria.trim()) onAccion('POST', 'agregar_categoria', { obra_id: obra.id, nombre: nuevaCategoria.trim() }).then(() => setNuevaCategoria(''))
+          }}>
+            <input type="text" className="input-filtro" placeholder="Nueva categoría (ej. Cristalería, Limpieza…)" value={nuevaCategoria} onChange={(e) => setNuevaCategoria(e.target.value)} />
+            <button type="submit" className="btn-secundario" disabled={!nuevaCategoria.trim()}>+ Agregar</button>
+          </form>
+        </div>
+      </div>
     </div>
   )
 }
 
-function VentanaTarea({ tarea, obra, categorias, estados, responsables, onGuardar, onEliminar, onCerrar }) {
+function VentanaTarea({ tarea, obra, categorias, zonas, estados, responsables, onGuardar, onEliminar, onCerrar }) {
   const [form, setForm] = useState({
     descripcion: tarea.descripcion || '',
     categoria_id: tarea.categoria_id || '',
+    zona_id: tarea.zona_id || '',
     responsable: tarea.responsable || '',
     fecha_inicio: tarea.fecha_inicio || '',
     fecha_fin: tarea.fecha_fin || '',
@@ -150,7 +218,7 @@ function VentanaTarea({ tarea, obra, categorias, estados, responsables, onGuarda
     setGuardando(true)
     setError('')
     try {
-      await onGuardar(tarea.id, { ...form, categoria_id: form.categoria_id || null })
+      await onGuardar(tarea.id, { ...form, categoria_id: form.categoria_id || null, zona_id: form.zona_id || null })
       onCerrar()
     } catch (err) {
       setError(err.message)
@@ -171,6 +239,13 @@ function VentanaTarea({ tarea, obra, categorias, estados, responsables, onGuarda
             <textarea autoFocus className="input-filtro" rows={2} value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} />
           </label>
           <label>
+            Fachada / zona
+            <select className="select-inline" value={form.zona_id} onChange={(e) => setForm({ ...form, zona_id: Number(e.target.value) || '' })}>
+              <option value="">— Obra en general —</option>
+              {zonas.map((z) => <option key={z.id} value={z.id}>{z.nombre}</option>)}
+            </select>
+          </label>
+          <label>
             Categoría
             <select className="select-inline" value={form.categoria_id} onChange={(e) => setForm({ ...form, categoria_id: Number(e.target.value) || '' })}>
               <option value="">— Sin categoría —</option>
@@ -183,8 +258,8 @@ function VentanaTarea({ tarea, obra, categorias, estados, responsables, onGuarda
               {estados.map((s) => <option key={s}>{s}</option>)}
             </select>
           </label>
-          <label className="plan-ventana-ancho">
-            Montador / Ayudante / Responsable
+          <label>
+            Montador / Responsable
             <input type="text" className="input-filtro" list="prio-responsables" placeholder="Ej. Miguel / German" value={form.responsable}
               onChange={(e) => setForm({ ...form, responsable: e.target.value })} />
           </label>
@@ -219,9 +294,9 @@ function VentanaTarea({ tarea, obra, categorias, estados, responsables, onGuarda
   )
 }
 
-function EtiquetaTarea({ tarea, categoria, onAbrir }) {
+function EtiquetaTarea({ tarea, categoria, nivel, onAbrir }) {
   return (
-    <button type="button" className={`prio-fila${tarea.estado === 'Terminado' ? ' prio-fila-terminada' : ''}`} onClick={onAbrir} title="Editar tarea">
+    <button type="button" className={`prio-fila prio-nivel-${nivel}${tarea.estado === 'Terminado' ? ' prio-fila-terminada' : ''}`} onClick={onAbrir} title="Editar tarea">
       <span className="prio-col-categoria">
         <span className="plan-chip" style={{ background: categoria?.color || '#e6e9eb' }}>{categoria?.nombre || 'Sin categoría'}</span>
       </span>
@@ -237,96 +312,9 @@ function EtiquetaTarea({ tarea, categoria, onAbrir }) {
   )
 }
 
-function SeccionObra({ obra, categorias, tareas, datos, verTerminadas, desde, escala, obraPanelId, onAccion, onAbrirTarea, onMoverTarea }) {
-  const navigate = useNavigate()
-  const [verCategorias, setVerCategorias] = useState(false)
-  const categoriasPorId = useMemo(() => new Map(categorias.map((c) => [c.id, c])), [categorias])
-  const resumen = resumenFin(obra, tareas)
-  const visibles = tareas
-    .filter((t) => verTerminadas || t.estado !== 'Terminado')
-    .sort((a, b) => (a.fecha_inicio || '9999').localeCompare(b.fecha_inicio || '9999') || a.id - b.id)
-  const { dias, anchoDia } = ESCALAS[escala]
-
-  const filas = visibles.map((t) => {
-    const categoria = categoriasPorId.get(t.categoria_id)
-    return {
-      id: t.id,
-      altoMinimo: 40,
-      clase: t.destacada ? 'prio-gantt-fila-destacada' : '',
-      etiquetaNode: <EtiquetaTarea tarea={t} categoria={categoria} onAbrir={() => onAbrirTarea(t.id)} />,
-      barras: t.fecha_inicio ? [{
-        id: t.id,
-        inicio: t.fecha_inicio,
-        fin: t.fecha_fin,
-        texto: t.responsable || '',
-        titulo: `${t.descripcion}${t.responsable ? ` — ${t.responsable}` : ''}`,
-        color: t.estado === 'Terminado' ? COLOR_TERMINADO : categoria?.color || '#dde2e7',
-        atenuada: t.estado === 'Terminado',
-        tarea: t,
-      }] : [],
-    }
-  })
-
-  return (
-    <section className="prio-obra">
-      <div className="prio-obra-encabezado">
-        <div className="prio-obra-titulo">
-          <CampoTexto className="input-filtro prio-obra-alias" valor={obra.alias || obra.obra}
-            onGuardar={(v) => onAccion('PATCH', 'actualizar_obra', { id: obra.id, alias: v === obra.obra ? '' : v })} />
-          <CampoTexto className="input-filtro prio-obra-nota" valor={obra.nota} placeholder="Nota (ej. cuadrilla de 2)"
-            onGuardar={(v) => onAccion('PATCH', 'actualizar_obra', { id: obra.id, nota: v })} />
-        </div>
-        <label className="prio-objetivo">
-          Objetivo
-          <input type="date" className="input-filtro" value={obra.fecha_objetivo || ''}
-            onChange={(e) => onAccion('PATCH', 'actualizar_obra', { id: obra.id, fecha_objetivo: e.target.value })} />
-        </label>
-        <div className="prio-obra-botones">
-          <button type="button" className="btn-secundario plan-boton-principal"
-            onClick={() => onAccion('POST', 'agregar_tarea', { obra_id: obra.id, categoria_id: categorias[0]?.id || null }).then((r) => r?.tarea && onAbrirTarea(Number(r.tarea.id)))}>
-            + Tarea
-          </button>
-          <button type="button" className={`btn-secundario${verCategorias ? ' prio-boton-activo' : ''}`} onClick={() => setVerCategorias((v) => !v)}>Categorías</button>
-          {obraPanelId && <button type="button" className="btn-secundario" onClick={() => navigate(`/obras-aceptadas/${obraPanelId}`)}>Abrir obra</button>}
-          <button type="button" className="btn-secundario plan-boton-peligro"
-            onClick={() => { if (window.confirm(`¿Quitar "${obra.alias || obra.obra}" de Prioridades? Se borran sus categorías y tareas.`)) onAccion('DELETE', 'eliminar_obra', { id: obra.id }) }}>
-            Quitar
-          </button>
-        </div>
-      </div>
-      {obra.alias && <p className="prio-obra-panel">{obra.obra}</p>}
-      <p className={`prio-resumen ${resumen.clase}`}>
-        {resumen.texto}
-        {resumen.sinFecha > 0 && <span className="prio-sin-fecha"> · {resumen.sinFecha} tarea{resumen.sinFecha === 1 ? '' : 's'} sin fecha</span>}
-      </p>
-
-      {verCategorias && <Categorias obra={obra} categorias={categorias} colores={datos.colores} onAccion={onAccion} />}
-
-      <DiagramaGantt
-        filas={filas}
-        desde={desde}
-        dias={dias}
-        anchoDia={anchoDia}
-        editable
-        anchoEtiqueta={ANCHO_ETIQUETA}
-        encabezadoEtiqueta={(
-          <div className="prio-fila prio-fila-encabezado">
-            <span className="prio-col-categoria">Categoría</span>
-            <span className="prio-col-tarea">Tarea</span>
-            <span className="prio-col-responsable">Responsable</span>
-            <span className="prio-col-fechas">Inicio → Fin</span>
-          </div>
-        )}
-        onMoverBarra={(b, inicio, fin) => onMoverTarea(b.tarea.id, inicio, fin)}
-        onClickBarra={(b) => onAbrirTarea(b.tarea.id)}
-        vacio="Sin tareas todavía — usa «+ Tarea»."
-      />
-    </section>
-  )
-}
-
 export default function PrioridadesPage() {
   const { accessToken, usuario } = useAuth()
+  const navigate = useNavigate()
   const [datos, setDatos] = useState(null)
   const [error, setError] = useState('')
   const [escala, setEscala] = useState('Mes')
@@ -334,6 +322,9 @@ export default function PrioridadesPage() {
   const [verTerminadas, setVerTerminadas] = useState(true)
   const [obraNueva, setObraNueva] = useState('')
   const [tareaAbierta, setTareaAbierta] = useState(null)
+  const [obraConfigurando, setObraConfigurando] = useState(null)
+  const [desplegadas, setDesplegadas] = useState(leerDesplegadas)
+  const [zonasPlegadas, setZonasPlegadas] = useState(() => new Set())
 
   const esAdmin = usuario?.roles?.includes('admin')
 
@@ -347,9 +338,27 @@ export default function PrioridadesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, esAdmin])
 
-  // Todas las escrituras pasan por acá y después se vuelve a leer todo: son
-  // pocas obras y pocas tareas, así el estado nunca queda desfasado del
-  // servidor (categorías borradas, tareas nuevas, etc.).
+  function alternarObra(id) {
+    setDesplegadas((prev) => {
+      const n = new Set(prev)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      try { localStorage.setItem(CLAVE_DESPLEGADAS, JSON.stringify([...n])) } catch { /* sin almacenamiento */ }
+      return n
+    })
+  }
+
+  function alternarZona(id) {
+    setZonasPlegadas((prev) => {
+      const n = new Set(prev)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  }
+
+  // Todas las escrituras de estructura pasan por acá y después se vuelve a
+  // leer todo: son pocas obras y pocas tareas, así nunca queda desfasado.
   async function accion(metodo, nombre, cuerpo) {
     setError('')
     try {
@@ -368,30 +377,181 @@ export default function PrioridadesPage() {
     if (cambios.responsable) recargar()
   }
 
-  function moverTarea(id, inicio, fin) {
-    const anteriores = datos.tareas
-    setDatos((prev) => ({ ...prev, tareas: prev.tareas.map((t) => (t.id === id ? { ...t, fecha_inicio: inicio, fecha_fin: fin } : t)) }))
-    accionPrioridades(accessToken, 'PATCH', 'actualizar_tarea', { id, fecha_inicio: inicio, fecha_fin: fin }).catch((err) => {
-      setDatos((prev) => ({ ...prev, tareas: anteriores }))
+  // Corre un conjunto de tareas "delta" días (barra de una tarea, de una
+  // fachada o de la obra entera). Pantalla primero, servidor después; si
+  // falla, se recarga todo.
+  function moverTareas(ids, delta, estirar = null) {
+    const correr = (iso) => (iso ? numeroADia(diaANumero(iso) + delta) : iso)
+    const cambios = new Map(
+      datos.tareas.filter((t) => ids.includes(t.id) && t.fecha_inicio).map((t) => [
+        t.id,
+        estirar && estirar.id === t.id ? { fecha_inicio: estirar.inicio, fecha_fin: estirar.fin } : { fecha_inicio: correr(t.fecha_inicio), fecha_fin: correr(t.fecha_fin) },
+      ]),
+    )
+    setDatos((prev) => ({ ...prev, tareas: prev.tareas.map((t) => (cambios.has(t.id) ? { ...t, ...cambios.get(t.id) } : t)) }))
+    Promise.all([...cambios].map(([id, c]) => accionPrioridades(accessToken, 'PATCH', 'actualizar_tarea', { id, ...c }))).catch((err) => {
       setError(err.message)
+      recargar()
     })
   }
+
+  function handleMoverBarra(b, inicio, fin) {
+    if (b.grupo) {
+      const delta = diaANumero(inicio) - diaANumero(b.inicio)
+      if (delta) moverTareas(b.grupo, delta)
+    } else {
+      moverTareas([b.tarea.id], 0, { id: b.tarea.id, inicio, fin })
+    }
+  }
+
+  const filas = useMemo(() => {
+    if (!datos) return []
+    const resultado = []
+    for (const obra of datos.obras) {
+      const categoriasPorId = new Map(datos.categorias.filter((c) => c.obra_id === obra.id).map((c) => [c.id, c]))
+      const zonas = datos.zonas.filter((z) => z.obra_id === obra.id)
+      const todas = datos.tareas.filter((t) => t.obra_id === obra.id)
+      const visibles = todas
+        .filter((t) => verTerminadas || t.estado !== 'Terminado')
+        .sort((a, b) => (a.fecha_inicio || '9999').localeCompare(b.fecha_inicio || '9999') || a.id - b.id)
+      const abierta = desplegadas.has(obra.id)
+      const tObra = tramo(todas)
+      const resumen = resumenObra(obra, todas)
+
+      resultado.push({
+        id: `obra-${obra.id}`,
+        esGrupo: true,
+        altoMinimo: 50,
+        clase: 'prio-gantt-obra',
+        etiquetaNode: (
+          <button type="button" className="prio-fila-obra" onClick={() => alternarObra(obra.id)} title={abierta ? 'Plegar' : 'Desplegar tareas'}>
+            <span className="prio-flecha">{abierta ? '▾' : '▸'}</span>
+            <span className="prio-obra-textos">
+              <span className="prio-obra-nombre">{obra.alias || obra.obra}{obra.nota ? <span className="prio-obra-nota-texto"> · {obra.nota}</span> : null}</span>
+              <span className={`prio-obra-resumen ${resumen.clase}`}>{resumen.texto}</span>
+            </span>
+          </button>
+        ),
+        barras: tObra ? [{
+          id: `obra-${obra.id}`,
+          inicio: numeroADia(tObra.ini),
+          fin: numeroADia(tObra.fin),
+          texto: `Cierre: ${formatoCorto(numeroADia(tObra.ini))} → ${formatoCorto(numeroADia(tObra.fin))} · ${tObra.habiles} días háb.`,
+          titulo: `${obra.alias || obra.obra} — tiempo total de cierre (arrastrar para mover todas sus tareas pendientes)`,
+          clase: 'gantt-barra-obra',
+          soloMover: true,
+          grupo: tObra.ids,
+        }] : [],
+      })
+      if (!abierta) continue
+
+      resultado.push({
+        id: `acciones-${obra.id}`,
+        altoMinimo: 44,
+        clase: 'prio-gantt-acciones',
+        etiquetaNode: (
+          <div className="prio-acciones-obra">
+            <button type="button" className="btn-secundario plan-boton-principal"
+              onClick={() => accion('POST', 'agregar_tarea', { obra_id: obra.id, categoria_id: [...categoriasPorId.keys()][0] || null }).then((r) => r?.tarea && setTareaAbierta(Number(r.tarea.id)))}>
+              + Tarea
+            </button>
+            <button type="button" className="btn-secundario" onClick={() => setObraConfigurando(obra.id)}>Categorías y fachadas</button>
+            <label className="prio-objetivo-inline" title="Fecha objetivo de fin de obra">
+              Objetivo
+              <input type="date" className="input-filtro" value={obra.fecha_objetivo || ''}
+                onChange={(e) => accion('PATCH', 'actualizar_obra', { id: obra.id, fecha_objetivo: e.target.value })} />
+            </label>
+            <span className="prio-espaciador" />
+            <button type="button" className="btn-secundario" onClick={() => navigate(`/obras-aceptadas/${datos.obras_panel.find((p) => p.obra === obra.obra)?.id || ''}`)} title="Abrir en Obras Aceptadas">↗</button>
+            <button type="button" className="btn-secundario plan-boton-peligro" title="Quitar de Prioridades"
+              onClick={() => { if (window.confirm(`¿Quitar "${obra.alias || obra.obra}" de Prioridades? Se borran sus categorías, fachadas y tareas.`)) accion('DELETE', 'eliminar_obra', { id: obra.id }) }}>
+              Quitar
+            </button>
+          </div>
+        ),
+        barras: [],
+      })
+
+      const filaTarea = (t, nivel) => {
+        const categoria = categoriasPorId.get(t.categoria_id)
+        return {
+          id: `tarea-${t.id}`,
+          altoMinimo: 38,
+          clase: t.destacada ? 'prio-gantt-fila-destacada' : '',
+          etiquetaNode: <EtiquetaTarea tarea={t} categoria={categoria} nivel={nivel} onAbrir={() => setTareaAbierta(t.id)} />,
+          barras: t.fecha_inicio ? [{
+            id: t.id,
+            inicio: t.fecha_inicio,
+            fin: t.fecha_fin,
+            texto: t.responsable || '',
+            titulo: `${t.descripcion}${t.responsable ? ` — ${t.responsable}` : ''}`,
+            color: t.estado === 'Terminado' ? COLOR_TERMINADO : categoria?.color || '#dde2e7',
+            atenuada: t.estado === 'Terminado',
+            tarea: t,
+          }] : [],
+        }
+      }
+
+      for (const t of visibles.filter((x) => !x.zona_id || !zonas.some((z) => z.id === x.zona_id))) {
+        resultado.push(filaTarea(t, 1))
+      }
+      for (const z of zonas) {
+        const deZona = visibles.filter((t) => t.zona_id === z.id)
+        const tZona = tramo(todas.filter((t) => t.zona_id === z.id))
+        const zonaAbierta = !zonasPlegadas.has(z.id)
+        const pendientesZona = deZona.filter((t) => t.estado !== 'Terminado').length
+        resultado.push({
+          id: `zona-${z.id}`,
+          altoMinimo: 40,
+          clase: 'prio-gantt-zona',
+          etiquetaNode: (
+            <div className="prio-fila-zona">
+              <button type="button" className="prio-zona-boton" onClick={() => alternarZona(z.id)}>
+                <span className="prio-flecha">{zonaAbierta ? '▾' : '▸'}</span>
+                <span className="prio-zona-nombre">{z.nombre}</span>
+                <span className="prio-zona-contador">{pendientesZona} pendiente{pendientesZona === 1 ? '' : 's'}</span>
+              </button>
+              <button type="button" className="prio-zona-agregar" title={`Agregar tarea en ${z.nombre}`}
+                onClick={() => accion('POST', 'agregar_tarea', { obra_id: obra.id, zona_id: z.id, categoria_id: [...categoriasPorId.keys()][0] || null }).then((r) => r?.tarea && setTareaAbierta(Number(r.tarea.id)))}>
+                + tarea
+              </button>
+            </div>
+          ),
+          barras: tZona ? [{
+            id: `zona-${z.id}`,
+            inicio: numeroADia(tZona.ini),
+            fin: numeroADia(tZona.fin),
+            texto: `${z.nombre} · ${tZona.habiles} días háb.`,
+            titulo: `${z.nombre} — tiempo total (arrastrar para mover sus tareas pendientes)`,
+            clase: 'gantt-barra-zona',
+            soloMover: true,
+            grupo: tZona.ids,
+          }] : [],
+        })
+        if (zonaAbierta) {
+          for (const t of deZona) resultado.push(filaTarea(t, 2))
+        }
+      }
+    }
+    return resultado
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datos, verTerminadas, desplegadas, zonasPlegadas])
 
   if (!esAdmin) return <div className="dashboard"><p className="dashboard-nota">Prioridades es solo para administradores.</p></div>
   if (error && !datos) return <div className="dashboard"><div className="auth-error">{error}</div></div>
   if (!datos) return <div className="dashboard"><p className="dashboard-nota">Cargando…</p></div>
 
   const yaAgregadas = new Set(datos.obras.map((o) => o.obra))
-  const obraPanelPorNombre = new Map(datos.obras_panel.map((o) => [o.obra, o.id]))
-  const { paso } = ESCALAS[escala]
+  const { dias, anchoDia, paso } = ESCALAS[escala]
   const tareaSeleccionada = tareaAbierta ? datos.tareas.find((t) => t.id === tareaAbierta) : null
+  const obraConfig = obraConfigurando ? datos.obras.find((o) => o.id === obraConfigurando) : null
 
   return (
     <div className="dashboard dashboard-ancho">
       <header className="dashboard-header">
         <div>
           <h1>Prioridades</h1>
-          <p>Obras en fase de finalización — tareas de cierre con responsable, fechas y fin previsto contra el objetivo</p>
+          <p>Obras en fase de finalización — despliega cada obra para ver sus fachadas y tareas; la barra de la obra es su tiempo total de cierre</p>
         </div>
       </header>
 
@@ -411,7 +571,10 @@ export default function PrioridadesPage() {
         </label>
         <form className="prio-agregar-obra" onSubmit={(e) => {
           e.preventDefault()
-          if (obraNueva) accion('POST', 'agregar_obra', { obra: obraNueva }).then(() => setObraNueva(''))
+          if (obraNueva) accion('POST', 'agregar_obra', { obra: obraNueva }).then((r) => {
+            setObraNueva('')
+            if (r?.obra) alternarObra(Number(r.obra.id))
+          })
         }}>
           <select className="select-inline" value={obraNueva} onChange={(e) => setObraNueva(e.target.value)}>
             <option value="">Agregar obra aceptada…</option>
@@ -423,37 +586,51 @@ export default function PrioridadesPage() {
 
       {error && <div className="auth-error plan-error">{error} <button type="button" className="btn-secundario" onClick={() => setError('')}>OK</button></div>}
 
-      {datos.obras.length === 0 && (
+      {datos.obras.length === 0 ? (
         <p className="dashboard-nota">Todavía no hay obras en Prioridades. Elige una obra aceptada arriba para empezar.</p>
-      )}
-
-      {datos.obras.map((o) => (
-        <SeccionObra
-          key={o.id}
-          obra={o}
-          categorias={datos.categorias.filter((c) => c.obra_id === o.id)}
-          tareas={datos.tareas.filter((t) => t.obra_id === o.id)}
-          datos={datos}
-          verTerminadas={verTerminadas}
+      ) : (
+        <DiagramaGantt
+          filas={filas}
           desde={desde}
-          escala={escala}
-          obraPanelId={obraPanelPorNombre.get(o.obra)}
-          onAccion={accion}
-          onAbrirTarea={setTareaAbierta}
-          onMoverTarea={moverTarea}
+          dias={dias}
+          anchoDia={anchoDia}
+          editable
+          anchoEtiqueta={ANCHO_ETIQUETA}
+          encabezadoEtiqueta={(
+            <div className="prio-fila prio-fila-encabezado prio-nivel-1">
+              <span className="prio-col-categoria">Categoría</span>
+              <span className="prio-col-tarea">Obra / fachada / tarea</span>
+              <span className="prio-col-responsable">Responsable</span>
+              <span className="prio-col-fechas">Inicio → Fin</span>
+            </div>
+          )}
+          onMoverBarra={handleMoverBarra}
+          onClickBarra={(b) => (b.tarea ? setTareaAbierta(b.tarea.id) : null)}
         />
-      ))}
+      )}
 
       {tareaSeleccionada && (
         <VentanaTarea
           tarea={tareaSeleccionada}
           obra={datos.obras.find((o) => o.id === tareaSeleccionada.obra_id)}
           categorias={datos.categorias.filter((c) => c.obra_id === tareaSeleccionada.obra_id)}
+          zonas={datos.zonas.filter((z) => z.obra_id === tareaSeleccionada.obra_id)}
           estados={datos.estados}
           responsables={datos.responsables}
           onGuardar={guardarTarea}
           onEliminar={(id) => accion('DELETE', 'eliminar_tarea', { id })}
           onCerrar={() => setTareaAbierta(null)}
+        />
+      )}
+
+      {obraConfig && (
+        <VentanaCategoriasFachadas
+          obra={obraConfig}
+          categorias={datos.categorias.filter((c) => c.obra_id === obraConfig.id)}
+          zonas={datos.zonas.filter((z) => z.obra_id === obraConfig.id)}
+          colores={datos.colores}
+          onAccion={accion}
+          onCerrar={() => setObraConfigurando(null)}
         />
       )}
     </div>

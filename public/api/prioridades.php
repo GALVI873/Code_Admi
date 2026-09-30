@@ -23,7 +23,13 @@ declare(strict_types=1);
 // POST {accion:"agregar_categoria", obra_id, nombre, color?}
 // PATCH {accion:"actualizar_categoria", id, nombre?, color?}
 // DELETE {accion:"eliminar_categoria", id}: las tareas quedan sin categoría.
-// POST {accion:"agregar_tarea", obra_id, categoria_id?, descripcion?}
+// POST {accion:"agregar_zona", obra_id, nombre} / PATCH {accion:
+//   "actualizar_zona", id, nombre} / DELETE {accion:"eliminar_zona", id}:
+//   "fachadas" (o zonas) de una obra — a pedido de Álvaro (2026-09-30), ej.
+//   Cea Bermudez se divide en CEA y Vallehermoso. Una tarea puede ir en una
+//   fachada o directamente en la obra; al borrar la fachada sus tareas
+//   quedan en la obra.
+// POST {accion:"agregar_tarea", obra_id, categoria_id?, zona_id?, descripcion?}
 // PATCH {accion:"actualizar_tarea", id, ...campos}: solo pisa lo mandado.
 // DELETE {accion:"eliminar_tarea", id}
 
@@ -89,6 +95,13 @@ try {
         )
     ");
     $db->exec("
+        CREATE TABLE IF NOT EXISTS prioridades_zonas (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          obra_id INTEGER NOT NULL,
+          nombre TEXT NOT NULL
+        )
+    ");
+    $db->exec("
         CREATE TABLE IF NOT EXISTS prioridades_tareas (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           obra_id INTEGER NOT NULL,
@@ -107,6 +120,11 @@ try {
         )
     ");
 
+    $columnasTareas = array_column($db->query('PRAGMA table_info(prioridades_tareas)')->fetchAll(), 'name');
+    if (!in_array('zona_id', $columnasTareas, true)) {
+        $db->exec('ALTER TABLE prioridades_tareas ADD COLUMN zona_id INTEGER');
+    }
+
     // SYNC_TOKEN (sin sesión): carga inicial de una obra con sus tareas
     // desde la planilla de Álvaro — POST {accion:"importar", buscar, alias?,
     // nota?, tareas:[{categoria, descripcion, responsable?, fecha_inicio?,
@@ -118,6 +136,45 @@ try {
         $bodyPost = json_decode((string) file_get_contents('php://input'), true) ?? [];
         $token = $_GET['token'] ?? $bodyPost['token'] ?? '';
         if ($config['sync_token'] !== '' && hash_equals($config['sync_token'], (string) $token)) {
+            // "zonas_por_prefijo": pasa las tareas escritas "Zona: tarea" a
+            // una fachada "Zona" (se crea si no existe) y deja solo "tarea"
+            // en la descripción. Usado una vez para Cea Bermudez, que se
+            // había importado con "CEA:" / "Vallehermoso:" delante.
+            if (($bodyPost['accion'] ?? '') === 'zonas_por_prefijo') {
+                $stmtObra = $db->prepare('SELECT * FROM prioridades_obras WHERE obra = ?');
+                $stmtObra->execute([(string) ($bodyPost['obra'] ?? '')]);
+                $obraFila = $stmtObra->fetch();
+                if (!$obraFila) {
+                    Response::error('Obra no encontrada en Prioridades', 404);
+                }
+                $db->beginTransaction();
+                if (array_key_exists('alias', $bodyPost)) {
+                    $db->prepare('UPDATE prioridades_obras SET alias = ? WHERE id = ?')->execute([textoPrioridad($bodyPost['alias']), $obraFila['id']]);
+                }
+                $zonas = [];
+                $stmtZ = $db->prepare('SELECT id, nombre FROM prioridades_zonas WHERE obra_id = ?');
+                $stmtZ->execute([$obraFila['id']]);
+                foreach ($stmtZ->fetchAll() as $z) {
+                    $zonas[$z['nombre']] = (int) $z['id'];
+                }
+                $stmtT = $db->prepare('SELECT id, descripcion FROM prioridades_tareas WHERE obra_id = ?');
+                $stmtT->execute([$obraFila['id']]);
+                $movidas = 0;
+                foreach ($stmtT->fetchAll() as $t) {
+                    if (!preg_match('/^([^:]{1,40}):\s*(.+)$/u', (string) $t['descripcion'], $m)) {
+                        continue;
+                    }
+                    $zona = trim($m[1]);
+                    if (!isset($zonas[$zona])) {
+                        $db->prepare('INSERT INTO prioridades_zonas (obra_id, nombre) VALUES (?, ?)')->execute([$obraFila['id'], $zona]);
+                        $zonas[$zona] = (int) $db->lastInsertId();
+                    }
+                    $db->prepare('UPDATE prioridades_tareas SET zona_id = ?, descripcion = ? WHERE id = ?')->execute([$zonas[$zona], trim($m[2]), $t['id']]);
+                    $movidas++;
+                }
+                $db->commit();
+                Response::json(['ok' => true, 'zonas' => array_keys($zonas), 'tareas_movidas' => $movidas]);
+            }
             if (($bodyPost['accion'] ?? '') !== 'importar') {
                 Response::error('Acción no reconocida', 422);
             }
@@ -177,6 +234,7 @@ try {
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $obras = $db->query('SELECT * FROM prioridades_obras ORDER BY creado_en, id')->fetchAll();
         $categorias = $db->query('SELECT * FROM prioridades_categorias ORDER BY obra_id, id')->fetchAll();
+        $zonas = $db->query('SELECT * FROM prioridades_zonas ORDER BY obra_id, id')->fetchAll();
         $tareas = $db->query('SELECT * FROM prioridades_tareas ORDER BY obra_id, fecha_inicio IS NULL, fecha_inicio, id')->fetchAll();
 
         $obrasPanel = [];
@@ -203,6 +261,7 @@ try {
         Response::json([
             'obras' => $obras,
             'categorias' => $categorias,
+            'zonas' => $zonas,
             'tareas' => $tareas,
             'obras_panel' => $obrasPanel,
             'responsables' => $responsables,
@@ -268,6 +327,7 @@ try {
         $db->beginTransaction();
         $db->prepare('DELETE FROM prioridades_tareas WHERE obra_id = ?')->execute([$id]);
         $db->prepare('DELETE FROM prioridades_categorias WHERE obra_id = ?')->execute([$id]);
+        $db->prepare('DELETE FROM prioridades_zonas WHERE obra_id = ?')->execute([$id]);
         $db->prepare('DELETE FROM prioridades_obras WHERE id = ?')->execute([$id]);
         $db->commit();
         Response::json(['ok' => true]);
@@ -312,14 +372,42 @@ try {
         Response::json(['ok' => true]);
     }
 
+    if ($metodo === 'POST' && $accion === 'agregar_zona') {
+        $obraId = (int) ($body['obra_id'] ?? 0);
+        $nombre = textoPrioridad($body['nombre'] ?? null);
+        if (!filaPor($db, 'prioridades_obras', $obraId) || $nombre === null) {
+            Response::error('Faltan "obra_id" y/o "nombre"', 422);
+        }
+        $db->prepare('INSERT INTO prioridades_zonas (obra_id, nombre) VALUES (?, ?)')->execute([$obraId, $nombre]);
+        Response::json(['zona' => filaPor($db, 'prioridades_zonas', (int) $db->lastInsertId())]);
+    }
+
+    if ($metodo === 'PATCH' && $accion === 'actualizar_zona') {
+        $id = (int) ($body['id'] ?? 0);
+        $nombre = textoPrioridad($body['nombre'] ?? null);
+        if (!filaPor($db, 'prioridades_zonas', $id) || $nombre === null) {
+            Response::error('Fachada no encontrada o nombre vacío', 422);
+        }
+        $db->prepare('UPDATE prioridades_zonas SET nombre = ? WHERE id = ?')->execute([$nombre, $id]);
+        Response::json(['zona' => filaPor($db, 'prioridades_zonas', $id)]);
+    }
+
+    if ($metodo === 'DELETE' && $accion === 'eliminar_zona') {
+        $id = (int) ($body['id'] ?? 0);
+        $db->prepare('UPDATE prioridades_tareas SET zona_id = NULL WHERE zona_id = ?')->execute([$id]);
+        $db->prepare('DELETE FROM prioridades_zonas WHERE id = ?')->execute([$id]);
+        Response::json(['ok' => true]);
+    }
+
     if ($metodo === 'POST' && $accion === 'agregar_tarea') {
         $obraId = (int) ($body['obra_id'] ?? 0);
         if (!filaPor($db, 'prioridades_obras', $obraId)) {
             Response::error('Obra no encontrada', 404);
         }
         $categoriaId = (int) ($body['categoria_id'] ?? 0) ?: null;
-        $db->prepare('INSERT INTO prioridades_tareas (obra_id, categoria_id, descripcion, actualizado_por) VALUES (?, ?, ?, ?)')
-            ->execute([$obraId, $categoriaId, (string) textoPrioridad($body['descripcion'] ?? null), $autor]);
+        $zonaId = (int) ($body['zona_id'] ?? 0) ?: null;
+        $db->prepare('INSERT INTO prioridades_tareas (obra_id, categoria_id, zona_id, descripcion, actualizado_por) VALUES (?, ?, ?, ?, ?)')
+            ->execute([$obraId, $categoriaId, $zonaId, (string) textoPrioridad($body['descripcion'] ?? null), $autor]);
         Response::json(['tarea' => filaPor($db, 'prioridades_tareas', (int) $db->lastInsertId())]);
     }
 
@@ -338,6 +426,9 @@ try {
         }
         if (array_key_exists('categoria_id', $body)) {
             $t['categoria_id'] = (int) $body['categoria_id'] ?: null;
+        }
+        if (array_key_exists('zona_id', $body)) {
+            $t['zona_id'] = (int) $body['zona_id'] ?: null;
         }
         if (array_key_exists('fecha_inicio', $body)) {
             $t['fecha_inicio'] = fechaPrioridad($body['fecha_inicio'], 'fecha_inicio');
@@ -361,11 +452,11 @@ try {
         }
         $db->prepare("
             UPDATE prioridades_tareas
-            SET categoria_id = ?, descripcion = ?, responsable = ?, fecha_inicio = ?, fecha_fin = ?, estado = ?,
+            SET categoria_id = ?, zona_id = ?, descripcion = ?, responsable = ?, fecha_inicio = ?, fecha_fin = ?, estado = ?,
                 falta_material = ?, pendiente_ppto = ?, destacada = ?, actualizado_por = ?, actualizado_en = datetime('now')
             WHERE id = ?
         ")->execute([
-            $t['categoria_id'], $t['descripcion'], $t['responsable'], $t['fecha_inicio'], $t['fecha_fin'], $t['estado'],
+            $t['categoria_id'], $t['zona_id'], $t['descripcion'], $t['responsable'], $t['fecha_inicio'], $t['fecha_fin'], $t['estado'],
             $t['falta_material'], $t['pendiente_ppto'], $t['destacada'], $autor, $id,
         ]);
         Response::json(['tarea' => filaPor($db, 'prioridades_tareas', $id)]);

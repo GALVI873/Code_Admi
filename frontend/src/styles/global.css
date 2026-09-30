@@ -4871,3 +4871,120 @@ select.celda-editable-material {
 .prio-marcas { display: flex; flex-wrap: wrap; gap: 16px; text-transform: none; }
 .prio-ventana-acciones { align-items: center; }
 .prio-espaciador { flex: 1; }
+
+/* Prioridades v2: un Gantt con obras desplegables → fachadas → tareas. */
+.prio-gantt-obra .gantt-etiqueta { background: #eef3f9; }
+.prio-gantt-obra .gantt-pista { background: #f6f9fc; }
+.prio-gantt-obra { border-top: 2px solid #d5e0ec; }
+.prio-gantt-acciones .gantt-etiqueta { background: #fafbfd; }
+.prio-gantt-zona .gantt-etiqueta { background: #f7f9fc; }
+
+.prio-fila-obra {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.prio-flecha { width: 14px; color: var(--azul-med); font-size: 13px; flex: none; }
+.prio-obra-textos { display: flex; flex-direction: column; min-width: 0; }
+
+.prio-obra-nombre {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--azul);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prio-obra-nota-texto { font-weight: 600; text-transform: none; color: #7a8699; font-size: 13px; }
+
+.prio-obra-resumen {
+  font-size: 12px;
+  font-weight: 600;
+  font-style: italic;
+  color: var(--azul-med);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prio-acciones-obra {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding-left: 24px;
+}
+
+.prio-acciones-obra .btn-secundario { height: 32px; padding: 0 12px; }
+
+.prio-objetivo-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #7a8699;
+  text-transform: uppercase;
+}
+
+.prio-objetivo-inline .input-filtro {
+  flex: none;
+  width: 140px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+
+.prio-fila-zona { display: flex; align-items: center; gap: 8px; width: 100%; padding-left: 20px; }
+
+.prio-zona-boton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.prio-zona-nombre { font-size: 13.5px; font-weight: 700; color: #3b556f; }
+.prio-zona-contador { font-size: 11.5px; color: #7a8699; }
+
+.prio-zona-agregar {
+  border: 1px dashed #b9c7d6;
+  border-radius: 12px;
+  background: white;
+  padding: 2px 10px;
+  font-size: 11.5px;
+  color: var(--azul-med);
+  cursor: pointer;
+}
+
+.prio-nivel-1 { padding-left: 24px; }
+.prio-nivel-2 { padding-left: 44px; }
+.prio-fila.prio-nivel-1 { grid-template-columns: 110px 1fr 110px 100px; }
+.prio-fila.prio-nivel-2 { grid-template-columns: 110px 1fr 110px 100px; }
+
+.gantt-barra-zona {
+  background: repeating-linear-gradient(135deg, #eef2f6, #eef2f6 6px, #f5f7fa 6px, #f5f7fa 12px) !important;
+  color: #3b556f;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(59, 85, 111, .25);
+}
+
+.prio-ventana-grande { max-width: 640px; }
+.prio-ventana-grande .prio-categorias { margin-top: 6px; }
