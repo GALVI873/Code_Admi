@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { prioridades, accionPrioridades } from '../api/client.js'
 import DiagramaGantt, { diaANumero, numeroADia, hoyIso, lunesDe, formatoCorto } from '../components/DiagramaGantt.jsx'
 import { COLOR_TERMINADO } from '../components/PlanificacionComun.jsx'
+import { descargarPdfPrioridades } from '../components/PdfPrioridades.js'
 
 // Prioridades — obras en fase de finalización (a pedido de Álvaro,
 // 2026-09-30), solo admin. Reemplaza su planilla "Cronograma de obra —
@@ -392,6 +393,7 @@ export default function PrioridadesPage() {
   const [obraConfigurando, setObraConfigurando] = useState(null)
   const [desplegadas, setDesplegadas] = useState(leerDesplegadas)
   const [zonasPlegadas, setZonasPlegadas] = useState(() => new Set())
+  const [generandoPdf, setGenerandoPdf] = useState(false)
 
   const esAdmin = usuario?.roles?.includes('admin')
 
@@ -629,6 +631,21 @@ export default function PrioridadesPage() {
           <h1>Prioridades</h1>
           <p>Obras en fase de finalización — despliega cada obra para ver sus fachadas y tareas; la barra de la obra es su tiempo total de cierre</p>
         </div>
+        {/* Informe PDF de todo el cronograma (a pedido de Álvaro, 2026-10-01),
+            ver PdfPrioridades.js. Respeta "Ver terminadas". */}
+        <button
+          type="button"
+          className="btn-secundario"
+          disabled={generandoPdf || datos.obras.length === 0}
+          onClick={() => {
+            setGenerandoPdf(true)
+            descargarPdfPrioridades(datos, { verTerminadas })
+              .catch((err) => setError(`No se pudo generar el PDF: ${err.message}`))
+              .finally(() => setGenerandoPdf(false))
+          }}
+        >
+          {generandoPdf ? 'Generando…' : '📄 Descargar PDF'}
+        </button>
       </header>
 
       <div className="filtro-tabla plan-filtros">
