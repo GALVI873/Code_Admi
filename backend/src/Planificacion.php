@@ -65,6 +65,13 @@ final class Planificacion
             )
         ");
         $db->exec('CREATE INDEX IF NOT EXISTS idx_planificacion_tareas_obra ON planificacion_tareas(obra_id)');
+        // Ayudante del montaje (a pedido de Álvaro, 2026-10-01): aparte de
+        // "responsable" (el/los montadores) para que el Gantt de montaje siga
+        // teniendo una fila por montador; el ayudante va escrito en la barra.
+        $columnasTareas = array_column($db->query('PRAGMA table_info(planificacion_tareas)')->fetchAll(), 'name');
+        if (!in_array('ayudante', $columnasTareas, true)) {
+            $db->exec('ALTER TABLE planificacion_tareas ADD COLUMN ayudante TEXT');
+        }
     }
 
     private static function esFinde(DateTimeImmutable $d): bool

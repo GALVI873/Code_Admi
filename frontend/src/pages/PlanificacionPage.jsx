@@ -10,6 +10,7 @@ import {
   actualizarTareaPlanificacion,
   eliminarTareaPlanificacion,
   calcularFechasPlanificacion,
+  agregarPersonaMontaje,
 } from '../api/client.js'
 import DiagramaGantt, { diaANumero, numeroADia, hoyIso, lunesDe, formatoCorto } from '../components/DiagramaGantt.jsx'
 import {
@@ -473,6 +474,8 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
   const [buscar, setBuscar] = useState('')
   const [verTerminadas, setVerTerminadas] = useState(false)
   const [soloSinResponsable, setSoloSinResponsable] = useState(false)
+  // Filtro por situación de la obra (a pedido de Álvaro, 2026-10-01).
+  const [filtroSituacion, setFiltroSituacion] = useState('')
   const [creando, setCreando] = useState(false)
   const hoy = hoyIso()
 
@@ -487,6 +490,7 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
     .filter((o) => verTerminadas || o.estado !== 'Terminada')
     .filter((o) => !buscar || normalizar(`${o.nombre} ${o.constructora} ${o.obra_panel}`).includes(normalizar(buscar)))
     .filter((o) => !soloSinResponsable || sinResponsable(o) > 0)
+    .filter((o) => !filtroSituacion || (filtroSituacion === '__sin__' ? !o.situacion : o.situacion === filtroSituacion))
   // Con el filtro activo, las más nuevas primero (las recién aceptadas).
   if (soloSinResponsable) filtradas.sort((a, b) => String(b.creado_en).localeCompare(String(a.creado_en)))
 
@@ -496,6 +500,14 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
         <div className="filtro-campo">
           <label>Buscar</label>
           <input type="text" className="input-filtro" placeholder="Obra o constructora…" value={buscar} onChange={(e) => setBuscar(e.target.value)} />
+        </div>
+        <div className="filtro-campo">
+          <label>Situación</label>
+          <select className="select-inline" value={filtroSituacion} onChange={(e) => setFiltroSituacion(e.target.value)}>
+            <option value="">Todas</option>
+            {SITUACIONES.map((x) => <option key={x}>{x}</option>)}
+            <option value="__sin__">Sin situación</option>
+          </select>
         </div>
         <label className="plan-check">
           <input type="checkbox" checked={verTerminadas} onChange={(e) => setVerTerminadas(e.target.checked)} /> Ver terminadas
@@ -566,7 +578,7 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
           </tbody>
         </table>
       </div>
-      {filtradas.length === 0 && <p className="dashboard-nota">{soloSinResponsable ? 'Todas las obras activas tienen responsable asignado. 👍' : `No hay obras${buscar ? ' que coincidan con la búsqueda' : ''}.`}</p>}
+      {filtradas.length === 0 && <p className="dashboard-nota">{soloSinResponsable && !filtroSituacion && !buscar ? 'Todas las obras activas tienen responsable asignado. 👍' : `No hay obras${buscar || filtroSituacion || soloSinResponsable ? ' que coincidan con los filtros' : ''}.`}</p>}
     </div>
   )
 }
@@ -914,6 +926,11 @@ export default function PlanificacionPage() {
           tarea={tareaSeleccionada}
           obra={obrasPorId.get(tareaSeleccionada.obra_id)}
           responsables={datos.responsables}
+          personas={datos.personas || []}
+          onCrearPersona={async (nombre, rol) => {
+            const r = await agregarPersonaMontaje(accessToken, nombre, rol)
+            setDatos((prev) => ({ ...prev, personas: r.personas }))
+          }}
           puedeEditar={puedeEditar}
           onGuardar={actualizarTarea}
           onCerrar={() => setTareaAbierta(null)}

@@ -30,8 +30,8 @@ declare(strict_types=1);
 //   DELETE {accion:"eliminar_obra", id}: borra la obra y sus tareas.
 //   POST {accion:"agregar_tarea", obra_id, categoria}
 //   PATCH {accion:"actualizar_tarea", id, fecha_inicio?, fecha_fin?,
-//     responsable?, estado?, comentario?, categoria?}: solo pisa los campos
-//     mandados. Devuelve la tarea actualizada.
+//     responsable?, ayudante?, estado?, comentario?, categoria?}: solo pisa
+//     los campos mandados. Devuelve la tarea actualizada.
 //   DELETE {accion:"eliminar_tarea", id}
 // POST (SYNC_TOKEN) {accion:"importar_notion", obras:[...]}: carga inicial
 //   desde Notion (backend/drive_sync/importar_planificacion_notion.js).
@@ -172,6 +172,13 @@ try {
         $responsables = array_keys($responsables);
         sort($responsables, SORT_NATURAL | SORT_FLAG_CASE);
 
+        // Montadores y ayudantes de la pestaña Montaje de las obras aceptadas
+        // (montaje_personas, rol "montador" | "ayudante") — para elegirlos
+        // desde la ventana de una tarea de Montaje.
+        $personas = $tablaPersonasExiste
+            ? $db->query('SELECT id, nombre, rol FROM montaje_personas ORDER BY nombre COLLATE NOCASE')->fetchAll()
+            : [];
+
         $obrasPanel = [];
         $tablaObrasExiste = (bool) $db->query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'obras_aceptadas'")->fetchColumn();
         if ($tablaObrasExiste) {
@@ -182,6 +189,7 @@ try {
             'obras' => $obras,
             'tareas' => $tareas,
             'responsables' => $responsables,
+            'personas' => $personas,
             'obras_panel' => $obrasPanel,
             'categorias' => CATEGORIAS_PLANIFICACION,
             'puede_editar' => $puedeEditar,
@@ -316,14 +324,15 @@ try {
             Response::error('Categoría no válida', 422);
         }
         $responsable = array_key_exists('responsable', $body) ? textoONull($body['responsable']) : $actual['responsable'];
+        $ayudante = array_key_exists('ayudante', $body) ? textoONull($body['ayudante']) : ($actual['ayudante'] ?? null);
         $comentario = array_key_exists('comentario', $body) ? textoONull($body['comentario']) : $actual['comentario'];
 
         $db->prepare("
             UPDATE planificacion_tareas
-            SET categoria = ?, fecha_inicio = ?, fecha_fin = ?, responsable = ?, estado = ?, comentario = ?,
+            SET categoria = ?, fecha_inicio = ?, fecha_fin = ?, responsable = ?, ayudante = ?, estado = ?, comentario = ?,
                 actualizado_por = ?, actualizado_en = datetime('now')
             WHERE id = ?
-        ")->execute([$categoria, $inicio, $fin, $responsable, $estado, $comentario, $autor, $id]);
+        ")->execute([$categoria, $inicio, $fin, $responsable, $ayudante, $estado, $comentario, $autor, $id]);
 
         $stmtActual->execute([$id]);
         Response::json(['tarea' => $stmtActual->fetch()]);

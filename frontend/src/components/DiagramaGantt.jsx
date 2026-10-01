@@ -64,8 +64,11 @@ function asignarCarriles(barras) {
     }
     b._carril = carril
   }
+  // Una barra con cuentaSolape === false (ej. un repaso o remate de un par
+  // de horas) nunca cuenta como solape — a pedido de Álvaro, 2026-10-01.
   for (let i = 0; i < ordenadas.length; i++) {
     for (let j = i + 1; j < ordenadas.length && ordenadas[j]._ini <= ordenadas[i]._fin; j++) {
+      if (ordenadas[i].cuentaSolape === false || ordenadas[j].cuentaSolape === false) continue
       conSolape.add(ordenadas[i].id)
       conSolape.add(ordenadas[j].id)
     }

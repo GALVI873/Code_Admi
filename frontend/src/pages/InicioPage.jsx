@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import { planificacion, actualizarTareaPlanificacion } from '../api/client.js'
+import { planificacion, actualizarTareaPlanificacion, agregarPersonaMontaje } from '../api/client.js'
 import DiagramaGantt, { diaANumero, numeroADia, hoyIso, lunesDe, formatoCorto } from '../components/DiagramaGantt.jsx'
 import { COLOR_CATEGORIA, COLOR_SITUACION, LeyendaColores, VentanaTarea, filasMontajePorMontador, datosNum, tareaNum } from '../components/PlanificacionComun.jsx'
 
@@ -70,7 +70,10 @@ export default function InicioPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datos, obrasPorId, inicioVentana])
 
+  // Mismo criterio que el borde rojo: solo cuentan dos obras ("Obra"), no
+  // una obra con un remate/repaso/aviso.
   const solapes = filasMontaje.filter((f) => f.marcarSolapes && f.barras.length > 1 && f.barras.some((a, i) => f.barras.some((b, j) => i < j
+    && a.cuentaSolape !== false && b.cuentaSolape !== false
     && diaANumero(a.inicio) <= diaANumero(b.fin || b.inicio) && diaANumero(b.inicio) <= diaANumero(a.fin || a.inicio))))
 
   async function actualizarTarea(id, cambios) {
@@ -143,6 +146,11 @@ export default function InicioPage() {
           tarea={tareaSeleccionada}
           obra={obrasPorId.get(tareaSeleccionada.obra_id)}
           responsables={datos.responsables}
+          personas={datos.personas || []}
+          onCrearPersona={async (nombre, rol) => {
+            const r = await agregarPersonaMontaje(accessToken, nombre, rol)
+            setDatos((prev) => ({ ...prev, personas: r.personas }))
+          }}
           puedeEditar={datos.puede_editar}
           onGuardar={actualizarTarea}
           onCerrar={() => setTareaAbierta(null)}

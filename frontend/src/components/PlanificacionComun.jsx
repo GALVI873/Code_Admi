@@ -58,7 +58,10 @@ export function responsablesDe(tarea) {
 
 // Una fila por montador con sus obras (categoría Montaje) como barras; si
 // una tarea tiene dos responsables ("Ever, Javi") aparece en las dos filas.
-// marcarSolapes: borde rojo cuando un montador tiene dos obras a la vez.
+// marcarSolapes: borde rojo cuando un montador tiene dos obras a la vez —
+// solo entre obras con situación "Obra" (a pedido de Álvaro, 2026-10-01):
+// un remate/repaso/aviso suele ser un par de horas, puede convivir con una
+// obra sin que sea un conflicto.
 export function filasMontajePorMontador(tareas, obrasPorId, { incluirTerminadas = false } = {}) {
   const porResponsable = new Map()
   for (const t of tareas) {
@@ -73,10 +76,11 @@ export function filasMontajePorMontador(tareas, obrasPorId, { incluirTerminadas 
         id: `${t.id}-${nombre}`,
         inicio: t.fecha_inicio,
         fin: t.fecha_fin,
-        texto: obra.nombre,
-        titulo: `${obra.nombre}${obra.constructora ? ` (${obra.constructora})` : ''} — ${obra.situacion || 'Obra'}`,
+        texto: t.ayudante ? `${obra.nombre} · ${t.ayudante}` : obra.nombre,
+        titulo: `${obra.nombre}${obra.constructora ? ` (${obra.constructora})` : ''} — ${obra.situacion || 'Obra'}\nMontador: ${t.responsable || 'sin asignar'}${t.ayudante ? ` · Ayudante: ${t.ayudante}` : ''}`,
         color: t.estado === 'Terminado' ? COLOR_TERMINADO : COLOR_SITUACION[obra.situacion] || COLOR_SITUACION.Obra,
         atenuada: t.estado === 'Terminado',
+        cuentaSolape: (obra.situacion || 'Obra') === 'Obra',
         tarea: t,
       })
     }
@@ -105,13 +109,69 @@ export function LeyendaColores({ colores }) {
   )
 }
 
+// Desplegable de montador o ayudante (lista de montaje_personas, la misma
+// de la pestaña Montaje de las obras aceptadas) con "+ Nuevo…" para sumar
+// a alguien a la lista al momento. Si el valor actual no está en la lista
+// (ej. "Ever, Javi" o un proveedor), se muestra igual como opción.
+const NUEVA_PERSONA = '__nueva__'
+function SelectPersona({ etiqueta, rol, valor, personas, onCambio, onCrear }) {
+  const [creando, setCreando] = useState(false)
+  const [nombre, setNombre] = useState('')
+  const [error, setError] = useState('')
+  const nombres = personas.filter((p) => p.rol === rol).map((p) => p.nombre)
+  if (valor && !nombres.includes(valor)) nombres.unshift(valor)
+
+  async function crear() {
+    const n = nombre.trim()
+    if (!n) return
+    setError('')
+    try {
+      await onCrear(n, rol)
+      onCambio(n)
+      setCreando(false)
+      setNombre('')
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  return (
+    <label>
+      {etiqueta}
+      {creando ? (
+        <span className="prio-nueva-inline">
+          <input autoFocus type="text" className="input-filtro" placeholder={`Nombre del ${rol}`} value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); crear() }
+              if (e.key === 'Escape') { e.preventDefault(); setCreando(false) }
+            }} />
+          <button type="button" className="btn-secundario plan-boton-principal" disabled={!nombre.trim()} onClick={crear}>Crear</button>
+          <button type="button" className="btn-secundario" title="Cancelar" onClick={() => setCreando(false)}>✕</button>
+        </span>
+      ) : (
+        <select className="select-inline" value={valor} onChange={(e) => (e.target.value === NUEVA_PERSONA ? setCreando(true) : onCambio(e.target.value))}>
+          <option value="">Sin asignar</option>
+          {nombres.map((n) => <option key={n} value={n}>{n}</option>)}
+          <option value={NUEVA_PERSONA}>+ Nuevo…</option>
+        </select>
+      )}
+      {error && <span className="auth-error">{error}</span>}
+    </label>
+  )
+}
+
 // Ventana de detalle de una tarea. Con puedeEditar (Álvaro) se editan
 // fechas, responsable, estado y comentario; sin permiso es solo lectura.
-export function VentanaTarea({ tarea, obra, responsables, puedeEditar, onGuardar, onCerrar, onAbrirObra }) {
+// En las tareas de Montaje el responsable se elige como Montador + Ayudante
+// (a pedido de Álvaro, 2026-10-01) desde la lista de montaje_personas.
+export function VentanaTarea({ tarea, obra, responsables, personas = [], puedeEditar, onGuardar, onCerrar, onAbrirObra, onCrearPersona }) {
+  const esMontaje = tarea.categoria === 'Montaje'
   const [form, setForm] = useState({
     fecha_inicio: tarea.fecha_inicio || '',
     fecha_fin: tarea.fecha_fin || '',
     responsable: tarea.responsable || '',
+    ayudante: tarea.ayudante || '',
     estado: tarea.estado || 'Pendiente',
     comentario: tarea.comentario || '',
   })
@@ -152,17 +212,26 @@ export function VentanaTarea({ tarea, obra, responsables, puedeEditar, onGuardar
               Fin
               <input type="date" className="input-filtro" value={form.fecha_fin} onChange={(e) => setForm({ ...form, fecha_fin: e.target.value })} />
             </label>
-            <label className="plan-ventana-ancho">
-              Responsable
-              <input
-                type="text"
-                className="input-filtro"
-                list="plan-responsables"
-                placeholder="Ej. Evaristo o Ever, Javi"
-                value={form.responsable}
-                onChange={(e) => setForm({ ...form, responsable: e.target.value })}
-              />
-            </label>
+            {esMontaje ? (
+              <>
+                <SelectPersona etiqueta="Montador" rol="montador" valor={form.responsable} personas={personas}
+                  onCambio={(v) => setForm((f) => ({ ...f, responsable: v }))} onCrear={onCrearPersona} />
+                <SelectPersona etiqueta="Ayudante" rol="ayudante" valor={form.ayudante} personas={personas}
+                  onCambio={(v) => setForm((f) => ({ ...f, ayudante: v }))} onCrear={onCrearPersona} />
+              </>
+            ) : (
+              <label className="plan-ventana-ancho">
+                Responsable
+                <input
+                  type="text"
+                  className="input-filtro"
+                  list="plan-responsables"
+                  placeholder="Ej. Evaristo o Ever, Javi"
+                  value={form.responsable}
+                  onChange={(e) => setForm({ ...form, responsable: e.target.value })}
+                />
+              </label>
+            )}
             <label>
               Estado
               <select className="select-inline" value={form.estado} onChange={(e) => setForm({ ...form, estado: e.target.value })}>
@@ -187,7 +256,8 @@ export function VentanaTarea({ tarea, obra, responsables, puedeEditar, onGuardar
           <table className="tabla-adicionales plan-ventana-tabla">
             <tbody>
               <tr><th>Fechas</th><td>{formatoCorto(tarea.fecha_inicio) || '—'}{tarea.fecha_fin && tarea.fecha_fin !== tarea.fecha_inicio ? ` → ${formatoCorto(tarea.fecha_fin)}` : ''}</td></tr>
-              <tr><th>Responsable</th><td>{tarea.responsable || 'Sin asignar'}</td></tr>
+              <tr><th>{esMontaje ? 'Montador' : 'Responsable'}</th><td>{tarea.responsable || 'Sin asignar'}</td></tr>
+              {esMontaje && <tr><th>Ayudante</th><td>{tarea.ayudante || 'Sin asignar'}</td></tr>}
               <tr><th>Estado</th><td>{tarea.estado}</td></tr>
               {tarea.comentario && <tr><th>Comentario</th><td>{tarea.comentario}</td></tr>}
             </tbody>
