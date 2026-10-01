@@ -12,6 +12,13 @@ import { useEffect, useRef, useState } from 'react'
 //   [{ id, inicio, fin, texto, color, titulo?, atenuada?, clase?, ... }] }]
 // (cualquier otro dato de la barra — ej. la tarea o la obra — vuelve tal
 // cual en onMoverBarra/onClickBarra).
+//
+// cambiarFila (a pedido de Álvaro, 2026-10-01, Gantt de montaje): una barra
+// también se puede arrastrar en vertical y soltar en OTRA fila; la fila
+// destino se resalta y onMoverBarra recibe un cuarto parámetro con su id
+// (o null si quedó en la misma). Solo se aceptan filas con aceptaSoltar.
+// onClickBarra recibe además la posición del puntero ({ x, y }) para
+// poder abrir un menú junto a la barra.
 // Las fechas son 'AAAA-MM-DD'; fin null = un solo día. Dentro de una fila,
 // las barras que se pisan se apilan en carriles; con marcarSolapes además
 // se les pone borde rojo (ej. un montador con dos obras el mismo día).
@@ -83,7 +90,7 @@ function asignarCarriles(barras) {
 // disponible entre los días visibles (nunca menos que anchoDia) — a pedido
 // de Álvaro (2026-10-01) para el Gantt semanal de Inicio, que dejaba
 // espacio vacío a la derecha. Se recalcula si cambia el tamaño de ventana.
-export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPedido, editable = false, onMoverBarra, onClickBarra, vacio, anchoEtiqueta = 230, encabezadoEtiqueta = null, llenarAncho = false }) {
+export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPedido, editable = false, onMoverBarra, onClickBarra, vacio, anchoEtiqueta = 230, encabezadoEtiqueta = null, llenarAncho = false, cambiarFila = false }) {
   const [arrastre, setArrastre] = useState(null)
   const contenedorRef = useRef(null)
   const [anchoContenedor, setAnchoContenedor] = useState(0)
@@ -125,10 +132,16 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
     return { ini: barra._ini, fin: Math.max(barra._fin + d, barra._ini) }
   }
 
-  function handlePointerDown(e, barra, modo) {
+  // Fila (id) que está debajo del puntero, si acepta que le suelten barras.
+  function filaBajoPuntero(x, y) {
+    const el = document.elementFromPoint(x, y)?.closest?.('[data-fila-id]')
+    return el && el.dataset.aceptaSoltar === '1' ? el.dataset.filaId : null
+  }
+
+  function handlePointerDown(e, barra, modo, filaId) {
     if (e.button !== 0) return
     e.stopPropagation()
-    const estado = { id: barra.id, modo, x0: e.clientX, delta: 0, movio: false, barra }
+    const estado = { id: barra.id, modo, x0: e.clientX, y0: e.clientY, delta: 0, movio: false, barra, filaOrigen: filaId, filaDestino: null }
     arrastreRef.current = estado
     if (!editable) return
     e.currentTarget.setPointerCapture?.(e.pointerId)
@@ -139,28 +152,34 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
     const estado = arrastreRef.current
     if (!estado || !editable) return
     const delta = Math.round((e.clientX - estado.x0) / anchoDia)
-    if (Math.abs(e.clientX - estado.x0) > 3) estado.movio = true
-    if (delta !== estado.delta) {
+    if (Math.abs(e.clientX - estado.x0) > 3 || Math.abs(e.clientY - estado.y0) > 3) estado.movio = true
+    let destino = null
+    if (cambiarFila && estado.modo === 'mover' && Math.abs(e.clientY - estado.y0) > 8) {
+      const f = filaBajoPuntero(e.clientX, e.clientY)
+      destino = f && f !== estado.filaOrigen ? f : null
+    }
+    if (delta !== estado.delta || destino !== estado.filaDestino) {
       estado.delta = delta
+      estado.filaDestino = destino
       setArrastre({ ...estado })
     }
   }
 
-  function handlePointerUp() {
+  function handlePointerUp(e) {
     const estado = arrastreRef.current
     arrastreRef.current = null
     setArrastre(null)
     if (!estado) return
-    const { barra, delta, modo, movio } = estado
-    if (editable && movio && delta !== 0) {
+    const { barra, delta, modo, movio, filaDestino } = estado
+    if (editable && movio && (delta !== 0 || filaDestino)) {
       let ini = barra._ini
       let fin = barra._fin
       if (modo === 'mover') { ini += delta; fin += delta }
       else if (modo === 'inicio') ini = Math.min(ini + delta, fin)
       else fin = Math.max(fin + delta, ini)
-      onMoverBarra?.(barra, numeroADia(ini), numeroADia(fin))
+      onMoverBarra?.(barra, numeroADia(ini), numeroADia(fin), filaDestino)
     } else if (!movio) {
-      onClickBarra?.(barra)
+      onClickBarra?.(barra, { x: e?.clientX ?? 0, y: e?.clientY ?? 0 })
     }
   }
 
@@ -210,7 +229,7 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
           {filasCalculadas.map((fila) => {
             const alto = Math.max(fila.esGrupo ? 36 : fila.carriles * (ALTO_BARRA + SEPARACION) + SEPARACION * 2, fila.altoMinimo || 0)
             return (
-              <div key={fila.id} className={`gantt-fila${fila.esGrupo ? ' gantt-fila-grupo' : ''}${fila.clase ? ` ${fila.clase}` : ''}`} style={{ height: alto }}>
+              <div key={fila.id} data-fila-id={fila.id} data-acepta-soltar={fila.aceptaSoltar ? '1' : '0'} className={`gantt-fila${fila.esGrupo ? ' gantt-fila-grupo' : ''}${fila.clase ? ` ${fila.clase}` : ''}${arrastre?.filaDestino === fila.id ? ' gantt-fila-destino' : ''}`} style={{ height: alto }}>
                 <div className="gantt-etiqueta" title={fila.etiquetaNode ? undefined : fila.etiqueta} style={{ width: anchoEtiqueta, flexBasis: anchoEtiqueta }}>
                   {fila.etiquetaNode || (
                     <>
@@ -247,7 +266,7 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
                           background: b.color,
                         }}
                         title={`${b.titulo || b.texto}\n${formatoCorto(numeroADia(ini))}${fin !== ini ? ` → ${formatoCorto(numeroADia(fin))}` : ''}${solapada ? '\n⚠ Se pisa con otra tarea del mismo responsable' : ''}`}
-                        onPointerDown={(e) => handlePointerDown(e, b, 'mover')}
+                        onPointerDown={(e) => handlePointerDown(e, b, 'mover', fila.id)}
                       >
                         {editable && !b.soloMover && <span className="gantt-barra-borde gantt-barra-borde-ini" onPointerDown={(e) => handlePointerDown(e, b, 'inicio')} />}
                         <span className="gantt-barra-texto">

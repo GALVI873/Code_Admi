@@ -5083,3 +5083,58 @@ select.celda-editable-material {
 .prio-fieldset { border: none; padding: 0; margin: 0; min-width: 0; }
 .prio-fieldset-interior { margin-top: 0; }
 .prio-fieldset:disabled .input-filtro, .prio-fieldset:disabled .select-inline { background: #f7f9fc; color: var(--texto); }
+
+/* Planificación (2026-10-01): situación editable en Cronograma y Montaje
+   con una fila por obra (Obra · Situación · Montador · Ayudante). */
+.plan-etiqueta-obra { display: flex; align-items: center; gap: 8px; width: 100%; }
+.plan-etiqueta-obra-textos { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+
+.plan-select-situacion {
+  flex: none;
+  width: 92px;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  border-color: rgba(44, 62, 80, .15);
+}
+
+.plan-fila-montaje {
+  display: grid;
+  grid-template-columns: 1fr 96px 120px 120px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.plan-fila-montaje-encabezado {
+  font-size: 11px;
+  font-weight: 700;
+  color: #7a8699;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+.plan-montaje-obra {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plan-montaje-obra:hover .gantt-etiqueta-texto { text-decoration: underline; }
+.plan-fila-montaje .plan-select-situacion { width: 96px; }
+
+.plan-select-persona {
+  width: 100%;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+.plan-montaje-texto { font-size: 12.5px; color: #5a6474; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

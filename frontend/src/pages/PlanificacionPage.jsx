@@ -20,7 +20,6 @@ import {
   SITUACIONES,
   LeyendaColores,
   VentanaTarea,
-  filasMontajePorMontador,
   responsablesDe,
   datosNum,
   obraNum,
@@ -111,6 +110,75 @@ function textoFechas(tarea) {
   return tarea.fecha_fin && tarea.fecha_fin !== tarea.fecha_inicio
     ? `${formatoCorto(tarea.fecha_inicio)} → ${formatoCorto(tarea.fecha_fin)}`
     : formatoCorto(tarea.fecha_inicio)
+}
+
+// Desplegable de situación de la obra (Obra / Remates / Repasos / Avisos)
+// que guarda al elegir — Cronograma y Montaje (a pedido de Álvaro,
+// 2026-10-01). Sin permiso, solo el chip de color.
+function SelectSituacion({ obra, puedeEditar, onCambiar }) {
+  if (!puedeEditar) {
+    return obra.situacion ? <span className="plan-chip" style={{ background: COLOR_SITUACION[obra.situacion] }}>{obra.situacion}</span> : null
+  }
+  return (
+    <select
+      className="select-inline plan-select-situacion"
+      value={obra.situacion || ''}
+      style={{ background: COLOR_SITUACION[obra.situacion] || 'white' }}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onCambiar(obra.id, e.target.value)}
+    >
+      <option value="">—</option>
+      {SITUACIONES.map((x) => <option key={x}>{x}</option>)}
+    </select>
+  )
+}
+
+// Columna izquierda de la fila de una obra en el Cronograma: nombre,
+// constructora y situación editable.
+function EtiquetaObraCronograma({ obra, puedeEditar, onCambiarSituacion }) {
+  return (
+    <div className="plan-etiqueta-obra">
+      <div className="plan-etiqueta-obra-textos">
+        <span className="gantt-etiqueta-texto">{obra.nombre}</span>
+        {obra.constructora && <span className="gantt-etiqueta-sub">{obra.constructora}</span>}
+      </div>
+      <SelectSituacion obra={obra} puedeEditar={puedeEditar} onCambiar={onCambiarSituacion} />
+    </div>
+  )
+}
+
+// Desplegable de montador/ayudante (montaje_personas) que guarda al elegir.
+// Si el valor actual no está en la lista (ej. "Ever, Javi" o un proveedor)
+// se muestra igual.
+function SelectPersonaRapido({ valor, rol, personas, puedeEditar, onCambiar }) {
+  if (!puedeEditar) return <span className="plan-montaje-texto">{valor || '—'}</span>
+  const nombres = personas.filter((x) => x.rol === rol).map((x) => x.nombre)
+  if (valor && !nombres.includes(valor)) nombres.unshift(valor)
+  return (
+    <select className="select-inline plan-select-persona" value={valor || ''} onChange={(e) => onCambiar(e.target.value)}>
+      <option value="">Sin asignar</option>
+      {nombres.map((n) => <option key={n} value={n}>{n}</option>)}
+    </select>
+  )
+}
+
+// Columna izquierda del Gantt de Montaje: una fila por obra con Obra ·
+// Situación · Montador · Ayudante, todo editable ahí mismo (a pedido de
+// Álvaro, 2026-10-01: cambiarlo rápido sin abrir la ficha).
+function EtiquetaMontaje({ tarea, obra, personas, puedeEditar, onCambiarSituacion, onCambiarTarea, onAbrir }) {
+  return (
+    <div className="plan-fila-montaje">
+      <button type="button" className="plan-montaje-obra" onClick={onAbrir} title="Abrir ficha de la tarea">
+        <span className="gantt-etiqueta-texto">{obra.nombre}</span>
+        {obra.constructora && <span className="gantt-etiqueta-sub">{obra.constructora}</span>}
+      </button>
+      <SelectSituacion obra={obra} puedeEditar={puedeEditar} onCambiar={onCambiarSituacion} />
+      <SelectPersonaRapido valor={tarea.responsable} rol="montador" personas={personas} puedeEditar={puedeEditar}
+        onCambiar={(v) => onCambiarTarea(tarea.id, { responsable: v })} />
+      <SelectPersonaRapido valor={tarea.ayudante} rol="ayudante" personas={personas} puedeEditar={puedeEditar}
+        onCambiar={(v) => onCambiarTarea(tarea.id, { ayudante: v })} />
+    </div>
+  )
 }
 
 function NavegacionFechas({ desde, setDesde, escala, setEscala }) {
@@ -650,6 +718,10 @@ export default function PlanificacionPage() {
     setDatos((prev) => ({ ...prev, obras: prev.obras.map((o) => (o.id === id ? obra : o)) }))
   }
 
+  function cambiarSituacion(obraId, situacion) {
+    actualizarObra(obraId, { situacion }).catch((err) => setError(err.message))
+  }
+
   async function crearObra(form) {
     const creada = await crearObraPlanificacion(accessToken, form)
     const obra = obraNum(creada.obra)
@@ -744,28 +816,86 @@ export default function PlanificacionPage() {
         atenuada: t.estado === 'Terminado',
         tarea: t,
       })
+      const etiquetaObra = <EtiquetaObraCronograma obra={o} puedeEditar={puedeEditar} onCambiarSituacion={cambiarSituacion} />
       if (compacto) {
-        filas.push({ id: `obra-${o.id}`, etiqueta: o.nombre, subetiqueta: o.constructora || '', barras: tareas.map(barra) })
+        filas.push({ id: `obra-${o.id}`, etiqueta: o.nombre, etiquetaNode: etiquetaObra, altoMinimo: 40, barras: tareas.map(barra) })
       } else {
         const barraObra = barraObraCompleta(o, tareasPorObra.get(o.id) || [], o.nombre)
-        filas.push({ id: `obra-${o.id}`, etiqueta: o.nombre, subetiqueta: o.constructora || '', esGrupo: true, barras: barraObra ? [barraObra] : [] })
+        filas.push({ id: `obra-${o.id}`, etiqueta: o.nombre, etiquetaNode: etiquetaObra, altoMinimo: 40, esGrupo: true, barras: barraObra ? [barraObra] : [] })
         for (const t of tareas) {
           filas.push({ id: `tarea-${t.id}`, etiqueta: t.categoria, subetiqueta: t.responsable || '', barras: [barra(t)] })
         }
       }
     }
     return filas
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datos, tareasPorObra, verTerminadas, buscar, categorias, responsable, inicioVentana, finVentana, compacto])
 
+  // Montaje: una fila por obra (tarea de Montaje con fecha en la ventana),
+  // ordenadas por fecha de inicio. Antes era una fila por montador; a pedido de Álvaro
+  // (2026-10-01) pasa a ser por obra para poder cambiar situación, montador
+  // y ayudante desde la columna izquierda. El solape (borde rojo) se calcula
+  // acá entre filas: mismo montador, fechas que se pisan y las dos obras en
+  // situación "Obra".
   const filasMontaje = useMemo(() => {
     if (!datos) return []
-    const tareas = datos.tareas.filter((t) => {
-      const o = obrasPorId.get(t.obra_id)
-      return !buscar || normalizar(`${o?.nombre} ${o?.constructora}`).includes(normalizar(buscar))
-    })
-    return filasMontajePorMontador(tareas, obrasPorId, { incluirTerminadas: verTerminadas })
-      .filter((f) => !responsable || f.etiqueta === responsable)
-  }, [datos, obrasPorId, buscar, responsable, verTerminadas])
+    const tareas = datos.tareas
+      .filter((t) => t.categoria === 'Montaje' && t.fecha_inicio)
+      .filter((t) => verTerminadas || t.estado !== 'Terminado')
+      .filter((t) => seCruzaConVentana(t, inicioVentana, finVentana))
+      .filter((t) => {
+        const o = obrasPorId.get(t.obra_id)
+        if (!o || (!verTerminadas && o.estado === 'Terminada')) return false
+        if (buscar && !normalizar(`${o.nombre} ${o.constructora}`).includes(normalizar(buscar))) return false
+        return !responsable || responsablesDe(t).includes(responsable)
+      })
+
+    const conflicto = new Set()
+    const cuenta = (t) => t.estado !== 'Terminado' && (obrasPorId.get(t.obra_id)?.situacion || 'Obra') === 'Obra'
+    for (let i = 0; i < tareas.length; i++) {
+      for (let j = i + 1; j < tareas.length; j++) {
+        const a = tareas[i]
+        const b = tareas[j]
+        if (!cuenta(a) || !cuenta(b)) continue
+        if (!responsablesDe(a).some((r) => responsablesDe(b).includes(r))) continue
+        if (diaANumero(a.fecha_inicio) <= diaANumero(b.fecha_fin || b.fecha_inicio) && diaANumero(b.fecha_inicio) <= diaANumero(a.fecha_fin || a.fecha_inicio)) {
+          conflicto.add(a.id)
+          conflicto.add(b.id)
+        }
+      }
+    }
+
+    // Orden solo por fecha de inicio (a pedido de Álvaro, 2026-10-01: así ve
+    // qué obras arrancan en la semana); a igual fecha, por nombre de obra.
+    return tareas
+      .sort((a, b) => a.fecha_inicio.localeCompare(b.fecha_inicio)
+        || String(obrasPorId.get(a.obra_id)?.nombre || '').localeCompare(String(obrasPorId.get(b.obra_id)?.nombre || ''), 'es'))
+      .map((t) => {
+        const o = obrasPorId.get(t.obra_id)
+        return {
+          id: `montaje-${t.id}`,
+          altoMinimo: 40,
+          etiquetaNode: (
+            <EtiquetaMontaje tarea={t} obra={o} personas={datos.personas || []} puedeEditar={puedeEditar}
+              onCambiarSituacion={cambiarSituacion}
+              onCambiarTarea={(id, cambios) => actualizarTarea(id, cambios).catch((err) => setError(err.message))}
+              onAbrir={() => setTareaAbierta(t.id)} />
+          ),
+          barras: [{
+            id: t.id,
+            inicio: t.fecha_inicio,
+            fin: t.fecha_fin,
+            texto: [t.responsable, t.ayudante].filter(Boolean).join(' · ') || 'Sin montador',
+            titulo: `${o.nombre} — ${o.situacion || 'Obra'}\nMontador: ${t.responsable || 'sin asignar'}${t.ayudante ? ` · Ayudante: ${t.ayudante}` : ''}${conflicto.has(t.id) ? '\n⚠ El montador tiene otra obra esos días' : ''}`,
+            color: t.estado === 'Terminado' ? COLOR_TERMINADO : COLOR_SITUACION[o.situacion] || COLOR_SITUACION.Obra,
+            atenuada: t.estado === 'Terminado',
+            clase: conflicto.has(t.id) ? 'gantt-barra-solape' : '',
+            tarea: t,
+          }],
+        }
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datos, obrasPorId, buscar, responsable, verTerminadas, inicioVentana, finVentana])
 
   // Montajes pendientes cuya fecha ya pasó — lo mismo que en Notion se veía
   // como barras "vencidas" sin marcar Terminado.
@@ -858,9 +988,15 @@ export default function PlanificacionPage() {
             dias={dias}
             anchoDia={anchoDia}
             editable={puedeEditar}
+            anchoEtiqueta={560}
+            encabezadoEtiqueta={(
+              <div className="plan-fila-montaje plan-fila-montaje-encabezado">
+                <span>Obra</span><span>Situación</span><span>Montador</span><span>Ayudante</span>
+              </div>
+            )}
             onMoverBarra={moverBarra}
             onClickBarra={(b) => setTareaAbierta(b.tarea.id)}
-            vacio="No hay montajes con fecha."
+            vacio="No hay montajes con fecha en este período."
           />
           <div className="plan-avisos">
             {montajesVencidos.length > 0 && (
