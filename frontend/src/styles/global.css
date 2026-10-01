@@ -5007,3 +5007,19 @@ select.celda-editable-material {
 
 /* Prioridades: chip de la acción elegida (color propio de cada acción). */
 .prio-marca-accion { color: #2c3e50; box-shadow: inset 0 0 0 1px rgba(44, 62, 80, .12); }
+
+/* Prioridades: columna Estado (reemplaza a Responsable). */
+.prio-col-estado { min-width: 0; }
+
+.prio-estado {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.prio-estado-pendiente { background: #eceff3; color: #5a6474; }
+.prio-estado-en-curso { background: #d8ecf9; color: #2f6190; }
+.prio-estado-terminado { background: #c6e9cc; color: #2e6b3f; }

@@ -323,12 +323,15 @@ function EtiquetaTarea({ tarea, categoria, accion, nivel, onAbrir }) {
           aparte de la descripción, como en su planilla. */}
       <span className="prio-col-accion">
         {accion && <span className="prio-marca prio-marca-accion" style={{ background: accion.color }}>{accion.nombre}</span>}
-        {tarea.estado === 'En curso' && <span className="prio-marca prio-marca-curso">En curso</span>}
       </span>
       <span className={`prio-col-tarea${tarea.destacada ? ' prio-destacada' : ''}`}>
         <span className="prio-descripcion">{tarea.descripcion || <em>Sin descripción</em>}</span>
       </span>
-      <span className="prio-col-responsable">{tarea.responsable || '—'}</span>
+      {/* Estado en lugar de Responsable (a pedido de Álvaro, 2026-10-01):
+          el responsable ya se lee en la barra del diagrama. */}
+      <span className="prio-col-estado">
+        <span className={`prio-estado prio-estado-${(tarea.estado || 'Pendiente').toLowerCase().replace(' ', '-')}`}>{tarea.estado}</span>
+      </span>
       <span className="prio-col-fechas">{textoFechas(tarea)}</span>
     </button>
   )
@@ -624,7 +627,7 @@ export default function PrioridadesPage() {
               <span className="prio-col-categoria">Categoría</span>
               <span className="prio-col-accion">Acción</span>
               <span className="prio-col-tarea">Obra / fachada / tarea</span>
-              <span className="prio-col-responsable">Responsable</span>
+              <span className="prio-col-estado">Estado</span>
               <span className="prio-col-fechas">Inicio → Fin</span>
             </div>
           )}
