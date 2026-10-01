@@ -5023,3 +5023,8 @@ select.celda-editable-material {
 .prio-estado-pendiente { background: #eceff3; color: #5a6474; }
 .prio-estado-en-curso { background: #d8ecf9; color: #2f6190; }
 .prio-estado-terminado { background: #c6e9cc; color: #2e6b3f; }
+
+/* Prioridades: crear categoría/acción/fachada desde la ventana de la tarea. */
+.prio-nueva-inline { display: flex; gap: 6px; text-transform: none; letter-spacing: normal; }
+.prio-nueva-inline .input-filtro { flex: 1 !important; min-width: 0; }
+.prio-nueva-inline .btn-secundario { height: 36px; padding: 0 10px; flex: none; }

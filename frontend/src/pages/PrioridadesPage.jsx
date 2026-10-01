@@ -212,7 +212,64 @@ function VentanaCategoriasFachadas({ obra, categorias, acciones, zonas, colores,
   )
 }
 
-function VentanaTarea({ tarea, obra, categorias, acciones, zonas, estados, responsables, onGuardar, onEliminar, onCerrar }) {
+// Desplegable con opción "+ Nueva…" al final (a pedido de Álvaro,
+// 2026-10-01): crear una categoría/acción/fachada desde la misma tarea, sin
+// ir a "Categorías, acciones y fachadas". onCrear(nombre) devuelve el id
+// nuevo, que queda elegido.
+const NUEVA = '__nueva__'
+function SelectConNueva({ etiqueta, valor, opciones, textoVacio, placeholder, onCambio, onCrear }) {
+  const [creando, setCreando] = useState(false)
+  const [nombre, setNombre] = useState('')
+  const [enviando, setEnviando] = useState(false)
+
+  async function crear() {
+    const n = nombre.trim()
+    if (!n || enviando) return
+    setEnviando(true)
+    const id = await onCrear(n)
+    setEnviando(false)
+    if (id) {
+      onCambio(id)
+      setCreando(false)
+      setNombre('')
+    }
+  }
+
+  return (
+    <label>
+      {etiqueta}
+      {creando ? (
+        <span className="prio-nueva-inline">
+          <input
+            autoFocus
+            type="text"
+            className="input-filtro"
+            placeholder={placeholder}
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); crear() }
+              if (e.key === 'Escape') { e.preventDefault(); setCreando(false) }
+            }}
+          />
+          <button type="button" className="btn-secundario plan-boton-principal" disabled={!nombre.trim() || enviando} onClick={crear}>Crear</button>
+          <button type="button" className="btn-secundario" title="Cancelar" onClick={() => setCreando(false)}>✕</button>
+        </span>
+      ) : (
+        <select className="select-inline" value={valor} onChange={(e) => {
+          if (e.target.value === NUEVA) setCreando(true)
+          else onCambio(Number(e.target.value) || '')
+        }}>
+          <option value="">{textoVacio}</option>
+          {opciones.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+          <option value={NUEVA}>+ Nueva…</option>
+        </select>
+      )}
+    </label>
+  )
+}
+
+function VentanaTarea({ tarea, obra, categorias, acciones, zonas, estados, responsables, onGuardar, onEliminar, onCrear, onCerrar }) {
   const [form, setForm] = useState({
     descripcion: tarea.descripcion || '',
     categoria_id: tarea.categoria_id || '',
@@ -252,27 +309,12 @@ function VentanaTarea({ tarea, obra, categorias, acciones, zonas, estados, respo
             Tarea
             <textarea autoFocus className="input-filtro" rows={2} value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} />
           </label>
-          <label>
-            Fachada / zona
-            <select className="select-inline" value={form.zona_id} onChange={(e) => setForm({ ...form, zona_id: Number(e.target.value) || '' })}>
-              <option value="">— Obra en general —</option>
-              {zonas.map((z) => <option key={z.id} value={z.id}>{z.nombre}</option>)}
-            </select>
-          </label>
-          <label>
-            Categoría
-            <select className="select-inline" value={form.categoria_id} onChange={(e) => setForm({ ...form, categoria_id: Number(e.target.value) || '' })}>
-              <option value="">— Sin categoría —</option>
-              {categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-            </select>
-          </label>
-          <label>
-            Acción
-            <select className="select-inline" value={form.accion_id} onChange={(e) => setForm({ ...form, accion_id: Number(e.target.value) || '' })}>
-              <option value="">— Ninguna —</option>
-              {acciones.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-            </select>
-          </label>
+          <SelectConNueva etiqueta="Fachada / zona" valor={form.zona_id} opciones={zonas} textoVacio="— Obra en general —"
+            placeholder="Nombre de la fachada" onCambio={(v) => setForm((f) => ({ ...f, zona_id: v }))} onCrear={(n) => onCrear('zona', obra.id, n)} />
+          <SelectConNueva etiqueta="Categoría" valor={form.categoria_id} opciones={categorias} textoVacio="— Sin categoría —"
+            placeholder="Nombre de la categoría" onCambio={(v) => setForm((f) => ({ ...f, categoria_id: v }))} onCrear={(n) => onCrear('categoria', obra.id, n)} />
+          <SelectConNueva etiqueta="Acción" valor={form.accion_id} opciones={acciones} textoVacio="— Ninguna —"
+            placeholder="Nombre de la acción" onCambio={(v) => setForm((f) => ({ ...f, accion_id: v }))} onCrear={(n) => onCrear('accion', obra.id, n)} />
           <label>
             Estado
             <select className="select-inline" value={form.estado} onChange={(e) => setForm({ ...form, estado: e.target.value })}>
@@ -394,6 +436,14 @@ export default function PrioridadesPage() {
       setError(err.message)
       return null
     }
+  }
+
+  // Crea una categoría/acción/fachada desde la ventana de una tarea y
+  // devuelve su id (la lista se recarga sola en accion()).
+  async function crearDesdeTarea(tipo, obraId, nombre) {
+    const r = await accion('POST', `agregar_${tipo}`, { obra_id: obraId, nombre })
+    const nuevo = r && r[tipo]
+    return nuevo ? Number(nuevo.id) : null
   }
 
   async function guardarTarea(id, cambios) {
@@ -647,6 +697,7 @@ export default function PrioridadesPage() {
           responsables={datos.responsables}
           onGuardar={guardarTarea}
           onEliminar={(id) => accion('DELETE', 'eliminar_tarea', { id })}
+          onCrear={crearDesdeTarea}
           onCerrar={() => setTareaAbierta(null)}
         />
       )}
