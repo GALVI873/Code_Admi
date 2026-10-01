@@ -39,6 +39,13 @@ declare(strict_types=1);
 // POST {accion:"agregar_tarea", obra_id, categoria_id?, zona_id?, descripcion?}
 // PATCH {accion:"actualizar_tarea", id, ...campos}: solo pisa lo mandado.
 // DELETE {accion:"eliminar_tarea", id}
+// POST {accion:"enviar_a_alfredo", id, nota?, reenviar?}: pasa la tarea a
+//   Alfredo como nota URGENTE en Seguimiento → Notas de esa obra
+//   (comentarios_obra con urgente = 1) — a pedido de Álvaro, 2026-10-01.
+//   Guarda en la tarea cuándo se envió y la nota creada; si ya se había
+//   enviado y esa nota sigue abierta, no la duplica salvo reenviar = true.
+//   No toca el estado de la tarea: que Alfredo resuelva su parte no
+//   significa que esté Terminada (eso es cuando está hecha en obra).
 
 const ESTADOS_PRIORIDAD = ['Pendiente', 'En curso', 'Terminado'];
 // Pastel, mismo criterio que Planificación — se van asignando en orden a
@@ -151,6 +158,10 @@ try {
           color TEXT NOT NULL DEFAULT '#dde2e7'
         )
     ");
+    if (!in_array('alfredo_comentario_id', $columnasTareas, true)) {
+        $db->exec('ALTER TABLE prioridades_tareas ADD COLUMN alfredo_comentario_id INTEGER');
+        $db->exec('ALTER TABLE prioridades_tareas ADD COLUMN alfredo_enviado_en TEXT');
+    }
     if (!in_array('accion_id', $columnasTareas, true)) {
         // Migración única: cada obra existente recibe las acciones iniciales
         // y sus tareas pasan de las casillas a la acción equivalente (si
@@ -546,6 +557,62 @@ try {
             $t['categoria_id'], $t['zona_id'], $t['accion_id'], $t['descripcion'], $t['responsable'], $t['fecha_inicio'], $t['fecha_fin'], $t['estado'],
             $t['falta_material'], $t['pendiente_ppto'], $t['destacada'], $autor, $id,
         ]);
+        Response::json(['tarea' => filaPor($db, 'prioridades_tareas', $id)]);
+    }
+
+    if ($metodo === 'POST' && $accion === 'enviar_a_alfredo') {
+        $id = (int) ($body['id'] ?? 0);
+        $tarea = filaPor($db, 'prioridades_tareas', $id);
+        if (!$tarea) {
+            Response::error('Tarea no encontrada', 404);
+        }
+        $obra = filaPor($db, 'prioridades_obras', (int) $tarea['obra_id']);
+
+        // comentarios_obra la crean obras_aceptadas.php/comentarios_obra.php;
+        // se asegura acá también (mismo criterio del resto del proyecto).
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS comentarios_obra (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              obra TEXT NOT NULL,
+              autor_nombre TEXT NOT NULL,
+              autor_email TEXT NOT NULL,
+              mensaje TEXT NOT NULL,
+              creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        ");
+        $columnasCom = array_column($db->query('PRAGMA table_info(comentarios_obra)')->fetchAll(), 'name');
+        foreach (['hecho' => 'INTEGER NOT NULL DEFAULT 0', 'archivado' => 'INTEGER NOT NULL DEFAULT 0', 'categoria' => "TEXT NOT NULL DEFAULT 'tarea'", 'urgente' => 'INTEGER NOT NULL DEFAULT 0'] as $col => $def) {
+            if (!in_array($col, $columnasCom, true)) {
+                $db->exec("ALTER TABLE comentarios_obra ADD COLUMN $col $def");
+            }
+        }
+
+        if ($tarea['alfredo_comentario_id'] && empty($body['reenviar'])) {
+            $previa = filaPor($db, 'comentarios_obra', (int) $tarea['alfredo_comentario_id']);
+            if ($previa && !(int) $previa['hecho'] && !(int) $previa['archivado']) {
+                Response::error('Esta tarea ya se envió a Alfredo y todavía la tiene pendiente', 409);
+            }
+        }
+
+        // Mensaje para Alfredo — a pedido de Álvaro (2026-10-01) SOLO:
+        // "URGENTE Prioridades", la fachada (ej. CEA / Vallehermoso), la
+        // descripción y el mensaje opcional de Álvaro. Sin categoría,
+        // acción, responsable ni fechas.
+        $zona = $tarea['zona_id'] ? filaPor($db, 'prioridades_zonas', (int) $tarea['zona_id']) : null;
+        $mensaje = '🚨 URGENTE Prioridades'
+            . ($zona ? ' · ' . $zona['nombre'] : '')
+            . ' — ' . ($tarea['descripcion'] !== '' ? $tarea['descripcion'] : 'Tarea sin descripción');
+        if ($nota = textoPrioridad($body['nota'] ?? null)) {
+            $mensaje .= "\n" . $nota;
+        }
+
+        $db->beginTransaction();
+        $db->prepare("INSERT INTO comentarios_obra (obra, autor_nombre, autor_email, mensaje, categoria, urgente) VALUES (?, ?, ?, ?, 'tarea', 1)")
+            ->execute([$obra['obra'], $usuario['nombre'] ?? 'Álvaro', $usuario['email'] ?? '', $mensaje]);
+        $comentarioId = (int) $db->lastInsertId();
+        $db->prepare("UPDATE prioridades_tareas SET alfredo_comentario_id = ?, alfredo_enviado_en = datetime('now') WHERE id = ?")
+            ->execute([$comentarioId, $id]);
+        $db->commit();
         Response::json(['tarea' => filaPor($db, 'prioridades_tareas', $id)]);
     }
 

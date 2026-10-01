@@ -68,7 +68,7 @@ function NotaItem({ nota, obraBase, accessToken, puedeMarcarHecho, puedeArchivar
 
   return (
     <li
-      className={`notas-obra-item ${nota.hecho ? 'notas-obra-item-hecho' : ''} ${nota.archivado ? 'notas-obra-item-archivado' : ''} ${puedeCategorizar ? 'notas-obra-item-arrastrable' : ''}`}
+      className={`notas-obra-item ${Number(nota.urgente) && !nota.hecho ? 'notas-obra-item-urgente' : ''} ${nota.hecho ? 'notas-obra-item-hecho' : ''} ${nota.archivado ? 'notas-obra-item-archivado' : ''} ${puedeCategorizar ? 'notas-obra-item-arrastrable' : ''}`}
       draggable={puedeCategorizar}
       onDragStart={(e) => {
         e.dataTransfer.setData('text/plain', String(nota.id))
@@ -86,6 +86,7 @@ function NotaItem({ nota, obraBase, accessToken, puedeMarcarHecho, puedeArchivar
       />
       <div className="notas-obra-item-cuerpo">
         {Boolean(nota.es_adicional_aceptado) && <span className="badge-nuevo-adicional notas-obra-item-tag-adicional">Nuevo adicional</span>}
+        {Boolean(Number(nota.urgente)) && !nota.hecho && <span className="badge-urgente notas-obra-item-tag-adicional">🚨 URGENTE</span>}
         <p className="notas-obra-item-texto">{nota.mensaje}</p>
         <span className="notas-obra-item-meta">
           {nota.autor_nombre} · {formatoFechaHora(nota.creado_en)}
@@ -306,7 +307,10 @@ export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido 
 
   const archivadas = notas.filter((n) => n.archivado)
   const notasVisibles = verArchivadas ? notas : notas.filter((n) => !n.archivado)
-  const tareas = notasVisibles.filter((n) => (n.categoria || 'tarea') !== 'recordatorio')
+  // Las urgentes (enviadas desde Prioridades) primero.
+  const tareas = notasVisibles
+    .filter((n) => (n.categoria || 'tarea') !== 'recordatorio')
+    .sort((a, b) => (Number(b.urgente) && !b.hecho) - (Number(a.urgente) && !a.hecho))
   const recordatorios = notasVisibles.filter((n) => n.categoria === 'recordatorio')
 
   const propsNota = {

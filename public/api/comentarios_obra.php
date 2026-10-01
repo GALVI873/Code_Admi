@@ -133,6 +133,13 @@ try {
     if (!in_array('es_adicional_aceptado', $columnasComentarios, true)) {
         $db->exec('ALTER TABLE comentarios_obra ADD COLUMN es_adicional_aceptado INTEGER NOT NULL DEFAULT 0');
     }
+    // "urgente" (columna nueva): tarea que Álvaro le pasa a Alfredo desde
+    // Prioridades con el botón "Enviar a Alfredo (urgente)" (a pedido de
+    // Álvaro, 2026-10-01) — el frontend la muestra primero y en rojo. Quien
+    // la escribe es prioridades.php; se declara acá también (idempotente).
+    if (!in_array('urgente', $columnasComentarios, true)) {
+        $db->exec('ALTER TABLE comentarios_obra ADD COLUMN urgente INTEGER NOT NULL DEFAULT 0');
+    }
     $db->exec("
         CREATE TABLE IF NOT EXISTS comentarios_obra_leido (
           obra TEXT NOT NULL,

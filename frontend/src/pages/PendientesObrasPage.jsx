@@ -140,7 +140,7 @@ function NotaPendiente({ nota, accessToken, puedeMarcarHecho, puedeCategorizar, 
 
   return (
     <li
-      className={`notas-obra-item ${nota.hecho ? 'notas-obra-item-hecho' : ''} ${puedeCategorizar ? 'notas-obra-item-arrastrable' : ''}`}
+      className={`notas-obra-item ${Number(nota.urgente) && !nota.hecho ? 'notas-obra-item-urgente' : ''} ${nota.hecho ? 'notas-obra-item-hecho' : ''} ${puedeCategorizar ? 'notas-obra-item-arrastrable' : ''}`}
       draggable={puedeCategorizar}
       onDragStart={(e) => {
         e.dataTransfer.setData('text/plain', String(nota.id))
@@ -158,6 +158,7 @@ function NotaPendiente({ nota, accessToken, puedeMarcarHecho, puedeCategorizar, 
       />
       <div className="notas-obra-item-cuerpo" role="button" tabIndex={0} onClick={() => onAbrir(nota)}>
         {Boolean(nota.es_adicional_aceptado) && <span className="badge-nuevo-adicional notas-obra-item-tag-adicional">Nuevo adicional</span>}
+        {Boolean(Number(nota.urgente)) && !nota.hecho && <span className="badge-urgente notas-obra-item-tag-adicional">🚨 URGENTE</span>}
         {marcarEsperaRespuesta && !nota.hecho && ultimoMensaje(nota).autor_email !== emailUsuario && (
           <span className="notas-espera-respuesta">💬 {ultimoMensaje(nota).autor_nombre} espera tu respuesta</span>
         )}
@@ -321,7 +322,17 @@ export default function PendientesObrasPage() {
       if (p.categoria === 'recordatorio') grupo.recordatorios.push(p)
       else grupo.tareas.push(p)
     }
-    return Array.from(mapa.values()).sort((a, b) => a.obra.localeCompare(b.obra, 'es'))
+    // Urgentes (enviadas por Álvaro desde Prioridades, 2026-10-01) arriba de
+    // todo: dentro de cada celda y, además, las obras que tienen alguna
+    // urgente pendiente van primero.
+    const esUrgente = (n) => (Number(n.urgente) && !n.hecho ? 1 : 0)
+    const grupos = Array.from(mapa.values())
+    for (const g of grupos) {
+      g.tareas.sort((a, b) => esUrgente(b) - esUrgente(a))
+      g.recordatorios.sort((a, b) => esUrgente(b) - esUrgente(a))
+      g.urgentes = [...g.tareas, ...g.recordatorios].filter(esUrgente).length
+    }
+    return grupos.sort((a, b) => (b.urgentes > 0) - (a.urgentes > 0) || a.obra.localeCompare(b.obra, 'es'))
   }, [visibles])
 
   const totalTareas = useMemo(() => gruposObra.reduce((acc, g) => acc + g.tareas.length, 0), [gruposObra])

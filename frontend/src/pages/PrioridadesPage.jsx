@@ -276,7 +276,46 @@ function SelectConNueva({ etiqueta, valor, opciones, textoVacio, placeholder, on
   )
 }
 
-function VentanaTarea({ tarea, obra, categorias, acciones, zonas, estados, responsables, onGuardar, onEliminar, onCrear, onCerrar }) {
+function fechaHora(sqlUtc) {
+  if (!sqlUtc) return ''
+  const f = new Date(sqlUtc.replace(' ', 'T') + 'Z')
+  return `${String(f.getDate()).padStart(2, '0')}/${String(f.getMonth() + 1).padStart(2, '0')} ${String(f.getHours()).padStart(2, '0')}:${String(f.getMinutes()).padStart(2, '0')}`
+}
+
+// Pasarle la tarea a Alfredo como nota URGENTE en Seguimiento → Notas (a
+// pedido de Álvaro, 2026-10-01) — ver "enviar_a_alfredo" en prioridades.php.
+function EnviarAAlfredo({ tarea, onEnviar }) {
+  const [nota, setNota] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState('')
+  const yaEnviada = Boolean(tarea.alfredo_enviado_en)
+
+  async function enviar(reenviar) {
+    setEnviando(true)
+    setError('')
+    try {
+      await onEnviar(tarea.id, nota.trim(), reenviar)
+      setNota('')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="plan-ventana-ancho prio-enviar-alfredo">
+      {yaEnviada && <span>📨 Enviada a Alfredo el {fechaHora(tarea.alfredo_enviado_en)}</span>}
+      <input type="text" className="input-filtro" placeholder="Mensaje para Alfredo (opcional)" value={nota} onChange={(e) => setNota(e.target.value)} />
+      <button type="button" className="btn-secundario prio-boton-urgente" disabled={enviando} onClick={() => enviar(yaEnviada)}>
+        {enviando ? 'Enviando…' : yaEnviada ? '🚨 Reenviar a Alfredo' : '🚨 Enviar a Alfredo (urgente)'}
+      </button>
+      {error && <span className="auth-error">{error}</span>}
+    </div>
+  )
+}
+
+function VentanaTarea({ tarea, obra, categorias, acciones, zonas, estados, responsables, onGuardar, onEliminar, onCrear, onEnviarAlfredo, onCerrar }) {
   const [form, setForm] = useState({
     descripcion: tarea.descripcion || '',
     categoria_id: tarea.categoria_id || '',
@@ -345,6 +384,7 @@ function VentanaTarea({ tarea, obra, categorias, acciones, zonas, estados, respo
           <div className="plan-ventana-ancho prio-marcas">
             <label className="plan-check"><input type="checkbox" checked={form.destacada} onChange={(e) => setForm({ ...form, destacada: e.target.checked })} /> Destacar (resaltado amarillo)</label>
           </div>
+          <EnviarAAlfredo tarea={tarea} onEnviar={onEnviarAlfredo} />
           <datalist id="prio-responsables">
             {responsables.map((r) => <option key={r} value={r} />)}
           </datalist>
@@ -372,6 +412,7 @@ function EtiquetaTarea({ tarea, categoria, accion, nivel, onAbrir }) {
           aparte de la descripción, como en su planilla. */}
       <span className="prio-col-accion">
         {accion && <span className="prio-marca prio-marca-accion" style={{ background: accion.color }}>{accion.nombre}</span>}
+        {tarea.alfredo_enviado_en && <span className="prio-marca prio-marca-alfredo" title={`Enviada a Alfredo el ${fechaHora(tarea.alfredo_enviado_en)}`}>📨 Alfredo</span>}
       </span>
       <span className={`prio-col-tarea${tarea.destacada ? ' prio-destacada' : ''}`}>
         <span className="prio-descripcion">{tarea.descripcion || <em>Sin descripción</em>}</span>
@@ -459,6 +500,11 @@ export default function PrioridadesPage() {
     const r = await accion('POST', `agregar_${tipo}`, { obra_id: obraId, nombre })
     const nuevo = r && r[tipo]
     return nuevo ? Number(nuevo.id) : null
+  }
+
+  async function enviarAAlfredo(id, nota, reenviar) {
+    const r = await accionPrioridades(accessToken, 'POST', 'enviar_a_alfredo', { id, nota, reenviar })
+    setDatos((prev) => ({ ...prev, tareas: prev.tareas.map((t) => (t.id === id ? tareaConIds(r.tarea) : t)) }))
   }
 
   async function guardarTarea(id, cambios) {
@@ -765,6 +811,7 @@ export default function PrioridadesPage() {
           onGuardar={guardarTarea}
           onEliminar={(id) => accion('DELETE', 'eliminar_tarea', { id })}
           onCrear={crearDesdeTarea}
+          onEnviarAlfredo={enviarAAlfredo}
           onCerrar={() => setTareaAbierta(null)}
         />
       )}
