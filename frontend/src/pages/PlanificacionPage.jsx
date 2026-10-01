@@ -895,6 +895,7 @@ export default function PlanificacionPage() {
             )}
             onMoverBarra={moverBarra}
             onClickBarra={(b) => (b.obraId ? irA('Obras', b.obraId) : setTareaAbierta(b.tarea.id))}
+            onIrAFecha={(iso) => setDesde(lunesDe(iso))}
             vacio="No hay tareas con fecha en este período con los filtros elegidos."
           />
         </>
@@ -911,6 +912,7 @@ export default function PlanificacionPage() {
             editable={puedeEditar}
             onMoverBarra={moverBarra}
             onClickBarra={(b) => setTareaAbierta(b.tarea.id)}
+            onIrAFecha={(iso) => setDesde(lunesDe(iso))}
             vacio="No hay montajes con fecha."
           />
           <div className="plan-avisos">

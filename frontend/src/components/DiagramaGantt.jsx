@@ -19,6 +19,12 @@ import { useEffect, useRef, useState } from 'react'
 // (o null si quedó en la misma). Solo se aceptan filas con aceptaSoltar.
 // onClickBarra recibe además la posición del puntero ({ x, y }) para
 // poder abrir un menú junto a la barra.
+//
+// onIrAFecha(iso) (a pedido de Álvaro, 2026-10-01): si se pasa, cada fila
+// con barras fuera de la vista muestra una flecha en el borde ("05/11 ▶"
+// hacia adelante, "◀ 15/09" hacia atrás) que lleva a la fecha de inicio de
+// la más cercana; y una barra cortada por la izquierda lleva un "◀" para ir
+// a su inicio.
 // Las fechas son 'AAAA-MM-DD'; fin null = un solo día. Dentro de una fila,
 // las barras que se pisan se apilan en carriles; con marcarSolapes además
 // se les pone borde rojo (ej. un montador con dos obras el mismo día).
@@ -90,7 +96,7 @@ function asignarCarriles(barras) {
 // disponible entre los días visibles (nunca menos que anchoDia) — a pedido
 // de Álvaro (2026-10-01) para el Gantt semanal de Inicio, que dejaba
 // espacio vacío a la derecha. Se recalcula si cambia el tamaño de ventana.
-export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPedido, editable = false, onMoverBarra, onClickBarra, vacio, anchoEtiqueta = 230, encabezadoEtiqueta = null, llenarAncho = false, cambiarFila = false }) {
+export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPedido, editable = false, onMoverBarra, onClickBarra, vacio, anchoEtiqueta = 230, encabezadoEtiqueta = null, llenarAncho = false, cambiarFila = false, onIrAFecha = null }) {
   const [arrastre, setArrastre] = useState(null)
   const contenedorRef = useRef(null)
   const [anchoContenedor, setAnchoContenedor] = useState(0)
@@ -247,6 +253,27 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
                   {hoy >= inicioVentana && hoy <= finVentana && (
                     <div className="gantt-linea-hoy" style={{ left: (hoy - inicioVentana) * anchoDia + anchoDia / 2 }} />
                   )}
+                  {onIrAFecha && (() => {
+                    const futuras = fila.barras.filter((b) => b._ini > finVentana).sort((a, b) => a._ini - b._ini)
+                    const pasadas = fila.barras.filter((b) => b._fin < inicioVentana).sort((a, b) => b._fin - a._fin)
+                    const lista = (bs) => bs.slice(0, 6).map((b) => `${formatoCorto(numeroADia(b._ini))} · ${b.texto}`).join('\n') + (bs.length > 6 ? `\n… y ${bs.length - 6} más` : '')
+                    return (
+                      <>
+                        {pasadas.length > 0 && (
+                          <button type="button" className="gantt-ir gantt-ir-atras" title={`Antes de esta vista:\n${lista(pasadas)}`}
+                            onPointerDown={(e) => e.stopPropagation()} onClick={() => onIrAFecha(numeroADia(pasadas[0]._ini))}>
+                            ◀ {formatoCorto(numeroADia(pasadas[0]._ini))}
+                          </button>
+                        )}
+                        {futuras.length > 0 && (
+                          <button type="button" className="gantt-ir gantt-ir-adelante" title={`Después de esta vista:\n${lista(futuras)}`}
+                            onPointerDown={(e) => e.stopPropagation()} onClick={() => onIrAFecha(numeroADia(futuras[0]._ini))}>
+                            {formatoCorto(numeroADia(futuras[0]._ini))} ▶{futuras.length > 1 ? ` (+${futuras.length - 1})` : ''}
+                          </button>
+                        )}
+                      </>
+                    )
+                  })()}
                   {fila.barras.map((b) => {
                     const { ini, fin } = desplazamiento(b)
                     if (fin < inicioVentana || ini > finVentana) return null
@@ -268,7 +295,11 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
                         title={`${b.titulo || b.texto}\n${formatoCorto(numeroADia(ini))}${fin !== ini ? ` → ${formatoCorto(numeroADia(fin))}` : ''}${solapada ? '\n⚠ Se pisa con otra tarea del mismo responsable' : ''}`}
                         onPointerDown={(e) => handlePointerDown(e, b, 'mover', fila.id)}
                       >
-                        {editable && !b.soloMover && <span className="gantt-barra-borde gantt-barra-borde-ini" onPointerDown={(e) => handlePointerDown(e, b, 'inicio')} />}
+                        {onIrAFecha && b._ini < inicioVentana && !enArrastre && (
+                          <span className="gantt-barra-ir-inicio" title={`Ir al inicio (${formatoCorto(numeroADia(b._ini))})`}
+                            onPointerDown={(e) => { e.stopPropagation(); onIrAFecha(numeroADia(b._ini)) }}>◀</span>
+                        )}
+                        {editable && !b.soloMover && b._ini >= inicioVentana && <span className="gantt-barra-borde gantt-barra-borde-ini" onPointerDown={(e) => handlePointerDown(e, b, 'inicio')} />}
                         <span className="gantt-barra-texto">
                           {enArrastre ? `${formatoCorto(numeroADia(ini))} → ${formatoCorto(numeroADia(fin))}` : b.texto}
                         </span>

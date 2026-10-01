@@ -811,6 +811,7 @@ export default function PrioridadesPage() {
           )}
           onMoverBarra={handleMoverBarra}
           onClickBarra={(b) => (b.tarea ? setTareaAbierta(b.tarea.id) : null)}
+          onIrAFecha={(iso) => setDesde(lunesDe(iso))}
         />
       )}
 

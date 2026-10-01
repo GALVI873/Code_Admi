@@ -5149,3 +5149,39 @@ select.celda-editable-material {
 }
 
 .plan-cronograma-obra { display: flex; flex-direction: column; min-width: 0; }
+
+/* Flechas para ir a barras fuera de la vista (2026-10-01). */
+.gantt-ir {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  padding: 2px 8px;
+  border: 1px solid #b9c7d6;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .95);
+  color: var(--azul-med);
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .08);
+}
+
+.gantt-ir:hover { background: #e3effb; }
+.gantt-ir-adelante { right: 4px; }
+.gantt-ir-atras { left: 4px; }
+
+.gantt-barra-ir-inicio {
+  flex: none;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 5px;
+  font-size: 10px;
+  color: var(--azul-med);
+  background: rgba(255, 255, 255, .55);
+  cursor: pointer;
+}
+
+.gantt-barra-ir-inicio:hover { background: rgba(255, 255, 255, .9); }

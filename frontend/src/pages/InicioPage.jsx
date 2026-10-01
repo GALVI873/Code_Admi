@@ -123,6 +123,7 @@ export default function InicioPage() {
             anchoDia={130}
             llenarAncho
             onClickBarra={(b) => setTareaAbierta(b.tarea.id)}
+            onIrAFecha={(iso) => setDesde(lunesDe(iso))}
             vacio="No hay montajes planificados esta semana."
           />
 
@@ -136,6 +137,7 @@ export default function InicioPage() {
             anchoDia={130}
             llenarAncho
             onClickBarra={(b) => setTareaAbierta(b.tarea.id)}
+            onIrAFecha={(iso) => setDesde(lunesDe(iso))}
             vacio="No hay otras tareas planificadas esta semana."
           />
         </>
