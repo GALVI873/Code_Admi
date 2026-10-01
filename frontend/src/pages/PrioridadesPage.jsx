@@ -27,7 +27,7 @@ const ESCALAS = {
   Mes: { dias: 35, anchoDia: 26, paso: 14 },
   Trimestre: { dias: 91, anchoDia: 12, paso: 28 },
 }
-const ANCHO_ETIQUETA = 600
+const ANCHO_ETIQUETA = 720
 const CLAVE_DESPLEGADAS = 'prioridades.obrasDesplegadas'
 
 function conIds(d) {
@@ -300,10 +300,14 @@ function EtiquetaTarea({ tarea, categoria, nivel, onAbrir }) {
       <span className="prio-col-categoria">
         <span className="plan-chip" style={{ background: categoria?.color || '#e6e9eb' }}>{categoria?.nombre || 'Sin categoría'}</span>
       </span>
-      <span className={`prio-col-tarea${tarea.destacada ? ' prio-destacada' : ''}`}>
+      {/* Columna "Acción" (a pedido de Álvaro, 2026-10-01): las marcas van
+          aparte de la descripción, como en su planilla. */}
+      <span className="prio-col-accion">
         {tarea.falta_material ? <span className="prio-marca prio-marca-material">Falta material</span> : null}
         {tarea.pendiente_ppto ? <span className="prio-marca prio-marca-ppto">Pend. Ppto</span> : null}
         {tarea.estado === 'En curso' && <span className="prio-marca prio-marca-curso">En curso</span>}
+      </span>
+      <span className={`prio-col-tarea${tarea.destacada ? ' prio-destacada' : ''}`}>
         <span className="prio-descripcion">{tarea.descripcion || <em>Sin descripción</em>}</span>
       </span>
       <span className="prio-col-responsable">{tarea.responsable || '—'}</span>
@@ -599,6 +603,7 @@ export default function PrioridadesPage() {
           encabezadoEtiqueta={(
             <div className="prio-fila prio-fila-encabezado prio-nivel-1">
               <span className="prio-col-categoria">Categoría</span>
+              <span className="prio-col-accion">Acción</span>
               <span className="prio-col-tarea">Obra / fachada / tarea</span>
               <span className="prio-col-responsable">Responsable</span>
               <span className="prio-col-fechas">Inicio → Fin</span>

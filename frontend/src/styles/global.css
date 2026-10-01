@@ -4988,3 +4988,19 @@ select.celda-editable-material {
 
 .prio-ventana-grande { max-width: 640px; }
 .prio-ventana-grande .prio-categorias { margin-top: 6px; }
+
+/* Prioridades: columna "Acción" (Falta material / Pend. Ppto / En curso)
+   entre Categoría y Tarea — a pedido de Álvaro, 2026-10-01. */
+.prio-fila,
+.prio-fila.prio-nivel-1,
+.prio-fila.prio-nivel-2 { grid-template-columns: 105px 125px 1fr 105px 95px; }
+
+.prio-col-accion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  min-width: 0;
+}
+
+.prio-col-accion .prio-marca { font-size: 10px; padding: 0 6px; line-height: 16px; }
