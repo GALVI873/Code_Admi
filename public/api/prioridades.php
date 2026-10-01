@@ -12,8 +12,8 @@ declare(strict_types=1);
 // por obra) — al agregar una obra arranca con "Mano de obra" y "Composite",
 // las dos que usaba la planilla.
 //
-// SOLO admin, tanto para ver como para modificar (por ahora es una
-// herramienta de Álvaro; ver AppLayout.jsx).
+// Ver y modificar: admin y gestion_obras (Alfredo, a pedido de Álvaro
+// 2026-10-01). "Enviar a Alfredo" queda solo para admin.
 //
 // GET: obras, categorías, tareas, obras aceptadas disponibles para agregar
 //   y responsables ya usados (para autocompletar).
@@ -279,8 +279,11 @@ try {
     }
 
     $usuario = AuthMiddleware::usuarioActual($config['jwt']['secret']);
-    if (!in_array('admin', $usuario['roles'] ?? [], true)) {
-        Response::error('Prioridades es solo para administradores', 403);
+    $rolesUsuario = $usuario['roles'] ?? [];
+    $esAdminPrioridades = in_array('admin', $rolesUsuario, true);
+    $puedeEditar = $esAdminPrioridades || in_array('gestion_obras', $rolesUsuario, true);
+    if (!$puedeEditar) {
+        Response::error('No autorizado para ver Prioridades', 403);
     }
     $autor = $usuario['nombre'] ?? null;
 
@@ -322,7 +325,13 @@ try {
             'responsables' => $responsables,
             'estados' => ESTADOS_PRIORIDAD,
             'colores' => COLORES_PRIORIDAD,
+            'puede_editar' => $puedeEditar,
+            'puede_enviar_alfredo' => $esAdminPrioridades,
         ]);
+    }
+
+    if (!$puedeEditar) {
+        Response::error('No autorizado para modificar Prioridades', 403);
     }
 
     $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
@@ -561,6 +570,9 @@ try {
     }
 
     if ($metodo === 'POST' && $accion === 'enviar_a_alfredo') {
+        if (!$esAdminPrioridades) {
+            Response::error('Solo Álvaro puede enviar tareas a Alfredo', 403);
+        }
         $id = (int) ($body['id'] ?? 0);
         $tarea = filaPor($db, 'prioridades_tareas', $id);
         if (!$tarea) {
@@ -599,11 +611,12 @@ try {
         // descripción y el mensaje opcional de Álvaro. Sin categoría,
         // acción, responsable ni fechas.
         $zona = $tarea['zona_id'] ? filaPor($db, 'prioridades_zonas', (int) $tarea['zona_id']) : null;
-        $mensaje = '🚨 URGENTE Prioridades'
+        $mensaje = 'URGENTE Prioridades'
             . ($zona ? ' · ' . $zona['nombre'] : '')
             . ' — ' . ($tarea['descripcion'] !== '' ? $tarea['descripcion'] : 'Tarea sin descripción');
+        // Comentario de Álvaro separado de la tarea con una línea.
         if ($nota = textoPrioridad($body['nota'] ?? null)) {
-            $mensaje .= "\n" . $nota;
+            $mensaje .= "\n──────────\nComentario de " . ($usuario['nombre'] ?? 'Álvaro') . ': ' . $nota;
         }
 
         $db->beginTransaction();

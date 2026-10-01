@@ -305,17 +305,17 @@ function EnviarAAlfredo({ tarea, onEnviar }) {
 
   return (
     <div className="plan-ventana-ancho prio-enviar-alfredo">
-      {yaEnviada && <span>📨 Enviada a Alfredo el {fechaHora(tarea.alfredo_enviado_en)}</span>}
+      {yaEnviada && <span>Enviada a Alfredo el {fechaHora(tarea.alfredo_enviado_en)}</span>}
       <input type="text" className="input-filtro" placeholder="Mensaje para Alfredo (opcional)" value={nota} onChange={(e) => setNota(e.target.value)} />
       <button type="button" className="btn-secundario prio-boton-urgente" disabled={enviando} onClick={() => enviar(yaEnviada)}>
-        {enviando ? 'Enviando…' : yaEnviada ? '🚨 Reenviar a Alfredo' : '🚨 Enviar a Alfredo (urgente)'}
+        {enviando ? 'Enviando…' : yaEnviada ? 'Reenviar a Alfredo' : 'Enviar a Alfredo (urgente)'}
       </button>
       {error && <span className="auth-error">{error}</span>}
     </div>
   )
 }
 
-function VentanaTarea({ tarea, obra, categorias, acciones, zonas, estados, responsables, onGuardar, onEliminar, onCrear, onEnviarAlfredo, onCerrar }) {
+function VentanaTarea({ tarea, obra, categorias, acciones, zonas, estados, responsables, puedeEditar, puedeEnviarAlfredo, onGuardar, onEliminar, onCrear, onEnviarAlfredo, onCerrar }) {
   const [form, setForm] = useState({
     descripcion: tarea.descripcion || '',
     categoria_id: tarea.categoria_id || '',
@@ -351,6 +351,9 @@ function VentanaTarea({ tarea, obra, categorias, acciones, zonas, estados, respo
           <button type="button" className="plan-ventana-cerrar" onClick={onCerrar} title="Cerrar">✕</button>
         </div>
         <form className="plan-ventana-form" onSubmit={handleGuardar}>
+          {/* Sin permiso de edición, todo deshabilitado (hoy admin y Alfredo editan). */}
+          <fieldset className="prio-fieldset plan-ventana-ancho" disabled={!puedeEditar}>
+          <div className="plan-ventana-form prio-fieldset-interior">
           <label className="plan-ventana-ancho">
             Tarea
             <textarea autoFocus className="input-filtro" rows={2} value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} />
@@ -384,18 +387,26 @@ function VentanaTarea({ tarea, obra, categorias, acciones, zonas, estados, respo
           <div className="plan-ventana-ancho prio-marcas">
             <label className="plan-check"><input type="checkbox" checked={form.destacada} onChange={(e) => setForm({ ...form, destacada: e.target.checked })} /> Destacar (resaltado amarillo)</label>
           </div>
-          <EnviarAAlfredo tarea={tarea} onEnviar={onEnviarAlfredo} />
+          </div>
+          </fieldset>
+          {puedeEnviarAlfredo && <EnviarAAlfredo tarea={tarea} onEnviar={onEnviarAlfredo} />}
           <datalist id="prio-responsables">
             {responsables.map((r) => <option key={r} value={r} />)}
           </datalist>
           {error && <div className="auth-error plan-ventana-ancho">{error}</div>}
-          <div className="plan-ventana-acciones plan-ventana-ancho prio-ventana-acciones">
-            <button type="button" className="btn-secundario plan-boton-peligro"
-              onClick={() => { if (window.confirm('¿Eliminar esta tarea?')) onEliminar(tarea.id).then(onCerrar) }}>Eliminar</button>
-            <span className="prio-espaciador" />
-            <button type="button" className="btn-secundario" onClick={onCerrar}>Cancelar</button>
-            <button type="submit" className="btn-secundario plan-boton-principal" disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</button>
-          </div>
+          {puedeEditar ? (
+            <div className="plan-ventana-acciones plan-ventana-ancho prio-ventana-acciones">
+              <button type="button" className="btn-secundario plan-boton-peligro"
+                onClick={() => { if (window.confirm('¿Eliminar esta tarea?')) onEliminar(tarea.id).then(onCerrar) }}>Eliminar</button>
+              <span className="prio-espaciador" />
+              <button type="button" className="btn-secundario" onClick={onCerrar}>Cancelar</button>
+              <button type="submit" className="btn-secundario plan-boton-principal" disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</button>
+            </div>
+          ) : (
+            <div className="plan-ventana-acciones plan-ventana-ancho">
+              <button type="button" className="btn-secundario" onClick={onCerrar}>Cerrar</button>
+            </div>
+          )}
         </form>
       </div>
     </div>
@@ -412,7 +423,7 @@ function EtiquetaTarea({ tarea, categoria, accion, nivel, onAbrir }) {
           aparte de la descripción, como en su planilla. */}
       <span className="prio-col-accion">
         {accion && <span className="prio-marca prio-marca-accion" style={{ background: accion.color }}>{accion.nombre}</span>}
-        {tarea.alfredo_enviado_en && <span className="prio-marca prio-marca-alfredo" title={`Enviada a Alfredo el ${fechaHora(tarea.alfredo_enviado_en)}`}>📨 Alfredo</span>}
+        {tarea.alfredo_enviado_en && <span className="prio-marca prio-marca-alfredo" title={`Enviada a Alfredo el ${fechaHora(tarea.alfredo_enviado_en)}`}>Enviada a Alfredo</span>}
       </span>
       <span className={`prio-col-tarea${tarea.destacada ? ' prio-destacada' : ''}`}>
         <span className="prio-descripcion">{tarea.descripcion || <em>Sin descripción</em>}</span>
@@ -449,7 +460,9 @@ export default function PrioridadesPage() {
   const [filtroCategoria, setFiltroCategoria] = useState('')
   const [filtroEncargado, setFiltroEncargado] = useState('')
 
-  const esAdmin = usuario?.roles?.includes('admin')
+  // Ver: admin y Alfredo (gestion_obras); editar: lo dice el servidor
+  // (puede_editar, solo admin).
+  const esAdmin = usuario?.roles?.includes('admin') || usuario?.roles?.includes('gestion_obras')
 
   function recargar() {
     return prioridades(accessToken).then((d) => setDatos(conIds(d)))
@@ -594,7 +607,7 @@ export default function PrioridadesPage() {
       })
       if (!abierta) continue
 
-      resultado.push({
+      if (datos.puede_editar) resultado.push({
         id: `acciones-${obra.id}`,
         altoMinimo: 44,
         clase: 'prio-gantt-acciones',
@@ -661,10 +674,10 @@ export default function PrioridadesPage() {
                 <span className="prio-zona-nombre">{z.nombre}</span>
                 <span className="prio-zona-contador">{pendientesZona} pendiente{pendientesZona === 1 ? '' : 's'}</span>
               </button>
-              <button type="button" className="prio-zona-agregar" title={`Agregar tarea en ${z.nombre}`}
+              {datos.puede_editar && <button type="button" className="prio-zona-agregar" title={`Agregar tarea en ${z.nombre}`}
                 onClick={() => accion('POST', 'agregar_tarea', { obra_id: obra.id, zona_id: z.id, categoria_id: [...categoriasPorId.keys()][0] || null }).then((r) => r?.tarea && setTareaAbierta(Number(r.tarea.id)))}>
                 + tarea
-              </button>
+              </button>}
             </div>
           ),
           barras: tZona ? [{
@@ -686,11 +699,13 @@ export default function PrioridadesPage() {
     return resultado
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datos, datosFiltrados, hayFiltro, verTerminadas, desplegadas, zonasPlegadas])
+  // (datos.puede_editar va dentro de datos)
 
-  if (!esAdmin) return <div className="dashboard"><p className="dashboard-nota">Prioridades es solo para administradores.</p></div>
+  if (!esAdmin) return <div className="dashboard"><p className="dashboard-nota">No tienes acceso a Prioridades.</p></div>
   if (error && !datos) return <div className="dashboard"><div className="auth-error">{error}</div></div>
   if (!datos) return <div className="dashboard"><p className="dashboard-nota">Cargando…</p></div>
 
+  const puedeEditar = Boolean(datos.puede_editar)
   const yaAgregadas = new Set(datos.obras.map((o) => o.obra))
   const nombresCategorias = [...new Set(datos.categorias.map((c) => c.nombre))].sort((a, b) => a.localeCompare(b, 'es'))
   const encargados = [...new Set(datos.tareas.flatMap((t) => personasDe(t.responsable)))].sort((a, b) => a.localeCompare(b, 'es'))
@@ -756,7 +771,7 @@ export default function PrioridadesPage() {
         <label className="plan-check">
           <input type="checkbox" checked={verTerminadas} onChange={(e) => setVerTerminadas(e.target.checked)} /> Ver terminadas
         </label>
-        <form className="prio-agregar-obra" onSubmit={(e) => {
+        {puedeEditar && <form className="prio-agregar-obra" onSubmit={(e) => {
           e.preventDefault()
           if (obraNueva) accion('POST', 'agregar_obra', { obra: obraNueva }).then((r) => {
             setObraNueva('')
@@ -768,7 +783,7 @@ export default function PrioridadesPage() {
             {datos.obras_panel.filter((o) => !yaAgregadas.has(o.obra)).map((o) => <option key={o.id} value={o.obra}>{o.obra}</option>)}
           </select>
           <button type="submit" className="btn-secundario plan-boton-principal" disabled={!obraNueva}>+ Agregar</button>
-        </form>
+        </form>}
       </div>
 
       {error && <div className="auth-error plan-error">{error} <button type="button" className="btn-secundario" onClick={() => setError('')}>OK</button></div>}
@@ -783,7 +798,7 @@ export default function PrioridadesPage() {
           desde={desde}
           dias={dias}
           anchoDia={anchoDia}
-          editable
+          editable={puedeEditar}
           anchoEtiqueta={ANCHO_ETIQUETA}
           encabezadoEtiqueta={(
             <div className="prio-fila prio-fila-encabezado prio-nivel-1">
@@ -808,6 +823,8 @@ export default function PrioridadesPage() {
           zonas={datos.zonas.filter((z) => z.obra_id === tareaSeleccionada.obra_id)}
           estados={datos.estados}
           responsables={datos.responsables}
+          puedeEditar={puedeEditar}
+          puedeEnviarAlfredo={Boolean(datos.puede_enviar_alfredo)}
           onGuardar={guardarTarea}
           onEliminar={(id) => accion('DELETE', 'eliminar_tarea', { id })}
           onCrear={crearDesdeTarea}

@@ -140,6 +140,9 @@ try {
     if (!in_array('urgente', $columnasComentarios, true)) {
         $db->exec('ALTER TABLE comentarios_obra ADD COLUMN urgente INTEGER NOT NULL DEFAULT 0');
     }
+    // Las primeras urgentes se enviaron con "🚨 " delante; a pedido de
+    // Álvaro (2026-10-01) sin emojis — se limpian (no hace nada si no hay).
+    $db->exec("UPDATE comentarios_obra SET mensaje = REPLACE(REPLACE(mensaje, '🚨 URGENTE (Prioridades)', 'URGENTE Prioridades'), '🚨 ', '') WHERE urgente = 1 AND mensaje LIKE '🚨%'");
     $db->exec("
         CREATE TABLE IF NOT EXISTS comentarios_obra_leido (
           obra TEXT NOT NULL,

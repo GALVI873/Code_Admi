@@ -86,7 +86,6 @@ function NotaItem({ nota, obraBase, accessToken, puedeMarcarHecho, puedeArchivar
       />
       <div className="notas-obra-item-cuerpo">
         {Boolean(nota.es_adicional_aceptado) && <span className="badge-nuevo-adicional notas-obra-item-tag-adicional">Nuevo adicional</span>}
-        {Boolean(Number(nota.urgente)) && !nota.hecho && <span className="badge-urgente notas-obra-item-tag-adicional">🚨 URGENTE</span>}
         <p className="notas-obra-item-texto">{nota.mensaje}</p>
         <span className="notas-obra-item-meta">
           {nota.autor_nombre} · {formatoFechaHora(nota.creado_en)}

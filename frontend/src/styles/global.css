@@ -5077,3 +5077,9 @@ select.celda-editable-material {
 
 .prio-boton-urgente:disabled { opacity: .6; }
 .prio-marca-alfredo { background: #fde2e1; color: #a33a37; }
+
+/* Prioridades: ventana de tarea — el fieldset (para el modo consulta de
+   Alfredo) no debe cambiar el diseño de la grilla. */
+.prio-fieldset { border: none; padding: 0; margin: 0; min-width: 0; }
+.prio-fieldset-interior { margin-top: 0; }
+.prio-fieldset:disabled .input-filtro, .prio-fieldset:disabled .select-inline { background: #f7f9fc; color: var(--texto); }

@@ -50,6 +50,11 @@ const NAV_ITEMS = [
       { to: '/planificacion', label: 'Planificación', permiso: 'obras.ver_aceptadas' },
       { to: '/diario-general', label: 'Diario General', permiso: 'obras.ver_diario_general' },
       { to: '/pendientes', label: 'Notas', permiso: 'obras.ver_aceptadas' },
+      // Obras en fase de finalización (PrioridadesPage.jsx) — antes suelto y
+      // solo admin; a pedido de Álvaro (2026-10-01) pasa acá debajo de Notas
+      // para que también lo use Alfredo (puede editar igual que admin, ver
+      // prioridades.php).
+      { to: '/prioridades', label: 'Prioridades', permiso: 'obras.ver_aceptadas' },
     ],
   },
   // Departamento nuevo, todavía sin diseñar (a pedido de Álvaro, para que
@@ -57,15 +62,6 @@ const NAV_ITEMS = [
   // permiso, porque por ahora es exclusivamente exploratorio para admin;
   // cuando se diseñe de verdad, contabilidad.ver se puede otorgar a otros
   // roles sin tocar este archivo.
-  // Obras en fase de finalización (a pedido de Álvaro, 2026-09-30) — por
-  // ahora suelto y solo admin, para tenerlo independiente; se puede mover a
-  // un grupo después. Ver PrioridadesPage.jsx / prioridades.php.
-  {
-    to: '/prioridades',
-    label: 'Prioridades',
-    icono: '🎯',
-    soloRol: 'admin',
-  },
   {
     to: '/contabilidad',
     label: 'Contabilidad',
