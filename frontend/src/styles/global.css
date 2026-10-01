@@ -5004,3 +5004,6 @@ select.celda-editable-material {
 }
 
 .prio-col-accion .prio-marca { font-size: 10px; padding: 0 6px; line-height: 16px; }
+
+/* Prioridades: chip de la acción elegida (color propio de cada acción). */
+.prio-marca-accion { color: #2c3e50; box-shadow: inset 0 0 0 1px rgba(44, 62, 80, .12); }

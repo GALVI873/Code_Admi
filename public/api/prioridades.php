@@ -29,6 +29,13 @@ declare(strict_types=1);
 //   Cea Bermudez se divide en CEA y Vallehermoso. Una tarea puede ir en una
 //   fachada o directamente en la obra; al borrar la fachada sus tareas
 //   quedan en la obra.
+// POST {accion:"agregar_accion", obra_id, nombre, color?} / PATCH
+//   {accion:"actualizar_accion", id, nombre?, color?} / DELETE {accion:
+//   "eliminar_accion", id}: lista de "Acción" de la obra (ej. Falta
+//   material, Pend. Ppto) — a pedido de Álvaro (2026-10-01) funciona igual
+//   que Categoría: cada obra tiene la suya y cada tarea elige una. Reemplaza
+//   las casillas falta_material/pendiente_ppto (que quedan en la tabla sin
+//   usarse; se migraron a acciones una sola vez).
 // POST {accion:"agregar_tarea", obra_id, categoria_id?, zona_id?, descripcion?}
 // PATCH {accion:"actualizar_tarea", id, ...campos}: solo pisa lo mandado.
 // DELETE {accion:"eliminar_tarea", id}
@@ -38,6 +45,18 @@ const ESTADOS_PRIORIDAD = ['Pendiente', 'En curso', 'Terminado'];
 // cada categoría nueva (después se puede cambiar).
 const COLORES_PRIORIDAD = ['#f8d7bc', '#bfdcf3', '#c6e9cc', '#dccbf0', '#f4e5ad', '#f5c9c9', '#bde6d9', '#dde2e7'];
 const CATEGORIAS_INICIALES = [['Mano de obra', '#f8d7bc'], ['Composite', '#bfdcf3']];
+const ACCIONES_INICIALES = [['Falta material', '#fbe3d3'], ['Pend. Ppto', '#f5c9c9']];
+
+// Crea las acciones iniciales de una obra y devuelve [nombre => id].
+function crearAccionesIniciales(PDO $db, int $obraId): array
+{
+    $ids = [];
+    foreach (ACCIONES_INICIALES as [$nombre, $color]) {
+        $db->prepare('INSERT INTO prioridades_acciones (obra_id, nombre, color) VALUES (?, ?, ?)')->execute([$obraId, $nombre, $color]);
+        $ids[$nombre] = (int) $db->lastInsertId();
+    }
+    return $ids;
+}
 
 $config = require __DIR__ . '/../../backend/bootstrap.php';
 
@@ -124,6 +143,27 @@ try {
     if (!in_array('zona_id', $columnasTareas, true)) {
         $db->exec('ALTER TABLE prioridades_tareas ADD COLUMN zona_id INTEGER');
     }
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS prioridades_acciones (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          obra_id INTEGER NOT NULL,
+          nombre TEXT NOT NULL,
+          color TEXT NOT NULL DEFAULT '#dde2e7'
+        )
+    ");
+    if (!in_array('accion_id', $columnasTareas, true)) {
+        // Migración única: cada obra existente recibe las acciones iniciales
+        // y sus tareas pasan de las casillas a la acción equivalente (si
+        // tenía las dos marcadas, queda "Pend. Ppto", la más restrictiva).
+        $db->beginTransaction();
+        $db->exec('ALTER TABLE prioridades_tareas ADD COLUMN accion_id INTEGER');
+        foreach ($db->query('SELECT id FROM prioridades_obras')->fetchAll() as $o) {
+            $ids = crearAccionesIniciales($db, (int) $o['id']);
+            $db->prepare('UPDATE prioridades_tareas SET accion_id = ? WHERE obra_id = ? AND pendiente_ppto = 1')->execute([$ids['Pend. Ppto'], $o['id']]);
+            $db->prepare('UPDATE prioridades_tareas SET accion_id = ? WHERE obra_id = ? AND pendiente_ppto = 0 AND falta_material = 1')->execute([$ids['Falta material'], $o['id']]);
+        }
+        $db->commit();
+    }
 
     // SYNC_TOKEN (sin sesión): carga inicial de una obra con sus tareas
     // desde la planilla de Álvaro — POST {accion:"importar", buscar, alias?,
@@ -195,11 +235,12 @@ try {
             $db->prepare("INSERT INTO prioridades_obras (obra, alias, nota, creado_por) VALUES (?, ?, ?, 'Importado de planilla')")
                 ->execute([$obra, textoPrioridad($bodyPost['alias'] ?? null), textoPrioridad($bodyPost['nota'] ?? null)]);
             $obraId = (int) $db->lastInsertId();
+            $accionIds = crearAccionesIniciales($db, $obraId);
             $categoriaIds = [];
             $colores = array_column(CATEGORIAS_INICIALES, 1, 0);
             $insertarTarea = $db->prepare("
-                INSERT INTO prioridades_tareas (obra_id, categoria_id, descripcion, responsable, fecha_inicio, fecha_fin, falta_material, pendiente_ppto, destacada, actualizado_por)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Importado de planilla')
+                INSERT INTO prioridades_tareas (obra_id, categoria_id, accion_id, descripcion, responsable, fecha_inicio, fecha_fin, falta_material, pendiente_ppto, destacada, actualizado_por)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Importado de planilla')
             ");
             foreach (($bodyPost['tareas'] ?? []) as $t) {
                 $categoria = textoPrioridad($t['categoria'] ?? null) ?? 'Mano de obra';
@@ -211,6 +252,7 @@ try {
                 $insertarTarea->execute([
                     $obraId,
                     $categoriaIds[$categoria],
+                    !empty($t['pendiente_ppto']) ? $accionIds['Pend. Ppto'] : (!empty($t['falta_material']) ? $accionIds['Falta material'] : null),
                     (string) textoPrioridad($t['descripcion'] ?? null),
                     textoPrioridad($t['responsable'] ?? null),
                     fechaPrioridad($t['fecha_inicio'] ?? null, 'fecha_inicio'),
@@ -235,6 +277,7 @@ try {
         $obras = $db->query('SELECT * FROM prioridades_obras ORDER BY creado_en, id')->fetchAll();
         $categorias = $db->query('SELECT * FROM prioridades_categorias ORDER BY obra_id, id')->fetchAll();
         $zonas = $db->query('SELECT * FROM prioridades_zonas ORDER BY obra_id, id')->fetchAll();
+        $acciones = $db->query('SELECT * FROM prioridades_acciones ORDER BY obra_id, id')->fetchAll();
         $tareas = $db->query('SELECT * FROM prioridades_tareas ORDER BY obra_id, fecha_inicio IS NULL, fecha_inicio, id')->fetchAll();
 
         $obrasPanel = [];
@@ -262,6 +305,7 @@ try {
             'obras' => $obras,
             'categorias' => $categorias,
             'zonas' => $zonas,
+            'acciones' => $acciones,
             'tareas' => $tareas,
             'obras_panel' => $obrasPanel,
             'responsables' => $responsables,
@@ -292,6 +336,7 @@ try {
             $db->prepare('INSERT INTO prioridades_categorias (obra_id, nombre, color) VALUES (?, ?, ?)')
                 ->execute([$obraId, $nombre, $color]);
         }
+        crearAccionesIniciales($db, $obraId);
         $db->commit();
         $stmtCats = $db->prepare('SELECT * FROM prioridades_categorias WHERE obra_id = ? ORDER BY id');
         $stmtCats->execute([$obraId]);
@@ -328,6 +373,7 @@ try {
         $db->prepare('DELETE FROM prioridades_tareas WHERE obra_id = ?')->execute([$id]);
         $db->prepare('DELETE FROM prioridades_categorias WHERE obra_id = ?')->execute([$id]);
         $db->prepare('DELETE FROM prioridades_zonas WHERE obra_id = ?')->execute([$id]);
+        $db->prepare('DELETE FROM prioridades_acciones WHERE obra_id = ?')->execute([$id]);
         $db->prepare('DELETE FROM prioridades_obras WHERE id = ?')->execute([$id]);
         $db->commit();
         Response::json(['ok' => true]);
@@ -369,6 +415,44 @@ try {
         $id = (int) ($body['id'] ?? 0);
         $db->prepare('UPDATE prioridades_tareas SET categoria_id = NULL WHERE categoria_id = ?')->execute([$id]);
         $db->prepare('DELETE FROM prioridades_categorias WHERE id = ?')->execute([$id]);
+        Response::json(['ok' => true]);
+    }
+
+    if ($metodo === 'POST' && $accion === 'agregar_accion') {
+        $obraId = (int) ($body['obra_id'] ?? 0);
+        $nombre = textoPrioridad($body['nombre'] ?? null);
+        if (!filaPor($db, 'prioridades_obras', $obraId) || $nombre === null) {
+            Response::error('Faltan "obra_id" y/o "nombre"', 422);
+        }
+        $color = colorPrioridad($body['color'] ?? null);
+        if ($color === null) {
+            $stmtN = $db->prepare('SELECT COUNT(*) FROM prioridades_acciones WHERE obra_id = ?');
+            $stmtN->execute([$obraId]);
+            $color = COLORES_PRIORIDAD[((int) $stmtN->fetchColumn() + 3) % count(COLORES_PRIORIDAD)];
+        }
+        $db->prepare('INSERT INTO prioridades_acciones (obra_id, nombre, color) VALUES (?, ?, ?)')->execute([$obraId, $nombre, $color]);
+        Response::json(['accion' => filaPor($db, 'prioridades_acciones', (int) $db->lastInsertId())]);
+    }
+
+    if ($metodo === 'PATCH' && $accion === 'actualizar_accion') {
+        $id = (int) ($body['id'] ?? 0);
+        $actual = filaPor($db, 'prioridades_acciones', $id);
+        if (!$actual) {
+            Response::error('Acción no encontrada', 404);
+        }
+        $nombre = array_key_exists('nombre', $body) ? textoPrioridad($body['nombre']) : $actual['nombre'];
+        if ($nombre === null) {
+            Response::error('El nombre de la acción no puede quedar vacío', 422);
+        }
+        $color = array_key_exists('color', $body) ? (colorPrioridad($body['color']) ?? $actual['color']) : $actual['color'];
+        $db->prepare('UPDATE prioridades_acciones SET nombre = ?, color = ? WHERE id = ?')->execute([$nombre, $color, $id]);
+        Response::json(['accion' => filaPor($db, 'prioridades_acciones', $id)]);
+    }
+
+    if ($metodo === 'DELETE' && $accion === 'eliminar_accion') {
+        $id = (int) ($body['id'] ?? 0);
+        $db->prepare('UPDATE prioridades_tareas SET accion_id = NULL WHERE accion_id = ?')->execute([$id]);
+        $db->prepare('DELETE FROM prioridades_acciones WHERE id = ?')->execute([$id]);
         Response::json(['ok' => true]);
     }
 
@@ -430,6 +514,9 @@ try {
         if (array_key_exists('zona_id', $body)) {
             $t['zona_id'] = (int) $body['zona_id'] ?: null;
         }
+        if (array_key_exists('accion_id', $body)) {
+            $t['accion_id'] = (int) $body['accion_id'] ?: null;
+        }
         if (array_key_exists('fecha_inicio', $body)) {
             $t['fecha_inicio'] = fechaPrioridad($body['fecha_inicio'], 'fecha_inicio');
         }
@@ -452,11 +539,11 @@ try {
         }
         $db->prepare("
             UPDATE prioridades_tareas
-            SET categoria_id = ?, zona_id = ?, descripcion = ?, responsable = ?, fecha_inicio = ?, fecha_fin = ?, estado = ?,
+            SET categoria_id = ?, zona_id = ?, accion_id = ?, descripcion = ?, responsable = ?, fecha_inicio = ?, fecha_fin = ?, estado = ?,
                 falta_material = ?, pendiente_ppto = ?, destacada = ?, actualizado_por = ?, actualizado_en = datetime('now')
             WHERE id = ?
         ")->execute([
-            $t['categoria_id'], $t['zona_id'], $t['descripcion'], $t['responsable'], $t['fecha_inicio'], $t['fecha_fin'], $t['estado'],
+            $t['categoria_id'], $t['zona_id'], $t['accion_id'], $t['descripcion'], $t['responsable'], $t['fecha_inicio'], $t['fecha_fin'], $t['estado'],
             $t['falta_material'], $t['pendiente_ppto'], $t['destacada'], $autor, $id,
         ]);
         Response::json(['tarea' => filaPor($db, 'prioridades_tareas', $id)]);
