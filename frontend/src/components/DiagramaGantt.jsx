@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 // Diagrama de Gantt interactivo (Planificación e Inicio) — a pedido de
 // Álvaro, 2026-09-29, para reemplazar la línea de tiempo de Notion. Hecho a
@@ -76,8 +76,25 @@ function asignarCarriles(barras) {
 // anchoEtiqueta / encabezadoEtiqueta / fila.etiquetaNode: para vistas que
 // necesitan más que un nombre en la columna izquierda (ej. Prioridades:
 // categoría, tarea, responsable y fechas, como su planilla de Excel).
-export default function DiagramaGantt({ filas, desde, dias, anchoDia, editable = false, onMoverBarra, onClickBarra, vacio, anchoEtiqueta = 230, encabezadoEtiqueta = null }) {
+// llenarAncho: en vez de un ancho fijo por día, reparte todo el ancho
+// disponible entre los días visibles (nunca menos que anchoDia) — a pedido
+// de Álvaro (2026-10-01) para el Gantt semanal de Inicio, que dejaba
+// espacio vacío a la derecha. Se recalcula si cambia el tamaño de ventana.
+export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPedido, editable = false, onMoverBarra, onClickBarra, vacio, anchoEtiqueta = 230, encabezadoEtiqueta = null, llenarAncho = false }) {
   const [arrastre, setArrastre] = useState(null)
+  const contenedorRef = useRef(null)
+  const [anchoContenedor, setAnchoContenedor] = useState(0)
+
+  useEffect(() => {
+    if (!llenarAncho || !contenedorRef.current || typeof ResizeObserver === 'undefined') return undefined
+    const observador = new ResizeObserver(([entrada]) => setAnchoContenedor(entrada.contentRect.width))
+    observador.observe(contenedorRef.current)
+    return () => observador.disconnect()
+  }, [llenarAncho])
+
+  const anchoDia = llenarAncho && anchoContenedor
+    ? Math.max(anchoDiaPedido, Math.floor((anchoContenedor - anchoEtiqueta - 2) / dias))
+    : anchoDiaPedido
   const arrastreRef = useRef(null)
 
   const inicioVentana = diaANumero(desde)
@@ -157,7 +174,7 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia, editable =
   })
 
   return (
-    <div className="gantt">
+    <div className="gantt" ref={contenedorRef}>
       <div className="gantt-scroll" onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}>
         <div className="gantt-lienzo" style={{ width: anchoEtiqueta + anchoTotal }}>
           <div className="gantt-encabezado">
