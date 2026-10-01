@@ -92,7 +92,7 @@ function resumen(obra, tareas) {
   return { texto: partes.join(' · '), tarde: obra.fecha_objetivo && conFecha.length && Math.max(...conFecha.map((t) => aNumero(t.fecha_fin || t.fecha_inicio))) > aNumero(obra.fecha_objetivo) }
 }
 
-export async function descargarPdfPrioridades(datos, { verTerminadas = true } = {}) {
+export async function descargarPdfPrioridades(datos, { verTerminadas = true, filtro = '' } = {}) {
   const { jsPDF } = await import('jspdf')
   const { default: autoTable } = await import('jspdf-autotable')
 
@@ -126,7 +126,7 @@ export async function descargarPdfPrioridades(datos, { verTerminadas = true } = 
   doc.text('CRONOGRAMA DE OBRA', anchoPagina - margen, 14, { align: 'right' })
   doc.setFontSize(11)
   doc.setTextColor(...TEAL)
-  doc.text('Prioridades · Obras en fase de finalización', anchoPagina - margen, 20, { align: 'right' })
+  doc.text(`Prioridades · Obras en fase de finalización${filtro ? ` · ${filtro}` : ''}`, anchoPagina - margen, 20, { align: 'right' })
   doc.setFont('Carlito', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(...GRIS)
@@ -269,5 +269,5 @@ export async function descargarPdfPrioridades(datos, { verTerminadas = true } = 
     doc.text(PIE, margen, altoPagina - 6.5)
     doc.text(`Página ${i} de ${paginas}`, anchoPagina - margen, altoPagina - 6.5, { align: 'right' })
   }
-  doc.save(`Cronograma_Prioridades_${hoyIso()}.pdf`)
+  doc.save(`Cronograma_Prioridades_${hoyIso()}${filtro ? '_filtrado' : ''}.pdf`)
 }

@@ -5028,3 +5028,6 @@ select.celda-editable-material {
 .prio-nueva-inline { display: flex; gap: 6px; text-transform: none; letter-spacing: normal; }
 .prio-nueva-inline .input-filtro { flex: 1 !important; min-width: 0; }
 .prio-nueva-inline .btn-secundario { height: 36px; padding: 0 10px; flex: none; }
+
+/* Prioridades: filtros por categoría y encargado. */
+.prio-filtro { height: 36px; min-width: 150px; font-weight: 400; font-size: 13.5px; }

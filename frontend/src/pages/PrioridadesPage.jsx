@@ -113,6 +113,12 @@ function resumenObra(obra, tareas) {
   return { texto: partes.join(' · '), clase }
 }
 
+// Personas de un responsable escrito a mano ("Miguel / German",
+// "Ever, Javi") — para el filtro por encargado.
+function personasDe(responsable) {
+  return String(responsable || '').split(/[/,]/).map((x) => x.trim()).filter(Boolean)
+}
+
 function leerDesplegadas() {
   try {
     return new Set(JSON.parse(localStorage.getItem(CLAVE_DESPLEGADAS) || '[]'))
@@ -394,6 +400,13 @@ export default function PrioridadesPage() {
   const [desplegadas, setDesplegadas] = useState(leerDesplegadas)
   const [zonasPlegadas, setZonasPlegadas] = useState(() => new Set())
   const [generandoPdf, setGenerandoPdf] = useState(false)
+  // Filtros (a pedido de Álvaro, 2026-10-01): por nombre de categoría (las
+  // categorías son de cada obra, se agrupan por nombre) y por encargado.
+  // Aplican al diagrama y al PDF; con un filtro activo solo aparecen las
+  // obras/fachadas que tienen alguna tarea que coincida, y sus barras de
+  // tiempo total se calculan sobre esas tareas.
+  const [filtroCategoria, setFiltroCategoria] = useState('')
+  const [filtroEncargado, setFiltroEncargado] = useState('')
 
   const esAdmin = usuario?.roles?.includes('admin')
 
@@ -481,14 +494,26 @@ export default function PrioridadesPage() {
     }
   }
 
+  const hayFiltro = Boolean(filtroCategoria || filtroEncargado)
+  const datosFiltrados = useMemo(() => {
+    if (!datos || !hayFiltro) return datos
+    const nombreCategoria = new Map(datos.categorias.map((c) => [c.id, c.nombre]))
+    const tareas = datos.tareas.filter((t) =>
+      (!filtroCategoria || nombreCategoria.get(t.categoria_id) === filtroCategoria)
+      && (!filtroEncargado || personasDe(t.responsable).includes(filtroEncargado)))
+    const obrasConTareas = new Set(tareas.map((t) => t.obra_id))
+    return { ...datos, tareas, obras: datos.obras.filter((o) => obrasConTareas.has(o.id)) }
+  }, [datos, hayFiltro, filtroCategoria, filtroEncargado])
+
   const filas = useMemo(() => {
     if (!datos) return []
     const resultado = []
-    for (const obra of datos.obras) {
+    const fuente = datosFiltrados
+    for (const obra of fuente.obras) {
       const categoriasPorId = new Map(datos.categorias.filter((c) => c.obra_id === obra.id).map((c) => [c.id, c]))
       const accionesPorId = new Map(datos.acciones.filter((a) => a.obra_id === obra.id).map((a) => [a.id, a]))
       const zonas = datos.zonas.filter((z) => z.obra_id === obra.id)
-      const todas = datos.tareas.filter((t) => t.obra_id === obra.id)
+      const todas = fuente.tareas.filter((t) => t.obra_id === obra.id)
       const visibles = todas
         .filter((t) => verTerminadas || t.estado !== 'Terminado')
         .sort((a, b) => (a.fecha_inicio || '9999').localeCompare(b.fecha_inicio || '9999') || a.id - b.id)
@@ -575,6 +600,7 @@ export default function PrioridadesPage() {
       }
       for (const z of zonas) {
         const deZona = visibles.filter((t) => t.zona_id === z.id)
+        if (hayFiltro && deZona.length === 0) continue
         const tZona = tramo(todas.filter((t) => t.zona_id === z.id))
         const zonaAbierta = !zonasPlegadas.has(z.id)
         const pendientesZona = deZona.filter((t) => t.estado !== 'Terminado').length
@@ -613,13 +639,15 @@ export default function PrioridadesPage() {
     }
     return resultado
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datos, verTerminadas, desplegadas, zonasPlegadas])
+  }, [datos, datosFiltrados, hayFiltro, verTerminadas, desplegadas, zonasPlegadas])
 
   if (!esAdmin) return <div className="dashboard"><p className="dashboard-nota">Prioridades es solo para administradores.</p></div>
   if (error && !datos) return <div className="dashboard"><div className="auth-error">{error}</div></div>
   if (!datos) return <div className="dashboard"><p className="dashboard-nota">Cargando…</p></div>
 
   const yaAgregadas = new Set(datos.obras.map((o) => o.obra))
+  const nombresCategorias = [...new Set(datos.categorias.map((c) => c.nombre))].sort((a, b) => a.localeCompare(b, 'es'))
+  const encargados = [...new Set(datos.tareas.flatMap((t) => personasDe(t.responsable)))].sort((a, b) => a.localeCompare(b, 'es'))
   const { dias, anchoDia, paso } = ESCALAS[escala]
   const tareaSeleccionada = tareaAbierta ? datos.tareas.find((t) => t.id === tareaAbierta) : null
   const obraConfig = obraConfigurando ? datos.obras.find((o) => o.id === obraConfigurando) : null
@@ -636,10 +664,13 @@ export default function PrioridadesPage() {
         <button
           type="button"
           className="btn-secundario"
-          disabled={generandoPdf || datos.obras.length === 0}
+          disabled={generandoPdf || datosFiltrados.obras.length === 0}
           onClick={() => {
             setGenerandoPdf(true)
-            descargarPdfPrioridades(datos, { verTerminadas })
+            descargarPdfPrioridades(datosFiltrados, {
+              verTerminadas,
+              filtro: [filtroCategoria && `Categoría: ${filtroCategoria}`, filtroEncargado && `Encargado: ${filtroEncargado}`].filter(Boolean).join(' · '),
+            })
               .catch((err) => setError(`No se pudo generar el PDF: ${err.message}`))
               .finally(() => setGenerandoPdf(false))
           }}
@@ -659,6 +690,23 @@ export default function PrioridadesPage() {
             ))}
           </div>
         </div>
+        <div className="filtro-campo">
+          <label>Categoría</label>
+          <select className="select-inline prio-filtro" value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
+            <option value="">Todas</option>
+            {nombresCategorias.map((n) => <option key={n}>{n}</option>)}
+          </select>
+        </div>
+        <div className="filtro-campo">
+          <label>Encargado</label>
+          <select className="select-inline prio-filtro" value={filtroEncargado} onChange={(e) => setFiltroEncargado(e.target.value)}>
+            <option value="">Todos</option>
+            {encargados.map((n) => <option key={n}>{n}</option>)}
+          </select>
+        </div>
+        {hayFiltro && (
+          <button type="button" className="btn-secundario" onClick={() => { setFiltroCategoria(''); setFiltroEncargado('') }}>Quitar filtros</button>
+        )}
         <label className="plan-check">
           <input type="checkbox" checked={verTerminadas} onChange={(e) => setVerTerminadas(e.target.checked)} /> Ver terminadas
         </label>
@@ -681,6 +729,8 @@ export default function PrioridadesPage() {
 
       {datos.obras.length === 0 ? (
         <p className="dashboard-nota">Todavía no hay obras en Prioridades. Elige una obra aceptada arriba para empezar.</p>
+      ) : hayFiltro && datosFiltrados.obras.length === 0 ? (
+        <p className="dashboard-nota">Ninguna tarea coincide con los filtros elegidos.</p>
       ) : (
         <DiagramaGantt
           filas={filas}
