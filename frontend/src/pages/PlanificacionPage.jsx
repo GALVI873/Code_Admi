@@ -623,9 +623,19 @@ export default function PlanificacionPage() {
   // Álvaro, 2026-10-01).
   const [situacion, setSituacion] = useState('')
   const coincideSituacion = (o) => !situacion || (situacion === '__sin__' ? !o?.situacion : o?.situacion === situacion)
+  // Obras "fijadas" del Cronograma (a pedido de Álvaro, 2026-10-01): al ir a
+  // una fecha con la flecha de una barra, la lista de obras NO se vuelve a
+  // filtrar por el nuevo período — se mantienen las mismas obras (en el mismo
+  // orden) para poder ver esa obra sin perder las demás. Se suelta al
+  // navegar con ◀ Hoy ▶, cambiar la escala o tocar un filtro.
+  const [obrasFijadas, setObrasFijadas] = useState(null)
   const [buscar, setBuscar] = useState('')
   const [compacto, setCompacto] = useState(false)
   const [verTerminadas, setVerTerminadas] = useState(false)
+  // (soltar las obras fijadas al cambiar filtros o escala — ver obrasFijadas)
+  useEffect(() => {
+    setObrasFijadas(null)
+  }, [buscar, categorias, responsable, situacion, verTerminadas, compacto, escala])
   const [tareaAbierta, setTareaAbierta] = useState(null)
 
   const pestana = PESTANAS.includes(searchParams.get('pestana')) ? searchParams.get('pestana') : 'Cronograma'
@@ -755,16 +765,18 @@ export default function PlanificacionPage() {
       .filter(coincideSituacion)
     const conFechaMasTemprana = []
     for (const o of obras) {
+      if (obrasFijadas && !obrasFijadas.includes(o.id)) continue
       const tareas = (tareasPorObra.get(o.id) || [])
         .filter((t) => verTerminadas || t.estado !== 'Terminado')
         .filter((t) => categorias.size === 0 || categorias.has(t.categoria))
         .filter((t) => !responsable || responsablesDe(t).includes(responsable))
-        .filter((t) => seCruzaConVentana(t, inicioVentana, finVentana))
+        .filter((t) => (obrasFijadas ? Boolean(t.fecha_inicio) : seCruzaConVentana(t, inicioVentana, finVentana)))
         .sort((a, b) => datos.categorias.indexOf(a.categoria) - datos.categorias.indexOf(b.categoria) || a.fecha_inicio.localeCompare(b.fecha_inicio))
       if (tareas.length === 0) continue
       conFechaMasTemprana.push({ o, tareas, primera: Math.min(...tareas.map((t) => diaANumero(t.fecha_inicio))) })
     }
-    conFechaMasTemprana.sort((a, b) => a.primera - b.primera || a.o.nombre.localeCompare(b.o.nombre))
+    if (obrasFijadas) conFechaMasTemprana.sort((a, b) => obrasFijadas.indexOf(a.o.id) - obrasFijadas.indexOf(b.o.id))
+    else conFechaMasTemprana.sort((a, b) => a.primera - b.primera || a.o.nombre.localeCompare(b.o.nombre))
     for (const { o, tareas } of conFechaMasTemprana) {
       const barra = (t) => ({
         id: t.id,
@@ -789,7 +801,7 @@ export default function PlanificacionPage() {
     }
     return filas
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datos, tareasPorObra, verTerminadas, buscar, categorias, responsable, situacion, inicioVentana, finVentana, compacto])
+  }, [datos, tareasPorObra, verTerminadas, buscar, categorias, responsable, situacion, inicioVentana, finVentana, compacto, obrasFijadas])
 
   // Montaje: una fila por montador (vuelve a como estaba, a pedido de
   // Álvaro 2026-10-01 — la tabla por obra va en el Cronograma).
@@ -847,7 +859,7 @@ export default function PlanificacionPage() {
 
       {pestana !== 'Obras' && (
         <div className="filtro-tabla plan-filtros">
-          <NavegacionFechas desde={desde} setDesde={setDesde} escala={escala} setEscala={setEscala} />
+          <NavegacionFechas desde={desde} setDesde={(d) => { setObrasFijadas(null); setDesde(d) }} escala={escala} setEscala={setEscala} />
           <div className="filtro-campo">
             <label>Obra</label>
             <input type="text" className="input-filtro" placeholder="Buscar…" value={buscar} onChange={(e) => setBuscar(e.target.value)} />
@@ -881,6 +893,12 @@ export default function PlanificacionPage() {
       {pestana === 'Cronograma' && (
         <>
           <FiltroCategorias categorias={datos.categorias} seleccionadas={categorias} onCambiar={setCategorias} />
+          {obrasFijadas && (
+            <div className="plan-aviso-fijadas">
+              Mostrando las mismas obras que antes de saltar de fecha.
+              <button type="button" className="btn-secundario" onClick={() => setObrasFijadas(null)}>Ver las del período</button>
+            </div>
+          )}
           <DiagramaGantt
             filas={filasCronograma}
             desde={desde}
@@ -895,7 +913,11 @@ export default function PlanificacionPage() {
             )}
             onMoverBarra={moverBarra}
             onClickBarra={(b) => (b.obraId ? irA('Obras', b.obraId) : setTareaAbierta(b.tarea.id))}
-            onIrAFecha={(iso) => setDesde(lunesDe(iso))}
+            onIrAFecha={(iso) => {
+              // Mantener las mismas obras (ver comentario de obrasFijadas).
+              setObrasFijadas((prev) => prev || [...new Set(filasCronograma.filter((f) => String(f.id).startsWith('obra-')).map((f) => Number(String(f.id).slice(5))))])
+              setDesde(lunesDe(iso))
+            }}
             vacio="No hay tareas con fecha en este período con los filtros elegidos."
           />
         </>

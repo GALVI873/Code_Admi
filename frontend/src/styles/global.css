@@ -5185,3 +5185,19 @@ select.celda-editable-material {
 }
 
 .gantt-barra-ir-inicio:hover { background: rgba(255, 255, 255, .9); }
+
+/* Cronograma: aviso de obras fijadas tras saltar con una flecha. */
+.plan-aviso-fijadas {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: #e3effb;
+  color: #2f6190;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.plan-aviso-fijadas .btn-secundario { padding: 4px 10px; font-size: 12px; }
