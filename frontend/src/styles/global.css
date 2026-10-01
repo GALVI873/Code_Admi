@@ -5142,7 +5142,7 @@ select.celda-editable-material {
 /* Cronograma: Situación · Obra · Montador · Ayudante en la fila de la obra. */
 .plan-fila-cronograma {
   display: grid;
-  grid-template-columns: 88px 1fr 120px 120px;
+  grid-template-columns: 88px 1fr;
   align-items: center;
   gap: 8px;
   width: 100%;

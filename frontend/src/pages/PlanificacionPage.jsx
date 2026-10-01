@@ -113,26 +113,9 @@ function textoFechas(tarea) {
     : formatoCorto(tarea.fecha_inicio)
 }
 
-// Desplegable de montador/ayudante (montaje_personas) que guarda al elegir.
-// Si el valor actual no está en la lista (ej. "Ever, Javi" o un proveedor)
-// se muestra igual.
-function SelectPersonaRapido({ valor, rol, personas, puedeEditar, onCambiar }) {
-  if (!puedeEditar) return <span className="plan-montaje-texto">{valor || '—'}</span>
-  const nombres = personas.filter((x) => x.rol === rol).map((x) => x.nombre)
-  if (valor && !nombres.includes(valor)) nombres.unshift(valor)
-  return (
-    <select className="select-inline plan-select-persona" value={valor || ''} onClick={(e) => e.stopPropagation()} onChange={(e) => onCambiar(e.target.value)}>
-      <option value="">Sin asignar</option>
-      {nombres.map((n) => <option key={n} value={n}>{n}</option>)}
-    </select>
-  )
-}
-
-// Columna izquierda de la fila de una obra en el Cronograma (a pedido de
-// Álvaro, 2026-10-01): Situación (solo se ve; se filtra arriba) · Obra ·
-// Montador · Ayudante — estos dos son los de su tarea de Montaje y se
-// cambian ahí mismo, sin abrir la ficha.
-function EtiquetaObraCronograma({ obra, montaje, personas, puedeEditar, onCambiarMontaje }) {
+// Columna izquierda de la fila de una obra en el Cronograma: Situación
+// (solo se ve; se filtra arriba) · Obra — a pedido de Álvaro, 2026-10-01.
+function EtiquetaObraCronograma({ obra }) {
   return (
     <div className="plan-fila-cronograma">
       <span>
@@ -144,21 +127,17 @@ function EtiquetaObraCronograma({ obra, montaje, personas, puedeEditar, onCambia
         <span className="gantt-etiqueta-texto">{obra.nombre}</span>
         {obra.constructora && <span className="gantt-etiqueta-sub">{obra.constructora}</span>}
       </span>
-      {montaje ? (
-        <>
-          <SelectPersonaRapido valor={montaje.responsable} rol="montador" personas={personas} puedeEditar={puedeEditar}
-            onCambiar={(v) => onCambiarMontaje(montaje.id, { responsable: v })} />
-          <SelectPersonaRapido valor={montaje.ayudante} rol="ayudante" personas={personas} puedeEditar={puedeEditar}
-            onCambiar={(v) => onCambiarMontaje(montaje.id, { ayudante: v })} />
-        </>
-      ) : (
-        <>
-          <span className="plan-montaje-texto" title="Esta obra no tiene tarea de Montaje">—</span>
-          <span className="plan-montaje-texto">—</span>
-        </>
-      )}
     </div>
   )
+}
+
+// Texto de la barra de una tarea: quién la hace (en Montaje, montador y
+// ayudante); si no tiene responsable, la categoría. Igual en la vista
+// normal y en "Una fila por obra" — a pedido de Álvaro (2026-10-01) para no
+// perder quién monta al compactar.
+function textoBarraTarea(t) {
+  const quien = [t.responsable, t.categoria === 'Montaje' ? t.ayudante : null].filter(Boolean).join(' · ')
+  return quien || t.categoria
 }
 
 function NavegacionFechas({ desde, setDesde, escala, setEscala }) {
@@ -791,18 +770,13 @@ export default function PlanificacionPage() {
         id: t.id,
         inicio: t.fecha_inicio,
         fin: t.fecha_fin,
-        texto: compacto ? t.categoria : t.responsable || t.categoria,
-        titulo: `${o.nombre} — ${t.categoria}${t.responsable ? ` (${t.responsable})` : ''}${t.comentario ? `\n${t.comentario}` : ''}`,
+        texto: textoBarraTarea(t),
+        titulo: `${o.nombre} — ${t.categoria}${t.responsable ? ` (${t.responsable}${t.categoria === 'Montaje' && t.ayudante ? ` · ${t.ayudante}` : ''})` : ''}${t.comentario ? `\n${t.comentario}` : ''}`,
         color: t.estado === 'Terminado' ? COLOR_TERMINADO : COLOR_CATEGORIA[t.categoria],
         atenuada: t.estado === 'Terminado',
         tarea: t,
       })
-      const delaObra = tareasPorObra.get(o.id) || []
-      const montaje = delaObra.find((t) => t.categoria === 'Montaje' && t.estado !== 'Terminado') || delaObra.find((t) => t.categoria === 'Montaje')
-      const etiquetaObra = (
-        <EtiquetaObraCronograma obra={o} montaje={montaje} personas={datos.personas || []} puedeEditar={puedeEditar}
-          onCambiarMontaje={(id, cambios) => actualizarTarea(id, cambios).catch((err) => setError(err.message))} />
-      )
+      const etiquetaObra = <EtiquetaObraCronograma obra={o} />
       if (compacto) {
         filas.push({ id: `obra-${o.id}`, etiqueta: o.nombre, etiquetaNode: etiquetaObra, altoMinimo: 40, barras: tareas.map(barra) })
       } else {
@@ -913,10 +887,10 @@ export default function PlanificacionPage() {
             dias={dias}
             anchoDia={anchoDia}
             editable={puedeEditar}
-            anchoEtiqueta={560}
+            anchoEtiqueta={340}
             encabezadoEtiqueta={(
               <div className="plan-fila-cronograma plan-fila-montaje-encabezado">
-                <span>Situación</span><span>Obra</span><span>Montador</span><span>Ayudante</span>
+                <span>Situación</span><span>Obra</span>
               </div>
             )}
             onMoverBarra={moverBarra}
