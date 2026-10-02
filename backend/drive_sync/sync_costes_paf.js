@@ -208,6 +208,12 @@ async function main() {
   const aliasPorTexto = new Map(alias.map((a) => [a.texto_paf, a.obra]));
   console.log(`Alias cargados a mano: ${aliasPorTexto.size}`);
 
+  // Sin el id, la API de Drive responde un error confuso ("Unsupported alt
+  // type media...") — pasó de verdad: el secreto no existía en GitHub y los
+  // costes dejaron de actualizarse solos sin que se notara (2026-10-02).
+  if (!process.env.GOOGLE_DRIVE_PAF_FILE_ID) {
+    throw new Error('Falta GOOGLE_DRIVE_PAF_FILE_ID (el id de PAF.xlsx en Drive): cargarlo en .env y en los secretos de GitHub Actions');
+  }
   const buffer = await descargarComoBuffer(drive, process.env.GOOGLE_DRIVE_PAF_FILE_ID);
   const tmpPath = path.join(__dirname, 'tmp_PAF.xlsx');
   fs.writeFileSync(tmpPath, buffer);
