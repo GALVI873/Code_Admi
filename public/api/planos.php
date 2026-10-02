@@ -23,6 +23,10 @@ declare(strict_types=1);
 // posicion_base es la posición "física" del plano (ej. "2"), sin el sufijo
 // ".1"/".2" que puede tener en el Excel cuando una misma posición agrupa
 // más de un elemento (dos hojas de una misma ventana, etc.).
+// PATCH {obra, pagina, nombre_pagina}: renombra una página ("Planta baja",
+// "Alzado norte"...) — a pedido de Álvaro, 2026-10-02. El nombre vive en
+// su propia tabla (obras_planos_nombres) para que sobreviva cuando la
+// sincronización reemplaza las imágenes. nombre_pagina vacío lo borra.
 // POST {accion:"reemplazar_paginas", obra, paginas:[{pagina, imagen_base64}]}:
 // reemplaza las imágenes de una obra (sincronización, protegido por
 // SYNC_TOKEN). No toca las posiciones calibradas.
@@ -38,6 +42,15 @@ try {
           pagina INTEGER NOT NULL,
           imagen_base64 TEXT NOT NULL,
           actualizado_en TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (obra, pagina)
+        )
+    ");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS obras_planos_nombres (
+          obra TEXT NOT NULL,
+          pagina INTEGER NOT NULL,
+          nombre TEXT NOT NULL,
           PRIMARY KEY (obra, pagina)
         )
     ");
@@ -69,9 +82,13 @@ try {
         $posiciones = $db->prepare('SELECT posicion_base, pagina, x_pct, y_pct FROM obras_planos_posiciones WHERE obra = ?');
         $posiciones->execute([$obra]);
 
+        $nombres = $db->prepare('SELECT pagina, nombre FROM obras_planos_nombres WHERE obra = ?');
+        $nombres->execute([$obra]);
+
         Response::json([
             'paginas' => $paginas->fetchAll(),
             'posiciones' => $posiciones->fetchAll(),
+            'nombres_paginas' => $nombres->fetchAll(),
         ]);
     }
 
@@ -81,6 +98,22 @@ try {
 
         $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
         $obra = trim((string) ($body['obra'] ?? ''));
+
+        if (array_key_exists('nombre_pagina', $body)) {
+            $paginaNombre = $body['pagina'] ?? null;
+            if ($obra === '' || !is_numeric($paginaNombre)) {
+                Response::error('Faltan "obra" y/o "pagina"', 422);
+            }
+            $nombre = trim((string) $body['nombre_pagina']);
+            if ($nombre === '') {
+                $db->prepare('DELETE FROM obras_planos_nombres WHERE obra = ? AND pagina = ?')->execute([$obra, (int) $paginaNombre]);
+            } else {
+                $db->prepare('INSERT INTO obras_planos_nombres (obra, pagina, nombre) VALUES (?, ?, ?) ON CONFLICT(obra, pagina) DO UPDATE SET nombre = excluded.nombre')
+                    ->execute([$obra, (int) $paginaNombre, mb_substr($nombre, 0, 60)]);
+            }
+            Response::json(['ok' => true]);
+        }
+
         $posicionBase = trim((string) ($body['posicion_base'] ?? ''));
         $pagina = $body['pagina'] ?? null;
         $xPct = $body['x_pct'] ?? null;

@@ -17,8 +17,13 @@ import {
   confirmarMedidaObra,
   solicitarEnvioMedidasTaller,
   guardarDibujoPosicion,
+  renombrarPaginaPlano,
+  medicionObra,
+  accionMedicion,
 } from '../api/client.js'
 import NotasObraAceptada from '../components/NotasObraAceptada.jsx'
+import { GaleriaFotos, VentanaNota, VisorFoto, reducirImagen } from '../components/MedicionExtras.jsx'
+import { descargarPdfMedicion } from '../components/PdfMedicion.js'
 import DireccionContactoObra from '../components/DireccionContactoObra.jsx'
 import BitacoraObra from '../components/BitacoraObra.jsx'
 import MontajeObra from '../components/MontajeObra.jsx'
@@ -924,7 +929,7 @@ function LienzoMedicion({ posicionBase, imagenBase, puedeDibujar, onGuardarDibuj
 // para las obras donde ya se cargó a mano (hoy, únicamente José Abascal) —
 // sin él, igual se puede confirmar la medida (y todavía se puede dibujar
 // sobre un lienzo en blanco).
-function DetalleMedicionPosicion({ posicionBase, tipo, dibujoBase64, dibujoPosicionBase64, medida, puedeConfirmar, onGuardar, onGuardarDibujo, onCerrar, onAnterior, onSiguiente }) {
+function DetalleMedicionPosicion({ posicionBase, tipo, dibujoBase64, dibujoPosicionBase64, medida, puedeConfirmar, onGuardar, onGuardarDibujo, onCerrar, onAnterior, onSiguiente, fotos = [], puedeFotos = false, onSubirFoto, onEliminarFoto, onVerFoto }) {
   const [ancho, setAncho] = useState('')
   const [alto, setAlto] = useState('')
   const [comentario, setComentario] = useState('')
@@ -1035,6 +1040,8 @@ function DetalleMedicionPosicion({ posicionBase, tipo, dibujoBase64, dibujoPosic
               <p className="medicion-confirmado-por">Confirmado por {medida.confirmado_por}</p>
             )}
             {!puedeConfirmar && <p className="dashboard-nota">Solo Álvaro puede confirmar medidas de obra por ahora.</p>}
+            {/* Fotos de la posición (a pedido de Álvaro, 2026-10-02) — ver medicion_obra.php. */}
+            <GaleriaFotos fotos={fotos} puedeEditar={puedeFotos} onSubir={onSubirFoto} onEliminar={onEliminarFoto} onVer={onVerFoto} />
           </div>
         </div>
       </div>
@@ -1042,7 +1049,7 @@ function DetalleMedicionPosicion({ posicionBase, tipo, dibujoBase64, dibujoPosic
   )
 }
 
-function PlanosObra({ obra, materiales }) {
+function PlanosObra({ obra, materiales, cliente }) {
   const { accessToken, usuario } = useAuth()
   const puedeConfirmarMedida = usuario?.roles?.includes('admin')
   const [medidas, setMedidas] = useState([])
@@ -1062,6 +1069,19 @@ function PlanosObra({ obra, materiales }) {
   const [modoCalibrar, setModoCalibrar] = useState(false)
   const [posicionArmada, setPosicionArmada] = useState('')
   const [soloSinMedir, setSoloSinMedir] = useState(false)
+  // Nombres de página, notas y fotos de medición (a pedido de Álvaro,
+  // 2026-10-02) — ver planos.php (nombres) y medicion_obra.php.
+  const [nombresPaginas, setNombresPaginas] = useState(() => new Map())
+  const [editandoPagina, setEditandoPagina] = useState(null)
+  const [nombreEditado, setNombreEditado] = useState('')
+  const [notas, setNotas] = useState([])
+  const [fotos, setFotos] = useState([])
+  const [modoNota, setModoNota] = useState(false)
+  const [moviendoNota, setMoviendoNota] = useState(null)
+  const [notaAbierta, setNotaAbierta] = useState(null)
+  const [visor, setVisor] = useState(null)
+  const fotosCompletasRef = useRef(new Map())
+  const [generandoInforme, setGenerandoInforme] = useState(false)
 
   useEffect(() => {
     let cancelado = false
@@ -1075,6 +1095,7 @@ function PlanosObra({ obra, materiales }) {
         if (cancelado) return
         setPaginas(data.paginas || [])
         setPosiciones(data.posiciones || [])
+        setNombresPaginas(new Map((data.nombres_paginas || []).map((n) => [Number(n.pagina), n.nombre])))
         setPaginaActiva((data.paginas || [])[0]?.pagina || 1)
       })
       .catch((err) => !cancelado && setError(err.message))
@@ -1088,6 +1109,14 @@ function PlanosObra({ obra, materiales }) {
         setEnvioTaller(data.envio || null)
       })
       .catch(() => {}) // opcional: si falla, el plano sigue funcionando igual sin medidas/dibujos
+    medicionObra(accessToken, obra)
+      .then((data) => {
+        if (cancelado) return
+        setNotas((data.notas || []).map((n) => ({ ...n, id: Number(n.id), pagina: Number(n.pagina), numero: Number(n.numero), x_pct: Number(n.x_pct), y_pct: Number(n.y_pct) })))
+        setFotos((data.fotos || []).map((f) => ({ ...f, id: Number(f.id) })))
+      })
+      .catch(() => {}) // opcional, igual que las medidas
+    fotosCompletasRef.current = new Map()
     return () => {
       cancelado = true
     }
@@ -1212,11 +1241,165 @@ function PlanosObra({ obra, materiales }) {
     }
   }
 
+  // --- Nombres de página ---
+  async function guardarNombrePagina(pagina) {
+    const nombre = nombreEditado.trim()
+    setEditandoPagina(null)
+    const anteriores = nombresPaginas
+    setNombresPaginas((prev) => {
+      const n = new Map(prev)
+      if (nombre) n.set(pagina, nombre)
+      else n.delete(pagina)
+      return n
+    })
+    try {
+      await renombrarPaginaPlano(accessToken, obra, pagina, nombre)
+    } catch (err) {
+      setNombresPaginas(anteriores)
+      setError(err.message)
+    }
+  }
+
+  // --- Fotos (de una nota o de una posición) ---
+  async function subirFoto(refTipo, ref, archivo) {
+    const reducida = await reducirImagen(archivo)
+    const r = await accionMedicion(accessToken, 'POST', 'agregar_foto', {
+      obra, ref_tipo: refTipo, ref: String(ref), archivo_base64: reducida.archivo, miniatura_base64: reducida.miniatura, tipo_mime: 'image/jpeg', nombre: reducida.nombre,
+    })
+    const foto = { ...r.foto, id: Number(r.foto.id) }
+    fotosCompletasRef.current.set(foto.id, reducida.archivo)
+    setFotos((prev) => [...prev, foto])
+  }
+
+  async function eliminarFoto(id) {
+    const anteriores = fotos
+    setFotos((prev) => prev.filter((f) => f.id !== id))
+    try {
+      await accionMedicion(accessToken, 'DELETE', 'eliminar_foto', { id })
+    } catch (err) {
+      setFotos(anteriores)
+      setError(err.message)
+    }
+  }
+
+  // Trae las fotos grandes (una sola vez) para el visor y el informe.
+  async function cargarFotosCompletas() {
+    const faltan = fotos.some((f) => !fotosCompletasRef.current.has(f.id))
+    if (faltan) {
+      const data = await medicionObra(accessToken, obra, true)
+      for (const f of data.fotos || []) fotosCompletasRef.current.set(Number(f.id), f.archivo_base64)
+    }
+    return fotosCompletasRef.current
+  }
+
+  async function verFoto(foto) {
+    const yaEsta = fotosCompletasRef.current.get(foto.id)
+    if (yaEsta) { setVisor({ src: yaEsta }); return }
+    setVisor({ src: foto.miniatura_base64, cargando: true })
+    try {
+      const mapa = await cargarFotosCompletas()
+      setVisor({ src: mapa.get(foto.id) || foto.miniatura_base64 })
+    } catch {
+      setVisor({ src: foto.miniatura_base64 })
+    }
+  }
+
+  // --- Notas ---
+  async function actualizarNota(id, cambios) {
+    const r = await accionMedicion(accessToken, 'PATCH', 'actualizar_nota', { id, ...cambios })
+    const n = r.nota
+    setNotas((prev) => prev.map((x) => (x.id === id ? { ...n, id: Number(n.id), pagina: Number(n.pagina), numero: Number(n.numero), x_pct: Number(n.x_pct), y_pct: Number(n.y_pct) } : x)))
+  }
+
+  async function eliminarNota(id) {
+    await accionMedicion(accessToken, 'DELETE', 'eliminar_nota', { id })
+    setNotas((prev) => prev.filter((x) => x.id !== id))
+    setFotos((prev) => prev.filter((f) => !(f.ref_tipo === 'nota' && String(f.ref) === String(id))))
+    setNotaAbierta(null)
+  }
+
+  // --- Informe de medición (PDF) ---
+  // Medida de proyecto por posición: columnas "Ancho Proy." / "Alto Proy."
+  // del MEDYSEG (extra_campos de seguimiento de materiales).
+  const proyectoPorPosicion = useMemo(() => {
+    const mapa = new Map()
+    for (const m of materiales) {
+      const base = posicionBaseDe(m.posicion)
+      if (!base || !m.extra_campos) continue
+      let extra
+      try { extra = typeof m.extra_campos === 'string' ? JSON.parse(m.extra_campos) : m.extra_campos } catch { continue }
+      const clave = (re) => Object.keys(extra).find((k) => re.test(k))
+      const ancho = Number(extra[clave(/ancho\s*proy/i)])
+      const alto = Number(extra[clave(/alto\s*proy/i)])
+      const actual = mapa.get(base) || {}
+      mapa.set(base, { ancho: actual.ancho > 0 ? actual.ancho : (ancho > 0 ? ancho : null), alto: actual.alto > 0 ? actual.alto : (alto > 0 ? alto : null) })
+    }
+    return mapa
+  }, [materiales])
+
+  async function generarInforme() {
+    setGenerandoInforme(true)
+    setError('')
+    try {
+      const completas = await cargarFotosCompletas()
+      await descargarPdfMedicion({
+        obra,
+        cliente,
+        paginas,
+        nombresPaginas,
+        posiciones,
+        posicionesBase,
+        tipoPorPosicion: tipoPorPosicionBase,
+        proyecto: proyectoPorPosicion,
+        medidas: medidasPorPosicion,
+        dibujoDe: (pos) => dibujosPorPosicion[pos] || dibujosPorTipo[normalizarTipoDibujo(tipoPorPosicionBase.get(pos))] || null,
+        notas,
+        fotos: fotos.map((f) => ({ ...f, archivo_base64: completas.get(f.id) })),
+      })
+    } catch (err) {
+      setError(`No se pudo generar el informe: ${err.message}`)
+    } finally {
+      setGenerandoInforme(false)
+    }
+  }
+
+  // --- Subir fotos a Drive (opcional): marca las pendientes; las sube la
+  // próxima sincronización. ---
+  const fotosSinSubir = fotos.filter((f) => f.drive_estado !== 'subida')
+  async function solicitarDrive() {
+    try {
+      await accionMedicion(accessToken, 'PATCH', 'solicitar_drive', { obra })
+      setFotos((prev) => prev.map((f) => (f.drive_estado === 'subida' ? f : { ...f, drive_estado: 'pendiente' })))
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
   async function handleClickImagen(e) {
-    if (!modoCalibrar || !posicionArmada) return
     const rect = e.currentTarget.getBoundingClientRect()
     const xPct = ((e.clientX - rect.left) / rect.width) * 100
     const yPct = ((e.clientY - rect.top) / rect.height) * 100
+    // Mover una nota existente al punto pulsado.
+    if (moviendoNota) {
+      const id = moviendoNota
+      setMoviendoNota(null)
+      try { await actualizarNota(id, { pagina: paginaActiva, x_pct: xPct, y_pct: yPct }) } catch (err) { setError(err.message) }
+      return
+    }
+    // Crear una nota nueva en el punto pulsado y abrirla.
+    if (modoNota) {
+      try {
+        const r = await accionMedicion(accessToken, 'POST', 'agregar_nota', { obra, pagina: paginaActiva, x_pct: xPct, y_pct: yPct, texto: '' })
+        const n = { ...r.nota, id: Number(r.nota.id), pagina: Number(r.nota.pagina), numero: Number(r.nota.numero), x_pct: Number(r.nota.x_pct), y_pct: Number(r.nota.y_pct) }
+        setNotas((prev) => [...prev, n])
+        setModoNota(false)
+        setNotaAbierta(n.id)
+      } catch (err) {
+        setError(err.message)
+      }
+      return
+    }
+    if (!modoCalibrar || !posicionArmada) return
     const posicionGuardada = posicionArmada
     try {
       await guardarPosicionPlano(accessToken, obra, posicionGuardada, paginaActiva, xPct, yPct)
@@ -1240,22 +1423,49 @@ function PlanosObra({ obra, materiales }) {
   }
 
   if (cargando) return <p className="dashboard-nota">Cargando planos…</p>
-  if (error) return <div className="auth-error">{error}</div>
+  // Sin planos cargados, el error (si lo hay) es lo único que mostrar; con
+  // planos, se muestra como aviso arriba sin tapar el plano (ej. un fallo al
+  // guardar una nota o una foto no debe hacer desaparecer la vista).
+  if (error && paginas.length === 0) return <div className="auth-error">{error}</div>
   if (paginas.length === 0) return <p className="dashboard-nota">Todavía no hay planos sincronizados para esta obra.</p>
 
   return (
     <div className="planos-obra">
+      {error && (
+        <div className="auth-error planos-error">
+          {error} <button type="button" className="btn-secundario" onClick={() => setError('')}>OK</button>
+        </div>
+      )}
       <div className="planos-barra">
         <div className="seguimiento-pestanas">
           {paginas.map((p) => (
-            <button
-              key={p.pagina}
-              type="button"
-              className={`seguimiento-pestana ${p.pagina === paginaActiva ? 'seguimiento-pestana-activa' : ''}`}
-              onClick={() => setPaginaActiva(p.pagina)}
-            >
-              Página {p.pagina}
-            </button>
+            editandoPagina === p.pagina ? (
+              <input
+                key={p.pagina}
+                autoFocus
+                className="input-filtro planos-nombre-pagina"
+                value={nombreEditado}
+                placeholder={`Página ${p.pagina}`}
+                onChange={(e) => setNombreEditado(e.target.value)}
+                onBlur={() => guardarNombrePagina(p.pagina)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur()
+                  if (e.key === 'Escape') setEditandoPagina(null)
+                }}
+              />
+            ) : (
+              <span key={p.pagina} className="planos-pestana-con-nombre">
+                <button
+                  type="button"
+                  className={`seguimiento-pestana ${p.pagina === paginaActiva ? 'seguimiento-pestana-activa' : ''}`}
+                  onClick={() => setPaginaActiva(p.pagina)}
+                >
+                  {nombresPaginas.get(p.pagina) || `Página ${p.pagina}`}
+                </button>
+                <button type="button" className="planos-renombrar" title="Cambiar el nombre de la página"
+                  onClick={() => { setEditandoPagina(p.pagina); setNombreEditado(nombresPaginas.get(p.pagina) || '') }}>✎</button>
+              </span>
+            )
           ))}
         </div>
         <div className="planos-material-toggle">
@@ -1289,6 +1499,28 @@ function PlanosObra({ obra, materiales }) {
           <input type="checkbox" checked={soloSinMedir} onChange={(e) => setSoloSinMedir(e.target.checked)} />
           Ver solo sin medir
         </label>
+        <button type="button" className={`btn-secundario${modoNota ? ' planos-boton-activo' : ''}`}
+          onClick={() => { setModoNota((v) => !v); setModoCalibrar(false); setMoviendoNota(null) }}>
+          📌 {modoNota ? 'Pulsa en el plano…' : 'Añadir nota'}
+        </button>
+        <button type="button" className="btn-secundario" disabled={generandoInforme} onClick={generarInforme}>
+          {generandoInforme ? 'Generando…' : '📄 Informe de medición'}
+        </button>
+        {fotos.length > 0 && (
+          <span className="planos-drive">
+            <button type="button" className="btn-secundario" onClick={solicitarDrive} disabled={fotosSinSubir.every((f) => f.drive_estado === 'pendiente')}
+              title="Opcional: sube las fotos de medición a Drive en la próxima sincronización">
+              ☁ Subir fotos a Drive
+            </button>
+            <span className="planos-enviar-taller-estado">
+              {fotosSinSubir.length === 0
+                ? 'Todas las fotos están en Drive'
+                : fotosSinSubir.some((f) => f.drive_estado === 'pendiente')
+                  ? `${fotosSinSubir.filter((f) => f.drive_estado === 'pendiente').length} pendiente(s) — se suben en la próxima sincronización`
+                  : `${fotosSinSubir.length} sin subir`}
+            </span>
+          </span>
+        )}
         <div className="planos-enviar-taller">
           <span className="planos-medidas-contador">
             📐 Medidas: {posicionesMedidas.size}/{posicionesBase.length}
@@ -1320,6 +1552,13 @@ function PlanosObra({ obra, materiales }) {
         <span className="planos-leyenda-item planos-leyenda-medida-no">? Falta medir</span>
       </div>
 
+      {(modoNota || moviendoNota) && (
+        <div className="planos-aviso-nota">
+          {moviendoNota ? 'Pulsa en el plano el nuevo lugar de la nota.' : 'Pulsa en el plano donde quieres poner la nota.'}
+          <button type="button" className="btn-secundario" onClick={() => { setModoNota(false); setMoviendoNota(null) }}>Cancelar</button>
+        </div>
+      )}
+
       {modoCalibrar && (
         <div className="planos-calibrar-panel">
           <p className="dashboard-nota">
@@ -1348,9 +1587,24 @@ function PlanosObra({ obra, materiales }) {
         <div
           className="planos-lienzo"
           onClick={handleClickImagen}
-          style={{ cursor: modoCalibrar && posicionArmada ? 'crosshair' : 'default' }}
+          style={{ cursor: (modoCalibrar && posicionArmada) || modoNota || moviendoNota ? 'crosshair' : 'default' }}
         >
           <img src={paginaImagen.imagen_base64} alt={`Plano página ${paginaActiva}`} draggable={false} />
+          {notas.filter((n) => n.pagina === paginaActiva).map((n) => {
+            const cuantas = fotos.filter((f) => f.ref_tipo === 'nota' && String(f.ref) === String(n.id)).length
+            return (
+              <button
+                key={`nota-${n.id}`}
+                type="button"
+                className="planos-nota-marca"
+                style={{ left: `${n.x_pct}%`, top: `${n.y_pct}%` }}
+                title={`N${n.numero}${n.texto ? ` — ${n.texto}` : ''}${cuantas ? ` (${cuantas} foto${cuantas === 1 ? '' : 's'})` : ''}`}
+                onClick={(e) => { e.stopPropagation(); if (!modoNota && !moviendoNota) setNotaAbierta(n.id) }}
+              >
+                N{n.numero}{cuantas > 0 && <span className="planos-nota-fotos">📷</span>}
+              </button>
+            )
+          })}
           {posicionesDeEstaPaginaAMostrar.map((p) => {
             // "Medir" pisa a los otros dos si por algún motivo coincidieran
             // (no debería pasar, son valores de Estado mutuamente
@@ -1424,8 +1678,34 @@ function PlanosObra({ obra, materiales }) {
           onCerrar={() => setPosicionSeleccionada(null)}
           onAnterior={() => moverSeleccion(-1)}
           onSiguiente={() => moverSeleccion(1)}
+          fotos={fotos.filter((f) => f.ref_tipo === 'posicion' && String(f.ref) === String(posicionSeleccionada))}
+          puedeFotos
+          onSubirFoto={(archivo) => subirFoto('posicion', posicionSeleccionada, archivo)}
+          onEliminarFoto={eliminarFoto}
+          onVerFoto={verFoto}
         />
       )}
+
+      {notaAbierta && notas.find((n) => n.id === notaAbierta) && (() => {
+        const nota = notas.find((n) => n.id === notaAbierta)
+        return (
+          <VentanaNota
+            key={nota.id}
+            nota={nota}
+            fotos={fotos.filter((f) => f.ref_tipo === 'nota' && String(f.ref) === String(nota.id))}
+            puedeEditar
+            onGuardarTexto={(texto) => actualizarNota(nota.id, { texto }).catch((err) => setError(err.message))}
+            onEliminar={() => eliminarNota(nota.id).catch((err) => setError(err.message))}
+            onMover={() => { setNotaAbierta(null); setModoNota(false); setMoviendoNota(nota.id); setPaginaActiva(nota.pagina) }}
+            onSubirFoto={(archivo) => subirFoto('nota', nota.id, archivo)}
+            onEliminarFoto={eliminarFoto}
+            onVerFoto={verFoto}
+            onCerrar={() => setNotaAbierta(null)}
+          />
+        )
+      })()}
+
+      {visor && <VisorFoto src={visor.src} cargando={visor.cargando} onCerrar={() => setVisor(null)} />}
     </div>
   )
 }
@@ -1713,7 +1993,7 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, direccio
           filtroInicial={filtroInicialSeguimiento}
         />
       )}
-      {pestana === 'Planos' && <PlanosObra obra={presupuesto.obra} materiales={materiales} />}
+      {pestana === 'Planos' && <PlanosObra obra={presupuesto.obra} materiales={materiales} cliente={presupuesto.cliente} />}
       {pestana === 'Montaje' && <MontajeObra obra={presupuesto.obra} accessToken={accessToken} />}
       {pestana === 'Facturación' && <FacturacionObra obra={presupuesto.obra} accessToken={accessToken} />}
       {pestana === 'Bitácora' && (

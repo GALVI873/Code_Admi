@@ -10,38 +10,7 @@
 // facturas del panel (ver FacturacionObra.jsx) — logo de GALVI, fuente
 // Carlito, turquesa corporativo #21AEB1 y gris #808080, con los datos de la
 // empresa en la cabecera y en el pie.
-import logoGalvi from '../assets/logo_galvi_factura.png'
-import carlitoRegularUrl from '../assets/carlito-regular.ttf'
-import carlitoBoldUrl from '../assets/carlito-bold.ttf'
-
-const TEAL = [0x21, 0xae, 0xb1]
-const TEAL_SUAVE = [224, 244, 244]
-const TEAL_OSCURO = [20, 110, 112]
-const GRIS = [0x80, 0x80, 0x80]
-const TEXTO = [60, 60, 60]
-const EMPRESA = 'Gestión de Aluminio y Vidrio, S.L.'
-const PIE = 'GALVI · C/Juan Ramón Jiménez, 2 - Bajo 1 · 28036 Madrid · Tlf: 91 344 04 62 · administracion@galvi.es'
-
-function arrayBufferABase64(buffer) {
-  const bytes = new Uint8Array(buffer)
-  let binario = ''
-  for (let i = 0; i < bytes.length; i += 0x8000) binario += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-  return btoa(binario)
-}
-
-async function prepararMarca(doc) {
-  const [regular, negrita, logo] = await Promise.all([
-    fetch(carlitoRegularUrl).then((r) => r.arrayBuffer()),
-    fetch(carlitoBoldUrl).then((r) => r.arrayBuffer()),
-    fetch(logoGalvi).then((r) => r.arrayBuffer()),
-  ])
-  doc.addFileToVFS('Carlito-Regular.ttf', arrayBufferABase64(regular))
-  doc.addFont('Carlito-Regular.ttf', 'Carlito', 'normal')
-  doc.addFileToVFS('Carlito-Bold.ttf', arrayBufferABase64(negrita))
-  doc.addFont('Carlito-Bold.ttf', 'Carlito', 'bold')
-  doc.setFont('Carlito', 'normal')
-  return `data:image/png;base64,${arrayBufferABase64(logo)}`
-}
+import { TEAL, TEAL_SUAVE, TEAL_OSCURO, GRIS, TEXTO, EMPRESA, prepararMarca, pieCorporativo } from './PdfMarca.js'
 
 const MS_DIA = 86400000
 const LETRAS = ['D', 'L', 'M', 'X', 'J', 'V', 'S']
@@ -110,7 +79,6 @@ export async function descargarPdfPrioridades(datos, { verTerminadas = true, fil
   const doc = new jsPDF({ unit: 'mm', format: 'a3', orientation: 'landscape' })
   const logo = await prepararMarca(doc)
   const anchoPagina = doc.internal.pageSize.getWidth()
-  const altoPagina = doc.internal.pageSize.getHeight()
   const margen = 12
   const anchosFijos = [26, 24, 92, 32, 18, 14, 14]
   const anchoDias = anchoPagina - margen * 2 - anchosFijos.reduce((a, b) => a + b, 0)
@@ -255,19 +223,6 @@ export async function descargarPdfPrioridades(datos, { verTerminadas = true, fil
     },
   })
 
-  // Pie corporativo en todas las páginas: línea turquesa, datos de la
-  // empresa y número de página.
-  const paginas = doc.getNumberOfPages()
-  for (let i = 1; i <= paginas; i++) {
-    doc.setPage(i)
-    doc.setDrawColor(...TEAL)
-    doc.setLineWidth(0.4)
-    doc.line(margen, altoPagina - 11, anchoPagina - margen, altoPagina - 11)
-    doc.setFont('Carlito', 'normal')
-    doc.setFontSize(8)
-    doc.setTextColor(...GRIS)
-    doc.text(PIE, margen, altoPagina - 6.5)
-    doc.text(`Página ${i} de ${paginas}`, anchoPagina - margen, altoPagina - 6.5, { align: 'right' })
-  }
+  pieCorporativo(doc, margen)
   doc.save(`Cronograma_Prioridades_${hoyIso()}${filtro ? '_filtrado' : ''}.pdf`)
 }

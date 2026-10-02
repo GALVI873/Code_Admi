@@ -87,7 +87,11 @@ function extraerMateriales(rutaArchivo) {
   // misma fila, para no perder columnas reales de la obra solo porque no
   // coincide el nombre exacto que se esperaba como límite.
   const iAnchoProy = col(/ancho\s*proy/i);
-  const limiteColumnas = iAnchoProy !== -1 ? iAnchoProy : header.length - 1;
+  // "Alto Proy." va justo después de "Ancho Proy." en la plantilla — se
+  // incluye también (a pedido de Álvaro, 2026-10-02: el informe de medición
+  // compara la medida de proyecto, ancho Y alto, con la real).
+  const iAltoProy = col(/alto\s*proy/i);
+  const limiteColumnas = iAnchoProy !== -1 ? Math.max(iAnchoProy, iAltoProy) : header.length - 1;
   const columnasExtra = [];
   for (let c = 0; c <= limiteColumnas; c++) {
     const nombre = normalizarValor(header[c]);

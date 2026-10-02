@@ -5295,3 +5295,139 @@ select.celda-editable-material {
 .plan-menu-opcion:hover { background: #f2f6fb; }
 .plan-menu-opcion .plan-chip { width: 100%; font-size: 12.5px; padding: 4px 12px; }
 .plan-menu-quitar { font-size: 12px; color: #7a8699; padding: 6px 8px; border-top: 1px solid #eef1f5; border-radius: 0; }
+
+/* ---------------------------------------------------------------------
+   Planos: nombre de páginas, notas y fotos de medición (a pedido de
+   Álvaro, 2026-10-02) — ver MedicionExtras.jsx y PlanosObra.
+   --------------------------------------------------------------------- */
+.planos-error { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+
+.planos-pestana-con-nombre { display: inline-flex; align-items: center; gap: 2px; }
+
+.planos-renombrar {
+  border: none;
+  background: none;
+  color: #9aa6b5;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.planos-renombrar:hover { color: var(--azul-med); }
+
+.planos-nombre-pagina {
+  flex: none !important;
+  width: 170px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 14px;
+  font-size: 12.5px;
+}
+
+.planos-boton-activo { background: #fdebd8; border-color: #f0b27a; color: #a04f12; font-weight: 700; }
+
+.planos-drive { display: inline-flex; align-items: center; gap: 8px; }
+
+.planos-aviso-nota {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: #fdebd8;
+  color: #a04f12;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.planos-aviso-nota .btn-secundario { padding: 4px 10px; font-size: 12px; }
+
+.planos-nota-marca {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 7px;
+  border: 2px solid white;
+  border-radius: 6px;
+  background: #146e70;
+  color: white;
+  font-size: 11.5px;
+  font-weight: 800;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+  cursor: pointer;
+}
+
+.planos-nota-marca:hover { background: #0e5557; }
+.planos-nota-fotos { font-size: 10px; }
+
+/* Galería de fotos (notas y posiciones) */
+.medicion-fotos { margin-top: 12px; }
+
+.medicion-fotos-encabezado { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.medicion-fotos-titulo { font-size: 11px; font-weight: 700; color: #7a8699; text-transform: uppercase; letter-spacing: .03em; }
+.medicion-fotos-vacio { margin-top: 0; }
+
+.medicion-fotos-grilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+
+.medicion-foto { position: relative; }
+
+.medicion-foto-boton {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  padding: 0;
+  border: 1px solid #e3e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f7f9fc;
+  cursor: zoom-in;
+}
+
+.medicion-foto-boton img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.medicion-foto-quitar {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .55);
+  color: white;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.medicion-visor {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 20, 30, .85);
+}
+
+.medicion-visor img { max-width: 94vw; max-height: 90vh; border-radius: 6px; box-shadow: 0 8px 30px rgba(0, 0, 0, .5); }
+.medicion-visor-cargando { color: white; font-size: 15px; }
+
+.medicion-visor-cerrar {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  border: none;
+  background: none;
+  color: white;
+  font-size: 26px;
+  cursor: pointer;
+}
+
+.medicion-nota-caja { max-width: 560px; }
+.medicion-nota-numero { display: inline-block; margin-right: 6px; padding: 1px 8px; border-radius: 6px; background: #146e70; color: white; font-size: 14px; }
+.medicion-nota-etiqueta { display: block; margin: 8px 0 4px; font-size: 11px; font-weight: 700; color: #7a8699; text-transform: uppercase; letter-spacing: .03em; }
+.medicion-nota-acciones { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; }

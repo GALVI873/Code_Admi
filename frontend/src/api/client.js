@@ -600,3 +600,27 @@ export function accionPrioridades(accessToken, method, accion, datos = {}) {
     body: JSON.stringify({ accion, ...datos }),
   })
 }
+
+// Nombre de una página del plano ("" lo borra) — ver planos.php.
+export function renombrarPaginaPlano(accessToken, obra, pagina, nombre) {
+  return request('/planos.php', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ obra, pagina, nombre_pagina: nombre }),
+  })
+}
+
+// Notas y fotos de medición sobre el plano — ver medicion_obra.php.
+export function medicionObra(accessToken, obra, fotosCompletas = false) {
+  return request(`/medicion_obra.php?obra=${encodeURIComponent(obra)}${fotosCompletas ? '&fotos_completas=1' : ''}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
+export function accionMedicion(accessToken, method, accion, datos = {}) {
+  return request('/medicion_obra.php', {
+    method,
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ accion, ...datos }),
+  })
+}
