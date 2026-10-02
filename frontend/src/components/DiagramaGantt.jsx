@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 
 // Diagrama de Gantt interactivo (Planificación e Inicio) — a pedido de
 // Álvaro, 2026-09-29, para reemplazar la línea de tiempo de Notion. Hecho a
@@ -25,6 +25,12 @@ import { useEffect, useRef, useState } from 'react'
 // hacia adelante, "◀ 15/09" hacia atrás) que lleva a la fecha de inicio de
 // la más cercana; y una barra cortada por la izquierda lleva un "◀" para ir
 // a su inicio.
+//
+// onDesplazar(dias) (a pedido de Álvaro, 2026-10-02): al arrastrar una
+// barra hasta el borde derecho/izquierdo, primero se desplaza la zona con
+// scroll y, si ya no hay más, se le pide a la página que corra la vista
+// "dias" días; la barra sigue bajo el puntero, así una obra se puede llevar
+// a cualquier fecha sin soltarla.
 // Las fechas son 'AAAA-MM-DD'; fin null = un solo día. Dentro de una fila,
 // las barras que se pisan se apilan en carriles; con marcarSolapes además
 // se les pone borde rojo (ej. un montador con dos obras el mismo día).
@@ -96,9 +102,12 @@ function asignarCarriles(barras) {
 // disponible entre los días visibles (nunca menos que anchoDia) — a pedido
 // de Álvaro (2026-10-01) para el Gantt semanal de Inicio, que dejaba
 // espacio vacío a la derecha. Se recalcula si cambia el tamaño de ventana.
-export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPedido, editable = false, onMoverBarra, onClickBarra, vacio, anchoEtiqueta = 230, encabezadoEtiqueta = null, llenarAncho = false, cambiarFila = false, onIrAFecha = null }) {
+export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPedido, editable = false, onMoverBarra, onClickBarra, vacio, anchoEtiqueta = 230, encabezadoEtiqueta = null, llenarAncho = false, cambiarFila = false, onIrAFecha = null, onDesplazar = null }) {
   const [arrastre, setArrastre] = useState(null)
   const contenedorRef = useRef(null)
+  const scrollRef = useRef(null)
+  const autoRef = useRef(null)
+  const anchoDiaRef = useRef(0)
   const [anchoContenedor, setAnchoContenedor] = useState(0)
 
   useEffect(() => {
@@ -111,6 +120,9 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
   const anchoDia = llenarAncho && anchoContenedor
     ? Math.max(anchoDiaPedido, Math.floor((anchoContenedor - anchoEtiqueta - 2) / dias))
     : anchoDiaPedido
+  anchoDiaRef.current = anchoDia
+
+  useEffect(() => () => clearInterval(autoRef.current), [])
   const arrastreRef = useRef(null)
 
   const inicioVentana = diaANumero(desde)
@@ -147,17 +159,57 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
   function handlePointerDown(e, barra, modo, filaId) {
     if (e.button !== 0) return
     e.stopPropagation()
-    const estado = { id: barra.id, modo, x0: e.clientX, y0: e.clientY, delta: 0, movio: false, barra, filaOrigen: filaId, filaDestino: null }
+    const estado = { id: barra.id, modo, x0: e.clientX, y0: e.clientY, xActual: e.clientX, delta: 0, movio: false, barra, filaOrigen: filaId, filaDestino: null, scrollPx: 0, diasCorridos: 0, dirAuto: 0 }
     arrastreRef.current = estado
     if (!editable) return
     e.currentTarget.setPointerCapture?.(e.pointerId)
     setArrastre(estado)
   }
 
+  // Delta en días de un arrastre: lo que se movió el puntero + lo que se
+  // desplazó la zona con scroll + los días que se corrió la vista.
+  function calcularDelta(estado) {
+    return Math.round((estado.xActual - estado.x0 + estado.scrollPx) / anchoDiaRef.current) + estado.diasCorridos
+  }
+
+  function pararAuto() {
+    clearInterval(autoRef.current)
+    autoRef.current = null
+  }
+
+  // Desplazamiento automático al arrastrar cerca de un borde.
+  function revisarAuto(estado) {
+    const zona = scrollRef.current
+    if (!zona || !estado.movio) return
+    const r = zona.getBoundingClientRect()
+    const margen = 40
+    const dir = estado.xActual > r.right - margen ? 1 : estado.xActual < r.left + anchoEtiqueta + margen ? -1 : 0
+    if (dir === estado.dirAuto) return
+    estado.dirAuto = dir
+    pararAuto()
+    if (!dir) return
+    autoRef.current = setInterval(() => {
+      const actual = arrastreRef.current
+      if (!actual) { pararAuto(); return }
+      const paso = anchoDiaRef.current
+      const antes = zona.scrollLeft
+      zona.scrollLeft = antes + dir * paso
+      const movido = zona.scrollLeft - antes
+      if (movido !== 0) actual.scrollPx += movido
+      else if (onDesplazar) {
+        actual.diasCorridos += dir
+        onDesplazar(dir)
+      } else return
+      actual.delta = calcularDelta(actual)
+      setArrastre({ ...actual })
+    }, 130)
+  }
+
   function handlePointerMove(e) {
     const estado = arrastreRef.current
     if (!estado || !editable) return
-    const delta = Math.round((e.clientX - estado.x0) / anchoDia)
+    estado.xActual = e.clientX
+    const delta = calcularDelta(estado)
     if (Math.abs(e.clientX - estado.x0) > 3 || Math.abs(e.clientY - estado.y0) > 3) estado.movio = true
     let destino = null
     if (cambiarFila && estado.modo === 'mover' && Math.abs(e.clientY - estado.y0) > 8) {
@@ -169,9 +221,11 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
       estado.filaDestino = destino
       setArrastre({ ...estado })
     }
+    revisarAuto(estado)
   }
 
   function handlePointerUp(e) {
+    pararAuto()
     const estado = arrastreRef.current
     arrastreRef.current = null
     setArrastre(null)
@@ -203,7 +257,7 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
 
   return (
     <div className="gantt" ref={contenedorRef}>
-      <div className="gantt-scroll" onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}>
+      <div className="gantt-scroll" ref={scrollRef} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}>
         <div className="gantt-lienzo" style={{ width: anchoEtiqueta + anchoTotal }}>
           <div className="gantt-encabezado">
             <div className="gantt-etiqueta gantt-etiqueta-encabezado" style={{ width: anchoEtiqueta, flexBasis: anchoEtiqueta }}>{encabezadoEtiqueta}</div>
@@ -281,13 +335,24 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
                     const finVisible = Math.min(fin, finVentana)
                     const solapada = fila.marcarSolapes && fila.conSolape.has(b.id)
                     const enArrastre = arrastre?.id === b.id
+                    // Barra demasiado corta para su texto (ej. 1 día en vista Mes):
+                    // el nombre se muestra al lado, a la derecha — a pedido de
+                    // Álvaro, 2026-10-02.
+                    const izquierda = (iniVisible - inicioVentana) * anchoDia + 1
+                    const ancho = (finVisible - iniVisible + 1) * anchoDia - 2
+                    const textoFuera = !enArrastre && b.texto && ancho < String(b.texto).length * 6.6 + 18
                     return (
+                      <Fragment key={b.id}>
+                      {textoFuera && (
+                        <span className="gantt-barra-texto-fuera" style={{ left: izquierda + ancho + 4, top: SEPARACION + b._carril * (ALTO_BARRA + SEPARACION), height: ALTO_BARRA }}>
+                          {b.texto}
+                        </span>
+                      )}
                       <div
-                        key={b.id}
                         className={`gantt-barra${b.clase ? ` ${b.clase}` : ''}${b.atenuada ? ' gantt-barra-atenuada' : ''}${solapada ? ' gantt-barra-solape' : ''}${editable ? ' gantt-barra-editable' : ''}${enArrastre ? ' gantt-barra-arrastrando' : ''}`}
                         style={{
-                          left: (iniVisible - inicioVentana) * anchoDia + 1,
-                          width: (finVisible - iniVisible + 1) * anchoDia - 2,
+                          left: izquierda,
+                          width: ancho,
                           top: SEPARACION + b._carril * (ALTO_BARRA + SEPARACION),
                           height: ALTO_BARRA,
                           background: b.color,
@@ -301,10 +366,11 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
                         )}
                         {editable && !b.soloMover && b._ini >= inicioVentana && <span className="gantt-barra-borde gantt-barra-borde-ini" onPointerDown={(e) => handlePointerDown(e, b, 'inicio')} />}
                         <span className="gantt-barra-texto">
-                          {enArrastre ? `${formatoCorto(numeroADia(ini))} → ${formatoCorto(numeroADia(fin))}` : b.texto}
+                          {enArrastre ? `${formatoCorto(numeroADia(ini))} → ${formatoCorto(numeroADia(fin))}` : textoFuera ? '' : b.texto}
                         </span>
                         {editable && !b.soloMover && <span className="gantt-barra-borde gantt-barra-borde-fin" onPointerDown={(e) => handlePointerDown(e, b, 'fin')} />}
                       </div>
+                      </Fragment>
                     )
                   })}
                 </div>

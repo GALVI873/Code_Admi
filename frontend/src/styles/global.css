@@ -4166,9 +4166,13 @@ select.celda-editable-material {
   margin-bottom: 18px;
 }
 
+/* Alto máximo con desplazamiento propio (a pedido de Álvaro, 2026-10-02):
+   así la cabecera de fechas (sticky top) y la columna de nombres (sticky
+   left) quedan siempre a la vista al bajar o desplazarse a los lados. */
 .gantt-scroll {
-  overflow-x: auto;
-  touch-action: pan-y;
+  overflow: auto;
+  max-height: calc(100vh - 150px);
+  touch-action: pan-x pan-y;
 }
 
 .gantt-lienzo { position: relative; }
@@ -5201,3 +5205,93 @@ select.celda-editable-material {
 }
 
 .plan-aviso-fijadas .btn-secundario { padding: 4px 10px; font-size: 12px; }
+
+/* Cabecera fija: la esquina (etiqueta del encabezado) por encima de todo. */
+.gantt-encabezado .gantt-etiqueta-encabezado { z-index: 4; }
+
+/* Nombre al lado de una barra demasiado corta (2026-10-02). */
+.gantt-barra-texto-fuera {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3b4a5c;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Varios ayudantes en la ficha del montaje (2026-10-02). */
+.plan-ayudantes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #7a8699;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+.plan-ayudantes-chips { display: flex; flex-wrap: wrap; gap: 6px; text-transform: none; letter-spacing: normal; }
+
+.plan-ayudante-chip {
+  padding: 4px 12px;
+  border: 1px solid #dfe6e9;
+  border-radius: 14px;
+  background: white;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #4a5563;
+  cursor: pointer;
+}
+
+.plan-ayudante-chip-activo { background: #c6e9cc; border-color: #8fcf9a; color: #24613a; }
+
+.plan-ayudantes-nuevo { display: flex; gap: 6px; text-transform: none; letter-spacing: normal; }
+.plan-ayudantes-nuevo .input-filtro { flex: 1 !important; height: 34px; padding: 0 10px; font-weight: 400; }
+.plan-ayudantes-nuevo .btn-secundario { height: 34px; flex: none; }
+
+/* Situación del Cronograma: etiqueta pulsable + mini menú (2026-10-02). */
+.plan-chip-boton-situacion {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.plan-chip-boton-situacion:hover .plan-chip { box-shadow: 0 0 0 2px rgba(47, 97, 144, .35); }
+.plan-chip-flecha { font-size: 10px; color: #7a8699; }
+.plan-chip-vacio { background: #eef1f5; color: #7a8699; font-weight: 600; }
+
+.plan-menu-fondo { position: fixed; inset: 0; z-index: 60; }
+
+.plan-menu-situacion {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: white;
+  border: 1px solid #e3e8f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .15);
+}
+
+.plan-menu-opcion {
+  display: flex;
+  padding: 3px 4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plan-menu-opcion:hover { background: #f2f6fb; }
+.plan-menu-opcion .plan-chip { width: 100%; font-size: 12.5px; padding: 4px 12px; }
+.plan-menu-quitar { font-size: 12px; color: #7a8699; padding: 6px 8px; border-top: 1px solid #eef1f5; border-radius: 0; }

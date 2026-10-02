@@ -161,6 +161,57 @@ function SelectPersona({ etiqueta, rol, valor, personas, onCambio, onCrear }) {
   )
 }
 
+// Ayudantes de un montaje: varios a la vez (a pedido de Álvaro, 2026-10-02).
+// Una etiqueta por cada ayudante de la lista (montaje_personas, rol
+// ayudante) que se marca/desmarca, más un campo visible para sumar a
+// alguien nuevo a la lista. Se guarda como texto "German, Ivan".
+function SelectorAyudantes({ valor, personas, onCambio, onCrear }) {
+  const elegidos = String(valor || '').split(',').map((x) => x.trim()).filter(Boolean)
+  const lista = personas.filter((x) => x.rol === 'ayudante').map((x) => x.nombre)
+  for (const e of elegidos) if (!lista.includes(e)) lista.push(e)
+  const [nuevo, setNuevo] = useState('')
+  const [error, setError] = useState('')
+
+  function alternar(nombre) {
+    const siguientes = elegidos.includes(nombre) ? elegidos.filter((x) => x !== nombre) : [...elegidos, nombre]
+    onCambio(siguientes.join(', '))
+  }
+
+  async function agregar() {
+    const n = nuevo.trim()
+    if (!n) return
+    setError('')
+    try {
+      if (!lista.includes(n)) await onCrear(n, 'ayudante')
+      if (!elegidos.includes(n)) onCambio([...elegidos, n].join(', '))
+      setNuevo('')
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  return (
+    <div className="plan-ventana-ancho plan-ayudantes">
+      <span className="plan-ayudantes-titulo">Ayudantes</span>
+      <div className="plan-ayudantes-chips">
+        {lista.map((n) => (
+          <button key={n} type="button" className={`plan-ayudante-chip${elegidos.includes(n) ? ' plan-ayudante-chip-activo' : ''}`} onClick={() => alternar(n)}>
+            {elegidos.includes(n) ? '✓ ' : ''}{n}
+          </button>
+        ))}
+        {lista.length === 0 && <span className="dashboard-nota plan-nota-sin-margen">Todavía no hay ayudantes en la lista.</span>}
+      </div>
+      <div className="plan-ayudantes-nuevo">
+        <input type="text" className="input-filtro" placeholder="Añadir ayudante nuevo…" value={nuevo}
+          onChange={(e) => setNuevo(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); agregar() } }} />
+        <button type="button" className="btn-secundario" disabled={!nuevo.trim()} onClick={agregar}>+ Añadir</button>
+      </div>
+      {error && <span className="auth-error">{error}</span>}
+    </div>
+  )
+}
+
 // Ventana de detalle de una tarea. Con puedeEditar (Álvaro) se editan
 // fechas, responsable, estado y comentario; sin permiso es solo lectura.
 // En las tareas de Montaje el responsable se elige como Montador + Ayudante
@@ -216,7 +267,7 @@ export function VentanaTarea({ tarea, obra, responsables, personas = [], puedeEd
               <>
                 <SelectPersona etiqueta="Montador" rol="montador" valor={form.responsable} personas={personas}
                   onCambio={(v) => setForm((f) => ({ ...f, responsable: v }))} onCrear={onCrearPersona} />
-                <SelectPersona etiqueta="Ayudante" rol="ayudante" valor={form.ayudante} personas={personas}
+                <SelectorAyudantes valor={form.ayudante} personas={personas}
                   onCambio={(v) => setForm((f) => ({ ...f, ayudante: v }))} onCrear={onCrearPersona} />
               </>
             ) : (
@@ -257,7 +308,7 @@ export function VentanaTarea({ tarea, obra, responsables, personas = [], puedeEd
             <tbody>
               <tr><th>Fechas</th><td>{formatoCorto(tarea.fecha_inicio) || '—'}{tarea.fecha_fin && tarea.fecha_fin !== tarea.fecha_inicio ? ` → ${formatoCorto(tarea.fecha_fin)}` : ''}</td></tr>
               <tr><th>{esMontaje ? 'Montador' : 'Responsable'}</th><td>{tarea.responsable || 'Sin asignar'}</td></tr>
-              {esMontaje && <tr><th>Ayudante</th><td>{tarea.ayudante || 'Sin asignar'}</td></tr>}
+              {esMontaje && <tr><th>Ayudantes</th><td>{tarea.ayudante || 'Sin asignar'}</td></tr>}
               <tr><th>Estado</th><td>{tarea.estado}</td></tr>
               {tarea.comentario && <tr><th>Comentario</th><td>{tarea.comentario}</td></tr>}
             </tbody>

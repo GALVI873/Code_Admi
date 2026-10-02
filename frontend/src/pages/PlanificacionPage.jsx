@@ -113,15 +113,27 @@ function textoFechas(tarea) {
     : formatoCorto(tarea.fecha_inicio)
 }
 
-// Columna izquierda de la fila de una obra en el Cronograma: Situación
-// (solo se ve; se filtra arriba) · Obra — a pedido de Álvaro, 2026-10-01.
-function EtiquetaObraCronograma({ obra }) {
+// Columna izquierda de la fila de una obra en el Cronograma: Situación ·
+// Obra. Con permiso, pulsar la etiqueta de situación abre un mini menú con
+// las 4 opciones (un clic y queda guardada) — a pedido de Álvaro,
+// 2026-10-02 (le costaba cambiarla).
+function EtiquetaObraCronograma({ obra, puedeEditar, onAbrirSituacion }) {
+  const chip = obra.situacion
+    ? <span className="plan-chip" style={{ background: COLOR_SITUACION[obra.situacion] }}>{obra.situacion}</span>
+    : <span className="plan-chip plan-chip-vacio">Sin situación</span>
   return (
     <div className="plan-fila-cronograma">
       <span>
-        {obra.situacion
-          ? <span className="plan-chip" style={{ background: COLOR_SITUACION[obra.situacion] }}>{obra.situacion}</span>
-          : <span className="plan-montaje-texto">—</span>}
+        {puedeEditar ? (
+          <button type="button" className="plan-chip-boton-situacion" title="Cambiar situación"
+            onClick={(e) => {
+              e.stopPropagation()
+              const r = e.currentTarget.getBoundingClientRect()
+              onAbrirSituacion(obra.id, r.left, r.bottom + 4)
+            }}>
+            {chip}<span className="plan-chip-flecha">▾</span>
+          </button>
+        ) : chip}
       </span>
       <span className="plan-cronograma-obra">
         <span className="gantt-etiqueta-texto">{obra.nombre}</span>
@@ -629,6 +641,8 @@ export default function PlanificacionPage() {
   // orden) para poder ver esa obra sin perder las demás. Se suelta al
   // navegar con ◀ Hoy ▶, cambiar la escala o tocar un filtro.
   const [obrasFijadas, setObrasFijadas] = useState(null)
+  // Mini menú de situación del Cronograma ({ obraId, x, y } en pantalla).
+  const [menuSituacion, setMenuSituacion] = useState(null)
   const [buscar, setBuscar] = useState('')
   const [compacto, setCompacto] = useState(false)
   const [verTerminadas, setVerTerminadas] = useState(false)
@@ -788,7 +802,7 @@ export default function PlanificacionPage() {
         atenuada: t.estado === 'Terminado',
         tarea: t,
       })
-      const etiquetaObra = <EtiquetaObraCronograma obra={o} />
+      const etiquetaObra = <EtiquetaObraCronograma obra={o} puedeEditar={puedeEditar} onAbrirSituacion={(id, x, y) => setMenuSituacion({ obraId: id, x, y })} />
       if (compacto) {
         filas.push({ id: `obra-${o.id}`, etiqueta: o.nombre, etiquetaNode: etiquetaObra, altoMinimo: 40, barras: tareas.map(barra) })
       } else {
@@ -918,6 +932,12 @@ export default function PlanificacionPage() {
               setObrasFijadas((prev) => prev || [...new Set(filasCronograma.filter((f) => String(f.id).startsWith('obra-')).map((f) => Number(String(f.id).slice(5))))])
               setDesde(lunesDe(iso))
             }}
+            onDesplazar={(d) => {
+              // Al arrastrar una obra fuera de la vista: también se fijan las
+              // obras, si no la fila que se está arrastrando podría desaparecer.
+              setObrasFijadas((prev) => prev || [...new Set(filasCronograma.filter((f) => String(f.id).startsWith('obra-')).map((f) => Number(String(f.id).slice(5))))])
+              setDesde((prev) => numeroADia(diaANumero(prev) + d))
+            }}
             vacio="No hay tareas con fecha en este período con los filtros elegidos."
           />
         </>
@@ -935,6 +955,7 @@ export default function PlanificacionPage() {
             onMoverBarra={moverBarra}
             onClickBarra={(b) => setTareaAbierta(b.tarea.id)}
             onIrAFecha={(iso) => setDesde(lunesDe(iso))}
+            onDesplazar={(d) => setDesde((prev) => numeroADia(diaANumero(prev) + d))}
             vacio="No hay montajes con fecha."
           />
           <div className="plan-avisos">
@@ -994,6 +1015,29 @@ export default function PlanificacionPage() {
             onCrear={crearObra}
           />
         )
+      )}
+
+      {menuSituacion && (
+        <div className="plan-menu-fondo" onClick={() => setMenuSituacion(null)}>
+          <div className="plan-menu-situacion" style={{ left: menuSituacion.x, top: menuSituacion.y }} onClick={(e) => e.stopPropagation()}>
+            {SITUACIONES.map((x) => (
+              <button key={x} type="button" className="plan-menu-opcion"
+                onClick={() => {
+                  actualizarObra(menuSituacion.obraId, { situacion: x }).catch((err) => setError(err.message))
+                  setMenuSituacion(null)
+                }}>
+                <span className="plan-chip" style={{ background: COLOR_SITUACION[x] }}>{x}</span>
+              </button>
+            ))}
+            <button type="button" className="plan-menu-opcion plan-menu-quitar"
+              onClick={() => {
+                actualizarObra(menuSituacion.obraId, { situacion: '' }).catch((err) => setError(err.message))
+                setMenuSituacion(null)
+              }}>
+              Quitar situación
+            </button>
+          </div>
+        </div>
       )}
 
       {tareaSeleccionada && (
