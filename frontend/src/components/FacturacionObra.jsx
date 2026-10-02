@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useDeshacer, idVigente, marcarRecreado } from '../context/DeshacerContext.jsx'
 import logoGalvi from '../assets/logo_galvi_factura.png'
 import carlitoRegularUrl from '../assets/carlito-regular.ttf'
 import carlitoBoldUrl from '../assets/carlito-bold.ttf'
@@ -74,14 +75,18 @@ function hoyISO() {
   return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
 }
 
-function DatosCliente({ obra, accessToken, datos, onCambiado }) {
+function DatosCliente({ obra, accessToken, datos, onCambiado, onRegistrar }) {
   const [error, setError] = useState('')
 
   async function guardar(campos) {
     setError('')
+    const previos = Object.fromEntries(Object.keys(campos).map((k) => [k, datos?.[k] ?? '']))
     try {
       await actualizarDatosClienteFacturacion(accessToken, obra, campos)
       onCambiado(campos)
+      if (Object.keys(campos).some((k) => String(previos[k]) !== String(campos[k]))) {
+        onRegistrar(`datos del cliente (${Object.keys(campos).join(', ')})`, () => actualizarDatosClienteFacturacion(accessToken, obra, previos))
+      }
     } catch (err) {
       setError(err.message)
     }
@@ -120,7 +125,7 @@ function DatosCliente({ obra, accessToken, datos, onCambiado }) {
   )
 }
 
-function FormAgregarLinea({ obra, accessToken, onAgregada }) {
+function FormAgregarLinea({ obra, accessToken, onAgregada, onRegistrar }) {
   const [concepto, setConcepto] = useState('')
   const [presupuestoRef, setPresupuestoRef] = useState('')
   const [uds, setUds] = useState('1')
@@ -141,6 +146,7 @@ function FormAgregarLinea({ obra, accessToken, onAgregada }) {
         precio_unit: Number(precioUnit) || 0,
       })
       onAgregada(data.linea)
+      onRegistrar(`agregar línea "${data.linea.concepto}"`, () => eliminarLineaFacturacion(accessToken, idVigente('fac-linea', data.linea.id)))
       setConcepto('')
       setPresupuestoRef('')
       setUds('1')
@@ -171,7 +177,7 @@ function FormAgregarLinea({ obra, accessToken, onAgregada }) {
 // blur o Enter para guardar, Escape para cancelar — mismo criterio que
 // FilaFicha en Obras Aceptadas. Usa un <textarea> porque el detalle
 // enriquecido (medidas, color) suele ser más largo que "V1".
-function ConceptoEditable({ linea, accessToken, onGuardado }) {
+function ConceptoEditable({ linea, accessToken, onGuardado, onRegistrar }) {
   const [editando, setEditando] = useState(false)
   const [texto, setTexto] = useState(linea.concepto)
   const [guardando, setGuardando] = useState(false)
@@ -193,6 +199,8 @@ function ConceptoEditable({ linea, accessToken, onGuardado }) {
     try {
       await editarLineaFacturacion(accessToken, linea.id, { concepto: limpio })
       onGuardado(linea.id, limpio)
+      const anterior = linea.concepto
+      onRegistrar(`concepto "${anterior}"`, () => editarLineaFacturacion(accessToken, idVigente('fac-linea', linea.id), { concepto: anterior }))
       setEditando(false)
     } catch (err) {
       setError(err.message)
@@ -236,15 +244,24 @@ function ConceptoEditable({ linea, accessToken, onGuardado }) {
   )
 }
 
-function TablaLineas({ lineas, accessToken, onEliminada, onEditada }) {
+function TablaLineas({ obra, lineas, accessToken, onEliminada, onEditada, onRegistrar }) {
   const [error, setError] = useState('')
 
   async function handleEliminar(linea) {
-    if (!window.confirm(`¿Eliminar "${linea.concepto}"? No se puede deshacer.`)) return
+    if (!window.confirm(`¿Eliminar "${linea.concepto}"?`)) return
     setError('')
     try {
       await eliminarLineaFacturacion(accessToken, linea.id)
       onEliminada(linea.id)
+      onRegistrar(`eliminar línea "${linea.concepto}"`, async () => {
+        const data = await agregarLineaFacturacion(accessToken, obra, {
+          concepto: linea.concepto,
+          presupuesto_ref: linea.presupuesto_ref || '',
+          uds: Number(linea.uds) || 1,
+          precio_unit: Number(linea.precio_unit) || 0,
+        })
+        marcarRecreado('fac-linea', linea.id, data.linea.id)
+      })
     } catch (err) {
       setError(err.message)
     }
@@ -277,7 +294,7 @@ function TablaLineas({ lineas, accessToken, onEliminada, onEditada }) {
           {lineas.map((l) => (
             <tr key={l.id}>
               <td>{l.presupuesto_ref || '—'}</td>
-              <td><ConceptoEditable linea={l} accessToken={accessToken} onGuardado={(id, concepto) => onEditada(id, concepto)} /></td>
+              <td><ConceptoEditable linea={l} accessToken={accessToken} onGuardado={(id, concepto) => onEditada(id, concepto)} onRegistrar={onRegistrar} /></td>
               <td>{l.uds}</td>
               <td>{euros(l.precio_unit)}</td>
               <td>{euros(l.total)}</td>
@@ -375,7 +392,7 @@ function facturadoAntesDe(lineaId, numeroRonda, rondas) {
   return total
 }
 
-function NuevaRonda({ obra, accessToken, lineas, anticipos, rondas, onCreada }) {
+function NuevaRonda({ obra, accessToken, lineas, anticipos, rondas, onCreada, onRegistrar }) {
   const [abierto, setAbierto] = useState(false)
   const [tipo, setTipo] = useState('proforma')
   const [fecha, setFecha] = useState(hoyISO())
@@ -410,6 +427,9 @@ function NuevaRonda({ obra, accessToken, lineas, anticipos, rondas, onCreada }) 
         : []
       const data = await crearRondaFacturacion(accessToken, obra, { tipo, fecha, lineas: lineasRonda, amortizaciones })
       onCreada({ ...data.ronda, lineas: lineasRonda.map((l) => ({ ...l, ronda_id: data.ronda.id })), amortizaciones: amortizaciones.map((a) => ({ ...a, ronda_id: data.ronda.id })) })
+      if (tipo === 'proforma') {
+        onRegistrar(`crear proforma (ronda ${data.ronda.numero ?? ''})`.replace(' )', ')'), () => eliminarRondaFacturacion(accessToken, idVigente('fac-ronda', data.ronda.id)))
+      }
       setImportes({})
       setSeleccionadas(new Set())
       setPorcentaje('')
@@ -583,7 +603,7 @@ function NuevaRonda({ obra, accessToken, lineas, anticipos, rondas, onCreada }) 
 // (por si se quiere sumar una nueva) — "Pendiente" se muestra sumando de
 // vuelta lo que ESTA ronda ya factura de esa línea, porque el valor que
 // manda el servidor ya lo tiene descontado.
-function EditarRonda({ ronda, obra, accessToken, lineas, anticipos, onGuardada, onCerrar }) {
+function EditarRonda({ ronda, obra, accessToken, lineas, anticipos, onGuardada, onCerrar, onRegistrar }) {
   const importePorLineaEnRonda = new Map((ronda.lineas || []).map((rl) => [rl.linea_id, Number(rl.importe)]))
   const amortizacionActual = (ronda.amortizaciones || [])[0]
 
@@ -619,6 +639,14 @@ function EditarRonda({ ronda, obra, accessToken, lineas, anticipos, onGuardada, 
         : []
       await editarRondaFacturacion(accessToken, ronda.id, { fecha, lineas: lineasRonda, amortizaciones })
       onGuardada()
+      if (ronda.tipo === 'proforma') {
+        const anterior = {
+          fecha: ronda.fecha,
+          lineas: (ronda.lineas || []).map((rl) => ({ linea_id: Number(idVigente('fac-linea', rl.linea_id)), importe: Number(rl.importe) })),
+          amortizaciones: (ronda.amortizaciones || []).map((a) => ({ anticipo_id: Number(a.anticipo_id), monto: Number(a.monto) })),
+        }
+        onRegistrar(`editar proforma (ronda ${ronda.numero})`, () => editarRondaFacturacion(accessToken, idVigente('fac-ronda', ronda.id), anterior))
+      }
     } catch (err) {
       setError(err.message)
     } finally {
@@ -1286,7 +1314,7 @@ function ResumenRondas({ rondas }) {
   )
 }
 
-function HistorialRondas({ obra, accessToken, rondas, lineas, anticipos, datosCliente, onCambiadas, onRecargar }) {
+function HistorialRondas({ obra, accessToken, rondas, lineas, anticipos, datosCliente, onCambiadas, onRecargar, onRegistrar }) {
   const [error, setError] = useState('')
   const [descargando, setDescargando] = useState(null)
   const [editandoId, setEditandoId] = useState(null)
@@ -1322,6 +1350,10 @@ function HistorialRondas({ obra, accessToken, rondas, lineas, anticipos, datosCl
     try {
       await asignarNumeroFacturaRonda(accessToken, ronda.id, numero)
       onCambiadas(rondas.map((r) => (r.id === ronda.id ? { ...r, numero_factura: numero } : r)))
+      const anterior = ronda.numero_factura || ''
+      if (anterior !== numero) {
+        onRegistrar(`nº de factura de la ronda ${ronda.numero}`, () => asignarNumeroFacturaRonda(accessToken, ronda.id, anterior))
+      }
     } catch (err) {
       setError(err.message)
     }
@@ -1376,6 +1408,7 @@ function HistorialRondas({ obra, accessToken, rondas, lineas, anticipos, datosCl
                   anticipos={anticipos}
                   onGuardada={() => { setEditandoId(null); onRecargar() }}
                   onCerrar={() => setEditandoId(null)}
+                  onRegistrar={onRegistrar}
                 />
               </li>
             )
@@ -1447,6 +1480,26 @@ export default function FacturacionObra({ obra, accessToken }) {
   const [datos, setDatos] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
+  // Deshacer (Ctrl+Z, común a todo el panel), con cuidado: datos del
+  // cliente, líneas (agregar, editar concepto, eliminar), proformas (crear y
+  // editar) y número de factura. NO se deshace: convertir en factura, crear
+  // una ronda de tipo factura, editar una factura, eliminar rondas ni los
+  // anticipos. Después de deshacer se recarga todo desde el servidor (si
+  // sigue abierta la misma obra), porque un cambio mueve facturado/pendiente
+  // en varias líneas a la vez.
+  const { registrar } = useDeshacer()
+  const obraRef = useRef(obra)
+  useEffect(() => { obraRef.current = obra }, [obra])
+  // Los campos de Datos del cliente no son controlados: tras deshacer se
+  // vuelven a montar (key) para mostrar el valor recuperado.
+  const [versionCliente, setVersionCliente] = useState(0)
+  const onRegistrar = (descripcion, fn) => registrar(`${obra}: Facturación — ${descripcion}`, async () => {
+    await fn()
+    if (obraRef.current === obra) {
+      await recargar()
+      setVersionCliente((v) => v + 1)
+    }
+  })
 
   // Extraída aparte (a pedido de Álvaro, 2026-09-25) porque editar o
   // convertir una ronda cambia "facturado"/"pendiente" en varias líneas y
@@ -1488,6 +1541,8 @@ export default function FacturacionObra({ obra, accessToken }) {
         <div className="facturacion-columna">
           <h3 className="montaje-subtitulo">Datos del cliente</h3>
           <DatosCliente
+            key={versionCliente}
+            onRegistrar={onRegistrar}
             obra={obra}
             accessToken={accessToken}
             datos={datos.datos_cliente}
@@ -1507,15 +1562,18 @@ export default function FacturacionObra({ obra, accessToken }) {
 
       <h3 className="montaje-subtitulo">Líneas</h3>
       <TablaLineas
+        obra={obra}
+        onRegistrar={onRegistrar}
         lineas={datos.lineas}
         accessToken={accessToken}
         onEliminada={(id) => setDatos((prev) => ({ ...prev, lineas: prev.lineas.filter((l) => l.id !== id) }))}
         onEditada={(id, concepto) => setDatos((prev) => ({ ...prev, lineas: prev.lineas.map((l) => (l.id === id ? { ...l, concepto } : l)) }))}
       />
-      <FormAgregarLinea obra={obra} accessToken={accessToken} onAgregada={(l) => setDatos((prev) => ({ ...prev, lineas: [...prev.lineas, l] }))} />
+      <FormAgregarLinea obra={obra} accessToken={accessToken} onRegistrar={onRegistrar} onAgregada={(l) => setDatos((prev) => ({ ...prev, lineas: [...prev.lineas, l] }))} />
 
       <h3 className="montaje-subtitulo">Rondas de facturación</h3>
       <NuevaRonda
+        onRegistrar={onRegistrar}
         obra={obra}
         accessToken={accessToken}
         lineas={datos.lineas}
@@ -1541,6 +1599,7 @@ export default function FacturacionObra({ obra, accessToken }) {
         }}
       />
       <HistorialRondas
+        onRegistrar={onRegistrar}
         obra={obra}
         accessToken={accessToken}
         rondas={datos.rondas || []}
