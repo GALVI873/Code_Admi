@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useDeshacer, idVigente, marcarRecreado } from '../context/DeshacerContext.jsx'
 import {
   presupuestosEnEstudio,
   actualizarPresupuestoEnEstudio,
@@ -986,6 +987,11 @@ function ItemAgendaAdicional({ adicional, numero, deshabilitarArriba, deshabilit
 
 export default function SeguimientoPage() {
   const { usuario, accessToken, tienePermiso } = useAuth()
+  // Deshacer (Ctrl+Z, común a todo el panel): cambios de presupuesto,
+  // orden de la agenda, adicionales, dirección y solicitudes de oferta.
+  // Pasar a "Aceptado" (presupuesto o adicional) no se deshace: dispara el
+  // traspaso de Drive / el alta en Planificación / la nota a Alfredo.
+  const { registrar } = useDeshacer()
   const [filas, setFilas] = useState([])
   const [ofertas, setOfertas] = useState([])
   const [adicionales, setAdicionales] = useState([])
@@ -1110,7 +1116,7 @@ export default function SeguimientoPage() {
 
   // Guarda un nuevo orden ya armado (venga de las flechas o de arrastrar)
   // — optimista, revierte los dos estados si el PATCH falla.
-  async function aplicarOrdenAgenda(clavesEnOrden) {
+  async function aplicarOrdenAgenda(clavesEnOrden, ordenAnterior = null, { registrar: registrarPaso = true } = {}) {
     const anterioresFilas = filas
     const anterioresAdicionales = adicionales
     setFilas((f) => f.map((p) => {
@@ -1123,6 +1129,9 @@ export default function SeguimientoPage() {
     }))
     try {
       await guardarOrdenAgenda(accessToken, clavesEnOrden)
+      if (registrarPaso && ordenAnterior) {
+        registrar('Presupuesto: orden de la agenda', () => aplicarOrdenAgenda(ordenAnterior, null, { registrar: false }))
+      }
     } catch (err) {
       setFilas(anterioresFilas)
       setAdicionales(anterioresAdicionales)
@@ -1137,7 +1146,7 @@ export default function SeguimientoPage() {
 
     const reordenado = [...items]
     ;[reordenado[idx], reordenado[destino]] = [reordenado[destino], reordenado[idx]]
-    await aplicarOrdenAgenda(reordenado.map((it) => it.clave))
+    await aplicarOrdenAgenda(reordenado.map((it) => it.clave), items.map((it) => it.clave))
   }
 
   // Arrastrar y soltar dentro del mismo bloque de prioridad (Alta o
@@ -1153,14 +1162,19 @@ export default function SeguimientoPage() {
     const reordenado = [...items]
     const [movido] = reordenado.splice(idxOrigen, 1)
     reordenado.splice(idxDestino, 0, movido)
-    await aplicarOrdenAgenda(reordenado.map((it) => it.clave))
+    await aplicarOrdenAgenda(reordenado.map((it) => it.clave), items.map((it) => it.clave))
   }
 
   async function handleCambiarPrioridadAdicional(id, prioridad) {
     const anteriores = adicionales
+    const previa = adicionales.find((a) => a.id === id)?.prioridad || 'Normal'
     setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, prioridad } : a)))
     try {
       await cambiarPrioridadAdicionalObra(accessToken, id, prioridad)
+      registrar('Presupuesto: prioridad del adicional', async () => {
+        await cambiarPrioridadAdicionalObra(accessToken, id, previa)
+        setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, prioridad: previa } : a)))
+      })
     } catch (err) {
       setAdicionales(anteriores)
       setError(err.message)
@@ -1169,9 +1183,16 @@ export default function SeguimientoPage() {
 
   async function handleCambiarEstatusAdicional(id, estatus) {
     const anteriores = adicionales
+    const previo = adicionales.find((a) => a.id === id)?.estatus
     setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, estatus } : a)))
     try {
       await cambiarEstatusAdicionalObra(accessToken, id, estatus)
+      if (previo && previo !== estatus && estatus !== 'Aceptado') {
+        registrar(`Presupuesto: estatus del adicional (${estatus})`, async () => {
+          await cambiarEstatusAdicionalObra(accessToken, id, previo)
+          setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, estatus: previo } : a)))
+        })
+      }
     } catch (err) {
       setAdicionales(anteriores)
       setError(err.message)
@@ -1321,11 +1342,17 @@ export default function SeguimientoPage() {
     : []
   const direccionesPorBase = useMemo(() => new Map(direcciones.map((d) => [d.obra, d])), [direcciones])
 
-  async function handleCambio(id, cambios) {
+  async function handleCambio(id, cambios, { registrar: registrarPaso = true } = {}) {
     const anteriores = filas
+    const previa = filas.find((p) => p.id === id)
     setFilas((f) => f.map((p) => (p.id === id ? { ...p, ...cambios } : p)))
     try {
       await actualizarPresupuestoEnEstudio(accessToken, id, cambios)
+      const aceptado = cambios.estatus === 'Aceptado' && previa?.estatus !== 'Aceptado'
+      if (registrarPaso && previa && !aceptado) {
+        const previos = Object.fromEntries(Object.keys(cambios).map((k) => [k, previa[k] ?? (k === 'interesante' ? 0 : '')]))
+        registrar(`Presupuesto: ${previa.obra} (${Object.keys(cambios).join(', ')})`, () => handleCambio(id, previos, { registrar: false }))
+      }
     } catch (err) {
       setFilas(anteriores)
       setError(err.message)
@@ -1336,10 +1363,15 @@ export default function SeguimientoPage() {
   // obra, misma tabla que usa Obras Aceptadas (ver DireccionContactoObra),
   // así que lo que se carga acá mientras se presupuesta se ve igual una vez
   // aceptada la obra.
-  async function handleGuardarDireccion(base, datos) {
+  async function handleGuardarDireccion(base, datos, { registrar: registrarPaso = true } = {}) {
+    const previa = direcciones.find((d) => d.obra === base) || {}
     setDirecciones((ds) => [...ds.filter((d) => d.obra !== base), { obra: base, ...datos }])
     try {
       await guardarDireccionPresupuesto(accessToken, base, datos)
+      if (registrarPaso) {
+        const previos = Object.fromEntries(Object.keys(datos).map((k) => [k, previa[k] ?? '']))
+        registrar(`Presupuesto: ${base} (dirección y contacto)`, () => handleGuardarDireccion(base, previos, { registrar: false }))
+      }
     } catch (err) {
       setError(err.message)
     }
@@ -1360,6 +1392,11 @@ export default function SeguimientoPage() {
         ...o,
         { id, obra, proveedor, estatus: 'Pendiente', fecha_solicitud: fechaSolicitud || null, valor: null, fecha: null, fecha_llegada: null, archivo: null },
       ])
+      registrar(`Presupuesto: pedir oferta a ${proveedor}`, async () => {
+        const idOferta = idVigente('oferta', id)
+        await eliminarOferta(accessToken, idOferta)
+        setOfertas((o) => o.filter((x) => x.id !== idOferta))
+      })
     } catch (err) {
       setError(err.message)
     }
@@ -1367,9 +1404,21 @@ export default function SeguimientoPage() {
 
   async function handleEliminarOferta(ofertaId) {
     const anteriores = ofertas
+    const oferta = ofertas.find((x) => x.id === ofertaId)
     setOfertas((o) => o.filter((x) => x.id !== ofertaId))
     try {
       await eliminarOferta(accessToken, ofertaId)
+      // Al deshacer se vuelve a pedir la oferta (proveedor, fecha y
+      // estatus); el valor y el archivo, si los tenía, los vuelve a traer la
+      // sincronización con Drive.
+      if (oferta) {
+        registrar(`Presupuesto: eliminar oferta de ${oferta.proveedor}`, async () => {
+          const { id } = await agregarSolicitudOferta(accessToken, oferta.obra, oferta.proveedor, oferta.fecha_solicitud || '')
+          if (oferta.estatus && oferta.estatus !== 'Pendiente') await cambiarEstatusOferta(accessToken, id, oferta.estatus)
+          marcarRecreado('oferta', oferta.id, id)
+          setOfertas((o) => [...o, { ...oferta, id }])
+        })
+      }
     } catch (err) {
       setOfertas(anteriores)
       setError(err.message)
@@ -1378,9 +1427,17 @@ export default function SeguimientoPage() {
 
   async function handleCambiarEstatusOferta(ofertaId, estatus) {
     const anteriores = ofertas
+    const previo = ofertas.find((x) => x.id === ofertaId)?.estatus
     setOfertas((o) => o.map((x) => (x.id === ofertaId ? { ...x, estatus } : x)))
     try {
       await cambiarEstatusOferta(accessToken, ofertaId, estatus)
+      if (previo && previo !== estatus) {
+        registrar(`Presupuesto: estatus de oferta (${estatus})`, async () => {
+          const idOferta = idVigente('oferta', ofertaId)
+          await cambiarEstatusOferta(accessToken, idOferta, previo)
+          setOfertas((o) => o.map((x) => (x.id === idOferta ? { ...x, estatus: previo } : x)))
+        })
+      }
     } catch (err) {
       setOfertas(anteriores)
       setError(err.message)

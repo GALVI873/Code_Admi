@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useDeshacer } from '../context/DeshacerContext.jsx'
 import { diarioGeneral, actualizarUbicacionDiarioGeneral } from '../api/client.js'
 
 // Diario General de pedidos de material y gestión — compartida entre
@@ -208,6 +209,7 @@ const PESTANAS = ['Pedidos de Material', 'Gestión']
 
 export default function DiarioGeneralPage() {
   const { accessToken } = useAuth()
+  const { registrar } = useDeshacer()
   const [items, setItems] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
@@ -242,11 +244,17 @@ export default function DiarioGeneralPage() {
     setFiltroCategoria('Todas')
   }
 
+  // Deshacer (Ctrl+Z, común a todo el panel).
   async function handleCambiarUbicacion(id, ubicacion) {
     const anteriores = items
+    const previa = items.find((it) => it.id === id)?.ubicacion ?? ''
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ubicacion } : it)))
     try {
       await actualizarUbicacionDiarioGeneral(accessToken, id, ubicacion)
+      registrar('Diario General: ubicación', async () => {
+        await actualizarUbicacionDiarioGeneral(accessToken, id, previa)
+        setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ubicacion: previa } : it)))
+      })
     } catch (err) {
       setItems(anteriores)
       setError(err.message)

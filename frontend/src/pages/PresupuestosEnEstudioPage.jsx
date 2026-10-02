@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useDeshacer } from '../context/DeshacerContext.jsx'
 import { presupuestosEnEstudio, actualizarPresupuestoEnEstudio } from '../api/client.js'
 import ComentariosObra from '../components/ComentariosObra.jsx'
 
@@ -368,6 +369,7 @@ function DetalleObra({ base, opciones, onCerrar, onCambio, puedeCambiarPrioridad
 
 export default function PresupuestosEnEstudioPage() {
   const { usuario, accessToken, tienePermiso } = useAuth()
+  const { registrar } = useDeshacer()
   const [filas, setFilas] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
@@ -507,11 +509,19 @@ export default function PresupuestosEnEstudioPage() {
     [filas, obraSeleccionadaBase],
   )
 
-  async function handleCambio(id, cambios) {
+  // Deshacer (Ctrl+Z, común a todo el panel). Pasar a "Aceptado" no se
+  // deshace: dispara el traspaso de Drive y el alta en Planificación.
+  async function handleCambio(id, cambios, { registrar: registrarPaso = true } = {}) {
     const anteriores = filas
+    const previa = filas.find((p) => p.id === id)
     setFilas((f) => f.map((p) => (p.id === id ? { ...p, ...cambios } : p)))
     try {
       await actualizarPresupuestoEnEstudio(accessToken, id, cambios)
+      const aceptado = cambios.estatus === 'Aceptado' && previa?.estatus !== 'Aceptado'
+      if (registrarPaso && previa && !aceptado) {
+        const previos = Object.fromEntries(Object.keys(cambios).map((k) => [k, previa[k] ?? (k === 'interesante' ? 0 : '')]))
+        registrar(`Presupuestos: ${previa.obra} (${Object.keys(cambios).join(', ')})`, () => handleCambio(id, previos, { registrar: false }))
+      }
     } catch (err) {
       setFilas(anteriores)
       setError(err.message)

@@ -5545,3 +5545,8 @@ select.celda-editable-material {
 .deshacer-aviso-error { color: var(--rojo); border-left: 3px solid var(--rojo); }
 .deshacer-cerrar { border: none; background: none; cursor: pointer; color: inherit; }
 .plan-titulo-con-check { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.plan-select-estado { border: 1px solid #dfe6e9; border-radius: 12px; padding: 3px 8px; font-size: 12px; cursor: pointer; background: white; }
+.plan-select-estado-terminada { background: #eceff3; color: #6b7785; }
+.plan-sub-bloque { display: block; }
+.plan-montaje-terminado { color: var(--verde); font-weight: 600; }
+.plan-tabla-facturacion td { vertical-align: top; }

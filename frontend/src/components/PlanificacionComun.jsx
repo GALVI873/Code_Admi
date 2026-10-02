@@ -88,6 +88,7 @@ export function filasMontajePorMontador(tareas, obrasPorId, { incluirTerminadas 
         inicio: t.fecha_inicio,
         fin: t.fecha_fin,
         texto: t.ayudante ? `${obra.nombre} · ${t.ayudante}` : obra.nombre,
+        obraNombre: obra.nombre,
         titulo: `${obra.nombre}${obra.constructora ? ` (${obra.constructora})` : ''} — ${obra.situacion || 'Obra'}\nMontador: ${t.responsable || 'sin asignar'}${t.ayudante ? ` · Ayudante: ${t.ayudante}` : ''}`,
         color: t.estado === 'Terminado' ? COLOR_TERMINADO : COLOR_SITUACION[obra.situacion] || COLOR_SITUACION.Obra,
         atenuada: t.estado === 'Terminado',
@@ -112,6 +113,43 @@ export function filasMontajePorMontador(tareas, obrasPorId, { incluirTerminadas 
       marcarSolapes: nombre !== 'Sin asignar',
       barras,
     }))
+}
+
+// Vista detallada de Montaje (a pedido de Álvaro, 2026-10-02): en lugar de
+// una fila por montador con todas sus obras juntas, el montador queda como
+// encabezado y debajo va cada obra en su propia línea, con sus fechas de
+// montaje. Los solapes entre obras del mismo montador se siguen marcando en
+// rojo (mismo criterio que marcarSolapes: los remates/repasos no cuentan).
+export function detallarFilasMontaje(filas) {
+  const resultado = []
+  for (const fila of filas) {
+    const barras = [...fila.barras].sort((a, b) => a.inicio.localeCompare(b.inicio) || a.obraNombre.localeCompare(b.obraNombre))
+    const solapadas = new Set()
+    if (fila.marcarSolapes) {
+      for (let i = 0; i < barras.length; i++) {
+        for (let j = i + 1; j < barras.length; j++) {
+          const a = barras[i]
+          const b = barras[j]
+          if (a.cuentaSolape === false || b.cuentaSolape === false) continue
+          if (b.inicio <= (a.fin || a.inicio) && a.inicio <= (b.fin || b.inicio)) {
+            solapadas.add(a.id)
+            solapadas.add(b.id)
+          }
+        }
+      }
+    }
+    resultado.push({ id: fila.id, etiqueta: fila.etiqueta, esGrupo: true, barras: [] })
+    for (const b of barras) {
+      const fechas = b.fin && b.fin !== b.inicio ? `${formatoCorto(b.inicio)} → ${formatoCorto(b.fin)}` : formatoCorto(b.inicio)
+      resultado.push({
+        id: `${fila.id}-${b.id}`,
+        etiqueta: b.obraNombre,
+        subetiqueta: `${fechas}${b.tarea.ayudante ? ` · ${b.tarea.ayudante}` : ''}`,
+        barras: [{ ...b, texto: b.tarea.ayudante || b.obraNombre, clase: solapadas.has(b.id) ? 'gantt-barra-solape' : b.clase }],
+      })
+    }
+  }
+  return resultado
 }
 
 export function LeyendaColores({ colores }) {

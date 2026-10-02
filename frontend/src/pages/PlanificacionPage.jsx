@@ -23,6 +23,7 @@ import {
   VentanaTarea,
   responsablesDe,
   filasMontajePorMontador,
+  detallarFilasMontaje,
   datosNum,
   obraNum,
   tareaNum,
@@ -30,18 +31,19 @@ import {
 
 // Planificación de obras — a pedido de Álvaro, 2026-09-29: reemplaza la
 // base "Seguimiento Obras" de Notion (ver public/api/planificacion.php).
-// Tres pestañas:
+// Cuatro pestañas:
 //   - Cronograma: Gantt de todas las tareas, agrupado por obra (una fila
 //     por categoría, o una fila por obra en modo compacto).
-//   - Montaje: Gantt de la categoría Montaje con una fila por montador, para
-//     asignar la semana; los solapes de un mismo montador salen en rojo.
+//   - Montaje: Gantt de la categoría Montaje agrupado por montador, con una
+//     línea por obra; los solapes de un mismo montador salen en rojo.
 //   - Obras: alta de obra (se crea con todas las categorías vacías) y
 //     edición de cada una — fechas, responsable, estado y comentario por
 //     categoría, más el vínculo opcional a la obra aceptada del panel.
+//   - Facturación: tareas "Facturar" sin terminar, con su comentario.
 // Todos pueden verla; solo admin (Álvaro) edita — las barras del Gantt se
 // arrastran para mover/estirar fechas, igual que en Notion.
 
-const PESTANAS = ['Cronograma', 'Montaje', 'Obras']
+const PESTANAS = ['Cronograma', 'Montaje', 'Obras', 'Facturación']
 const ESCALAS = {
   Semana: { dias: 14, anchoDia: 64, paso: 7 },
   Mes: { dias: 42, anchoDia: 30, paso: 14 },
@@ -584,6 +586,7 @@ const COLUMNAS_OBRAS = [
   { clave: 'obra', titulo: 'Obra' },
   { clave: 'constructora', titulo: 'Constructora' },
   { clave: 'situacion', titulo: 'Situación' },
+  { clave: 'estado', titulo: 'Estado' },
   { clave: 'proxima', titulo: 'Próxima tarea' },
   { clave: 'montaje', titulo: 'Montaje' },
   { clave: 'pendientes', titulo: 'Pendientes' },
@@ -639,6 +642,7 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
       obra: (f) => normalizar(f.o.nombre),
       constructora: (f) => normalizar(f.o.constructora),
       situacion: (f) => (f.o.situacion ? String(SITUACIONES.indexOf(f.o.situacion) + 10) : ''),
+      estado: (f) => f.o.estado || 'Activa',
       proxima: (f) => f.proxima?.fecha_inicio || '',
       montaje: (f) => f.montaje?.fecha_inicio || '',
       pendientes: (f) => String(f.pendientes.length).padStart(4, '0'),
@@ -747,6 +751,18 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
                     </select>
                   ) : o.situacion ? <span className="plan-chip" style={{ background: COLOR_SITUACION[o.situacion] || colorCategoria('Varios') }}>{o.situacion}</span> : '—'}
                 </td>
+                {/* Estado de la obra editable en la fila (a pedido de Álvaro,
+                    2026-10-02). Al pasarla a Terminada sale de la lista salvo
+                    con "Ver terminadas". */}
+                <td onClick={(e) => { if (puedeEditar) e.stopPropagation() }}>
+                  {puedeEditar ? (
+                    <select className={`select-inline plan-select-estado${o.estado === 'Terminada' ? ' plan-select-estado-terminada' : ''}`} value={o.estado || 'Activa'}
+                      onChange={(e) => onActualizarObra(o.id, { estado: e.target.value }).catch((err) => setError(err.message))}>
+                      <option>Activa</option>
+                      <option>Terminada</option>
+                    </select>
+                  ) : (o.estado || 'Activa')}
+                </td>
                 <td>{proxima ? `${proxima.categoria} · ${textoFechas(proxima)}` : '—'}</td>
                 <td>{montaje ? `${textoFechas(montaje)}${montaje.responsable ? ` · ${montaje.responsable}` : ''}` : '—'}</td>
                 <td>
@@ -761,6 +777,100 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
         </table>
       </div>
       {filtradas.length === 0 && <p className="dashboard-nota">{soloSinResponsable && !filtroSituacion && !buscar && !filtroPendientes ? 'Todas las obras activas tienen responsable asignado. 👍' : `No hay obras${hayFiltros ? ' que coincidan con los filtros' : ''}.`}</p>}
+    </div>
+  )
+}
+
+// Pestaña Facturación (a pedido de Álvaro, 2026-10-02): todas las tareas de
+// "Facturar" que siguen sin terminar, de cualquier obra (también de obras
+// ya marcadas Terminada, para que no se escape ninguna), con su comentario
+// editable. Marcar "Facturado" la da por terminada y sale de la lista.
+function ListaFacturacion({ datos, tareasPorObra, puedeEditar, onActualizarTarea, onAbrir }) {
+  const [buscar, setBuscar] = useState('')
+  const [soloMontajeTerminado, setSoloMontajeTerminado] = useState(false)
+  const [error, setError] = useState('')
+  const hoy = hoyIso()
+  const obrasPorId = new Map(datos.obras.map((o) => [o.id, o]))
+
+  // Montaje de la obra: terminado si todas sus tareas de Montaje lo están.
+  const estadoMontaje = (obraId) => {
+    const montajes = (tareasPorObra.get(obraId) || []).filter((t) => t.categoria === 'Montaje')
+    if (montajes.length === 0) return { texto: '—', terminado: false }
+    const pendientes = montajes.filter((t) => t.estado !== 'Terminado')
+    if (pendientes.length === 0) return { texto: '✓ Terminado', terminado: true }
+    const proximo = pendientes.sort((a, b) => (a.fecha_inicio || '9999').localeCompare(b.fecha_inicio || '9999'))[0]
+    return { texto: textoFechas(proximo), terminado: false }
+  }
+
+  const filas = datos.tareas
+    .filter((t) => t.categoria === 'Facturar' && t.estado !== 'Terminado')
+    .map((t) => ({ t, o: obrasPorId.get(t.obra_id), montaje: estadoMontaje(t.obra_id) }))
+    .filter(({ o }) => o)
+    .filter(({ o }) => !buscar || normalizar(`${o.nombre} ${o.constructora}`).includes(normalizar(buscar)))
+    .filter(({ montaje }) => !soloMontajeTerminado || montaje.terminado)
+    .sort((a, b) => (a.t.fecha_inicio || '9999').localeCompare(b.t.fecha_inicio || '9999') || a.o.nombre.localeCompare(b.o.nombre))
+
+  const guardar = (id, cambios) => onActualizarTarea(id, cambios).catch((err) => setError(err.message))
+
+  return (
+    <div>
+      <div className="filtro-tabla">
+        <div className="filtro-campo">
+          <label>Buscar</label>
+          <input type="text" className="input-filtro" placeholder="Obra o constructora…" value={buscar} onChange={(e) => setBuscar(e.target.value)} />
+        </div>
+        <label className="plan-check">
+          <input type="checkbox" checked={soloMontajeTerminado} onChange={(e) => setSoloMontajeTerminado(e.target.checked)} /> Solo con montaje terminado
+        </label>
+        <span className="dashboard-nota plan-nota-sin-margen">{filas.length} {filas.length === 1 ? 'facturación pendiente' : 'facturaciones pendientes'}</span>
+      </div>
+
+      {error && <div className="auth-error plan-error">{error} <button type="button" className="btn-secundario" onClick={() => setError('')}>OK</button></div>}
+
+      <div className="tabla-scroll">
+        <table className="tabla-adicionales plan-tabla-tareas plan-tabla-facturacion">
+          <thead>
+            <tr>
+              <th>Obra</th>
+              <th>Situación</th>
+              <th>Montaje</th>
+              <th>Facturar</th>
+              <th>Responsable</th>
+              <th>Comentario</th>
+              <th>Facturado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map(({ t, o, montaje }) => {
+              const vencida = t.fecha_inicio && (t.fecha_fin || t.fecha_inicio) < hoy
+              return (
+                <tr key={t.id}>
+                  <td>
+                    <button type="button" className="plan-enlace" onClick={() => onAbrir(o.id)}>{o.nombre}</button>
+                    {o.constructora && <span className="gantt-etiqueta-sub plan-sub-bloque">{o.constructora}</span>}
+                    {o.estado === 'Terminada' && <span className="plan-etiqueta-terminada">Obra terminada</span>}
+                  </td>
+                  <td>{o.situacion ? <span className="plan-chip" style={{ background: COLOR_SITUACION[o.situacion] || colorCategoria('Varios') }}>{o.situacion}</span> : '—'}</td>
+                  <td className={montaje.terminado ? 'plan-montaje-terminado' : ''}>{montaje.texto}</td>
+                  <td>
+                    {textoFechas(t)}
+                    {vencida && <span className="plan-vencidas" title="La fecha de facturar ya pasó">vencida</span>}
+                  </td>
+                  <td>{t.responsable || '—'}</td>
+                  <td className="plan-celda-comentario">
+                    <CampoTextoLargo valor={t.comentario} disabled={!puedeEditar} placeholder="Sin comentario" onGuardar={(v) => guardar(t.id, { comentario: v })} />
+                  </td>
+                  <td className="plan-celda-centro">
+                    <input type="checkbox" checked={false} disabled={!puedeEditar} title="Marcar como facturado (sale de la lista)"
+                      onChange={() => guardar(t.id, { estado: 'Terminado' })} />
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      {filas.length === 0 && <p className="dashboard-nota">{buscar || soloMontajeTerminado ? 'Ninguna facturación pendiente coincide con los filtros.' : 'No hay facturaciones pendientes. 👍'}</p>}
     </div>
   )
 }
@@ -1021,8 +1131,10 @@ export default function PlanificacionPage() {
       const o = obrasPorId.get(t.obra_id)
       return (!buscar || normalizar(`${o?.nombre} ${o?.constructora}`).includes(normalizar(buscar))) && coincideSituacion(o)
     })
-    return filasMontajePorMontador(tareas, obrasPorId, { incluirTerminadas: verTerminadas, ordenCascadaDesde: desde })
-      .filter((f) => !responsable || f.etiqueta === responsable)
+    return detallarFilasMontaje(
+      filasMontajePorMontador(tareas, obrasPorId, { incluirTerminadas: verTerminadas, ordenCascadaDesde: desde })
+        .filter((f) => !responsable || f.etiqueta === responsable),
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datos, obrasPorId, buscar, responsable, situacion, verTerminadas, desde])
 
@@ -1076,7 +1188,7 @@ export default function PlanificacionPage() {
 
       {error && <div className="auth-error plan-error">{error} <button type="button" className="btn-secundario" onClick={() => setError('')}>OK</button></div>}
 
-      {pestana !== 'Obras' && (
+      {(pestana === 'Cronograma' || pestana === 'Montaje') && (
         <div className="filtro-tabla plan-filtros">
           <NavegacionFechas desde={desde} setDesde={(d) => { setObrasFijadas(null); setDesde(d) }} escala={escala} setEscala={setEscala} />
           <div className="filtro-campo">
@@ -1161,6 +1273,7 @@ export default function PlanificacionPage() {
             onClickBarra={(b) => setTareaAbierta(b.tarea.id)}
             onIrAFecha={(iso) => setDesde(lunesDe(iso))}
             onDesplazar={(d) => setDesde((prev) => numeroADia(diaANumero(prev) + d))}
+            anchoEtiqueta={300}
             vacio="No hay montajes con fecha."
           />
           <div className="plan-avisos">
@@ -1192,6 +1305,16 @@ export default function PlanificacionPage() {
             )}
           </div>
         </>
+      )}
+
+      {pestana === 'Facturación' && (
+        <ListaFacturacion
+          datos={datos}
+          tareasPorObra={tareasPorObra}
+          puedeEditar={puedeEditar}
+          onActualizarTarea={actualizarTarea}
+          onAbrir={(id) => irA('Obras', id)}
+        />
       )}
 
       {pestana === 'Obras' && (
