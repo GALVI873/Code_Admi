@@ -5544,3 +5544,4 @@ select.celda-editable-material {
 }
 .deshacer-aviso-error { color: var(--rojo); border-left: 3px solid var(--rojo); }
 .deshacer-cerrar { border: none; background: none; cursor: pointer; color: inherit; }
+.plan-titulo-con-check { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }

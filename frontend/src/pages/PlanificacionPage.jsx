@@ -341,16 +341,26 @@ function EditorObra({ obra, tareas, datos, puedeEditar, onMoverObra, onCalcularF
     return [...tareas].sort((a, b) => posicionCategoria(orden, a.categoria) - posicionCategoria(orden, b.categoria) || (a.fecha_inicio || '').localeCompare(b.fecha_inicio || '') || a.id - b.id)
   }, [tareas, datos.categorias])
 
+  // El cronograma de la obra muestra solo lo que sigue vivo: al marcar una
+  // tarea como terminada sale del diagrama (a pedido de Álvaro, 2026-10-02).
+  // Sigue en la tabla de abajo, y "Ver terminadas" la vuelve a mostrar.
+  const [verTerminadasMini, setVerTerminadasMini] = useState(false)
+  const tareasMini = useMemo(
+    () => (verTerminadasMini ? tareasOrdenadas : tareasOrdenadas.filter((t) => t.estado !== 'Terminado')),
+    [tareasOrdenadas, verTerminadasMini],
+  )
+  const cantidadTerminadas = tareas.length - tareas.filter((t) => t.estado !== 'Terminado').length
+
   // Ventana del mini-cronograma: desde la tarea más temprana hasta la más
-  // tardía de la obra (con un margen), o las próximas semanas si no hay fechas.
+  // tardía que se muestra (con un margen), o las próximas semanas si no hay fechas.
   const ventana = useMemo(() => {
-    const conFecha = tareas.filter((t) => t.fecha_inicio)
+    const conFecha = tareasMini.filter((t) => t.fecha_inicio)
     if (conFecha.length === 0) return { desde: lunesDe(hoyIso()), dias: 42 }
     const ini = Math.min(...conFecha.map((t) => diaANumero(t.fecha_inicio)))
     const fin = Math.max(...conFecha.map((t) => diaANumero(t.fecha_fin || t.fecha_inicio)))
     const desde = lunesDe(numeroADia(ini - 3))
     return { desde, dias: Math.max(fin - diaANumero(desde) + 8, 28) }
-  }, [tareas])
+  }, [tareasMini])
   const anchoMini = ventana.dias > 120 ? 8 : ventana.dias > 60 ? 14 : 24
 
   async function ejecutar(promesa) {
@@ -363,7 +373,7 @@ function EditorObra({ obra, tareas, datos, puedeEditar, onMoverObra, onCalcularF
   }
 
   const barraObra = barraObraCompleta(obra, tareas, 'Obra completa')
-  const filasMini = (barraObra ? [{ id: 'obra-completa', etiqueta: 'Obra completa', esGrupo: true, barras: [barraObra] }] : []).concat(tareasOrdenadas.map((t) => ({
+  const filasMini = (barraObra ? [{ id: 'obra-completa', etiqueta: 'Obra completa', esGrupo: true, barras: [barraObra] }] : []).concat(tareasMini.map((t) => ({
     id: t.id,
     etiqueta: t.categoria,
     subetiqueta: t.responsable || '',
@@ -465,7 +475,15 @@ function EditorObra({ obra, tareas, datos, puedeEditar, onMoverObra, onCalcularF
 
       {error && <div className="auth-error">{error}</div>}
 
-      <h3 className="montaje-subtitulo">Cronograma de la obra</h3>
+      <div className="plan-titulo-con-check">
+        <h3 className="montaje-subtitulo">Cronograma de la obra</h3>
+        {cantidadTerminadas > 0 && (
+          <label className="plan-check">
+            <input type="checkbox" checked={verTerminadasMini} onChange={(e) => setVerTerminadasMini(e.target.checked)} />
+            Ver terminadas ({cantidadTerminadas})
+          </label>
+        )}
+      </div>
       <DiagramaGantt
         filas={filasMini}
         desde={ventana.desde}
@@ -477,6 +495,7 @@ function EditorObra({ obra, tareas, datos, puedeEditar, onMoverObra, onCalcularF
             ? onMoverObra(b.obraId, diaANumero(inicio) - diaANumero(b.inicio))
             : onActualizarTarea(b.tarea.id, { fecha_inicio: inicio, fecha_fin: fin }),
         )}
+        vacio={cantidadTerminadas === tareas.length && tareas.length > 0 ? 'Todas las tareas de esta obra están terminadas.' : 'Sin tareas con fecha.'}
       />
 
       <h3 className="montaje-subtitulo">Tareas por categoría</h3>
@@ -1029,6 +1048,13 @@ export default function PlanificacionPage() {
   const obraAbierta = obraAbiertaId ? obrasPorId.get(obraAbiertaId) : null
   const tareaSeleccionada = tareaAbierta ? datos.tareas.find((t) => t.id === tareaAbierta) : null
   // Categorías de la lista + las escritas a mano en alguna tarea (para el filtro).
+  // En Montaje, el filtro de responsable lista solo a quienes tienen alguna
+  // tarea de Montaje (a pedido de Álvaro, 2026-10-02); si el elegido no está,
+  // se muestra igual para poder quitarlo.
+  const responsablesMontaje = [...new Set([
+    ...datos.tareas.filter((t) => t.categoria === 'Montaje').flatMap(responsablesDe),
+    ...(responsable ? [responsable] : []),
+  ])].sort((a, b) => a.localeCompare(b, 'es'))
   const categoriasTodas = [...datos.categorias, ...new Set(datos.tareas.map((t) => t.categoria).filter((c) => !datos.categorias.includes(c)))]
 
   return (
@@ -1061,7 +1087,7 @@ export default function PlanificacionPage() {
             <label>Responsable</label>
             <select className="select-inline" value={responsable} onChange={(e) => setResponsable(e.target.value)}>
               <option value="">Todos</option>
-              {datos.responsables.map((r) => <option key={r}>{r}</option>)}
+              {(pestana === 'Montaje' ? responsablesMontaje : datos.responsables).map((r) => <option key={r}>{r}</option>)}
             </select>
           </div>
           <div className="filtro-campo">
