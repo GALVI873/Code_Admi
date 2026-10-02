@@ -172,7 +172,7 @@ button, input, select, textarea {
   border-collapse: collapse;
   background: white;
   border-radius: 10px;
-  overflow: hidden;
+  overflow: clip; /* clip y no hidden: hidden rompe la cabecera fija (sticky) */
   box-shadow: 0 2px 8px rgba(0, 0, 0, .07);
 }
 
@@ -5431,3 +5431,69 @@ select.celda-editable-material {
 .medicion-nota-numero { display: inline-block; margin-right: 6px; padding: 1px 8px; border-radius: 6px; background: #146e70; color: white; font-size: 14px; }
 .medicion-nota-etiqueta { display: block; margin: 8px 0 4px; font-size: 11px; font-weight: 700; color: #7a8699; text-transform: uppercase; letter-spacing: .03em; }
 .medicion-nota-acciones { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; }
+
+/* Cabeceras fijas en todo el panel (a pedido de Álvaro, 2026-10-02): al
+   bajar, la fila de títulos de cada tabla queda arriba a la vista. Las
+   tablas dentro de .tabla-scroll (que se desplaza a los lados) tienen alto
+   máximo y desplazamiento propio, igual que el Gantt (.gantt-scroll); las
+   demás se pegan al borde superior de la ventana. */
+.tabla-scroll {
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  background: white;
+}
+.tabla-presupuestos thead th,
+.tabla-costes thead th,
+.tabla-ofertas thead th,
+.tabla-adicionales thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.tabla-costes thead th,
+.tabla-ofertas thead th,
+.tabla-adicionales thead th {
+  background: white;
+  box-shadow: inset 0 -1px 0 #e8ecf2;
+}
+.tabla-scroll .tabla-adicionales thead th,
+.tabla-scroll .tabla-ofertas thead th { padding-top: 8px; }
+
+/* Planificación — tabla de obras ordenable, situación editable, comentario
+   amplio, categoría editable y Deshacer (2026-10-02). */
+.plan-th-orden {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.plan-th-orden:hover,
+.plan-th-orden-activo { color: var(--azul); }
+.plan-th-flecha { font-size: 9px; opacity: .7; }
+.plan-select-situacion {
+  border: 1px solid #dfe6e9;
+  border-radius: 12px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.plan-celda-comentario { min-width: 320px; width: 40%; }
+.plan-tabla-tareas .plan-comentario-largo {
+  flex: none;
+  min-height: 34px;
+  padding: 7px 8px;
+  line-height: 1.4;
+  font-family: inherit;
+  resize: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+.plan-tabla-tareas .plan-categoria-editable {
+  min-width: 130px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+.plan-categoria-nueva { flex: none; width: 200px; height: 34px; }
+.plan-deshacer { display: flex; align-items: center; gap: 10px; }
+.plan-deshacer-aviso { font-size: 12.5px; color: #5a6b7d; }

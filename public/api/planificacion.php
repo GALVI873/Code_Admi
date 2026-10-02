@@ -28,7 +28,9 @@ declare(strict_types=1);
 //     fechas de las tareas pendientes de la obra con el cronograma tipo.
 //   PATCH {accion:"actualizar_obra", id, ...campos}
 //   DELETE {accion:"eliminar_obra", id}: borra la obra y sus tareas.
-//   POST {accion:"agregar_tarea", obra_id, categoria}
+//   POST {accion:"agregar_tarea", obra_id, categoria, fecha_inicio?,
+//     fecha_fin?, responsable?, ayudante?, estado?, comentario?} — la
+//     categoría puede ser un texto propio (ver categoriaPlanificacion).
 //   PATCH {accion:"actualizar_tarea", id, fecha_inicio?, fecha_fin?,
 //     responsable?, ayudante?, estado?, comentario?, categoria?}: solo pisa
 //     los campos mandados. Devuelve la tarea actualizada.
@@ -61,6 +63,16 @@ function textoONull($valor): ?string
 {
     $valor = trim((string) ($valor ?? ''));
     return $valor === '' ? null : $valor;
+}
+
+// Categoría de una tarea: una de la lista o un texto propio (a pedido de
+// Álvaro, 2026-10-02: al crear la tarea se puede escribir otro nombre, ej.
+// "Montaje remates"). Las de la lista conservan su color y su lógica (el
+// Gantt de montaje toma solo "Montaje"); un texto propio sale como "Varios".
+function categoriaPlanificacion($valor): ?string
+{
+    $valor = textoONull($valor);
+    return $valor === null || mb_strlen($valor) > 60 ? null : $valor;
 }
 
 try {
@@ -291,11 +303,22 @@ try {
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && $accion === 'agregar_tarea') {
         $obraId = (int) ($body['obra_id'] ?? 0);
-        $categoria = (string) ($body['categoria'] ?? '');
-        if ($obraId <= 0 || !in_array($categoria, CATEGORIAS_PLANIFICACION, true)) {
+        $categoria = categoriaPlanificacion($body['categoria'] ?? null);
+        if ($obraId <= 0 || $categoria === null) {
             Response::error('Faltan "obra_id" y/o una "categoria" válida', 422);
         }
-        Planificacion::insertarTarea($db, $obraId, ['categoria' => $categoria], $autor);
+        // Los demás campos son opcionales: los usa "Deshacer" (Ctrl+Z) para
+        // volver a crear una tarea eliminada tal como estaba.
+        $estado = (string) ($body['estado'] ?? 'Pendiente');
+        Planificacion::insertarTarea($db, $obraId, [
+            'categoria' => $categoria,
+            'fecha_inicio' => fechaValidaPlanificacion($body['fecha_inicio'] ?? null, 'fecha_inicio'),
+            'fecha_fin' => fechaValidaPlanificacion($body['fecha_fin'] ?? null, 'fecha_fin'),
+            'responsable' => textoONull($body['responsable'] ?? null),
+            'ayudante' => textoONull($body['ayudante'] ?? null),
+            'estado' => in_array($estado, ESTADOS_TAREA, true) ? $estado : 'Pendiente',
+            'comentario' => textoONull($body['comentario'] ?? null),
+        ], $autor);
         $stmt = $db->prepare('SELECT * FROM planificacion_tareas WHERE id = ?');
         $stmt->execute([(int) $db->lastInsertId()]);
         Response::json(['tarea' => $stmt->fetch()]);
@@ -319,8 +342,8 @@ try {
         if (!in_array($estado, ESTADOS_TAREA, true)) {
             Response::error('"estado" debe ser Pendiente o Terminado', 422);
         }
-        $categoria = array_key_exists('categoria', $body) ? (string) $body['categoria'] : $actual['categoria'];
-        if (!in_array($categoria, CATEGORIAS_PLANIFICACION, true)) {
+        $categoria = array_key_exists('categoria', $body) ? categoriaPlanificacion($body['categoria']) : $actual['categoria'];
+        if ($categoria === null) {
             Response::error('Categoría no válida', 422);
         }
         $responsable = array_key_exists('responsable', $body) ? textoONull($body['responsable']) : $actual['responsable'];

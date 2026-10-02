@@ -553,11 +553,11 @@ export function eliminarObraPlanificacion(accessToken, id) {
   })
 }
 
-export function agregarTareaPlanificacion(accessToken, obraId, categoria) {
+export function agregarTareaPlanificacion(accessToken, obraId, categoria, campos = {}) {
   return request('/planificacion.php', {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ accion: 'agregar_tarea', obra_id: obraId, categoria }),
+    body: JSON.stringify({ ...campos, accion: 'agregar_tarea', obra_id: obraId, categoria }),
   })
 }
 

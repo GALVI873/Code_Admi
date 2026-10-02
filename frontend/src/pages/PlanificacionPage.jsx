@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import {
@@ -14,7 +14,7 @@ import {
 } from '../api/client.js'
 import DiagramaGantt, { diaANumero, numeroADia, hoyIso, lunesDe, formatoCorto } from '../components/DiagramaGantt.jsx'
 import {
-  COLOR_CATEGORIA,
+  colorCategoria,
   COLOR_TERMINADO,
   COLOR_SITUACION,
   SITUACIONES,
@@ -76,6 +76,12 @@ function sugerirObrasPanel(nombre, obrasPanel) {
     .filter((o) => o.puntaje > 0)
     .sort((a, b) => b.puntaje - a.puntaje)
     .slice(0, 5)
+}
+
+// Orden de las categorías en la lista; las escritas a mano van al final.
+function posicionCategoria(categorias, categoria) {
+  const i = categorias.indexOf(categoria)
+  return i < 0 ? categorias.length : i
 }
 
 function seCruzaConVentana(tarea, inicioVentana, finVentana) {
@@ -186,7 +192,7 @@ function FiltroCategorias({ categorias, seleccionadas, onCambiar }) {
             key={c}
             type="button"
             className={`plan-chip plan-chip-boton${activa ? '' : ' plan-chip-apagada'}`}
-            style={{ background: activa ? COLOR_CATEGORIA[c] : undefined }}
+            style={{ background: activa ? colorCategoria(c) : undefined }}
             onClick={() => alternar(c)}
           >
             {c}
@@ -274,13 +280,14 @@ function SelectObraPanel({ valor, sugeridas, obrasPanel, onCambio, disabled }) {
 
 // Campo de texto que guarda al salir (no en cada tecla) — mismo criterio
 // que el resto de los campos editables en línea del panel.
-function CampoTexto({ valor, onGuardar, disabled, placeholder, list, className = 'input-filtro' }) {
+function CampoTexto({ valor, onGuardar, disabled, placeholder, list, className = 'input-filtro', estilo }) {
   const [texto, setTexto] = useState(valor || '')
   useEffect(() => setTexto(valor || ''), [valor])
   return (
     <input
       type="text"
       className={className}
+      style={estilo}
       value={texto}
       placeholder={placeholder}
       list={list}
@@ -288,6 +295,33 @@ function CampoTexto({ valor, onGuardar, disabled, placeholder, list, className =
       onChange={(e) => setTexto(e.target.value)}
       onBlur={() => { if (texto.trim() !== (valor || '')) onGuardar(texto.trim()) }}
       onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+    />
+  )
+}
+
+// Comentario de una tarea en la tabla de la obra: crece con el texto para
+// leerlo entero (a pedido de Álvaro, 2026-10-02 — antes era una línea
+// cortada). Guarda al salir, como CampoTexto.
+function CampoTextoLargo({ valor, onGuardar, disabled, placeholder }) {
+  const [texto, setTexto] = useState(valor || '')
+  const ref = useRef(null)
+  useEffect(() => setTexto(valor || ''), [valor])
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight + 2}px`
+  }, [texto])
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      className="input-filtro plan-comentario-largo"
+      value={texto}
+      placeholder={placeholder}
+      disabled={disabled}
+      onChange={(e) => setTexto(e.target.value)}
+      onBlur={() => { if (texto.trim() !== (valor || '')) onGuardar(texto.trim()) }}
     />
   )
 }
@@ -303,7 +337,7 @@ function EditorObra({ obra, tareas, datos, puedeEditar, onMoverObra, onCalcularF
 
   const tareasOrdenadas = useMemo(() => {
     const orden = datos.categorias
-    return [...tareas].sort((a, b) => orden.indexOf(a.categoria) - orden.indexOf(b.categoria) || (a.fecha_inicio || '').localeCompare(b.fecha_inicio || '') || a.id - b.id)
+    return [...tareas].sort((a, b) => posicionCategoria(orden, a.categoria) - posicionCategoria(orden, b.categoria) || (a.fecha_inicio || '').localeCompare(b.fecha_inicio || '') || a.id - b.id)
   }, [tareas, datos.categorias])
 
   // Ventana del mini-cronograma: desde la tarea más temprana hasta la más
@@ -337,7 +371,7 @@ function EditorObra({ obra, tareas, datos, puedeEditar, onMoverObra, onCalcularF
       inicio: t.fecha_inicio,
       fin: t.fecha_fin,
       texto: t.responsable || t.categoria,
-      color: t.estado === 'Terminado' ? COLOR_TERMINADO : COLOR_CATEGORIA[t.categoria],
+      color: t.estado === 'Terminado' ? COLOR_TERMINADO : colorCategoria(t.categoria),
       atenuada: t.estado === 'Terminado',
       tarea: t,
     }] : [],
@@ -461,7 +495,15 @@ function EditorObra({ obra, tareas, datos, puedeEditar, onMoverObra, onCalcularF
           <tbody>
             {tareasOrdenadas.map((t) => (
               <tr key={t.id} className={t.estado === 'Terminado' ? 'plan-tarea-terminada' : ''}>
-                <td><span className="plan-chip" style={{ background: COLOR_CATEGORIA[t.categoria] }}>{t.categoria}</span></td>
+                <td>
+                  {puedeEditar ? (
+                    <CampoTexto valor={t.categoria} list="plan-categorias-editor" className="input-filtro plan-categoria-editable"
+                      estilo={{ background: colorCategoria(t.categoria) }}
+                      onGuardar={(v) => { if (v) ejecutar(onActualizarTarea(t.id, { categoria: v })) }} />
+                  ) : (
+                    <span className="plan-chip" style={{ background: colorCategoria(t.categoria) }}>{t.categoria}</span>
+                  )}
+                </td>
                 <td>
                   <input type="date" className="input-filtro input-fecha-limite" value={t.fecha_inicio || ''} disabled={!puedeEditar}
                     onChange={(e) => ejecutar(onActualizarTarea(t.id, { fecha_inicio: e.target.value, ...(t.fecha_fin && e.target.value > t.fecha_fin ? { fecha_fin: e.target.value } : {}) }))} />
@@ -478,8 +520,8 @@ function EditorObra({ obra, tareas, datos, puedeEditar, onMoverObra, onCalcularF
                   <input type="checkbox" checked={t.estado === 'Terminado'} disabled={!puedeEditar}
                     onChange={(e) => ejecutar(onActualizarTarea(t.id, { estado: e.target.checked ? 'Terminado' : 'Pendiente' }))} />
                 </td>
-                <td>
-                  <CampoTexto valor={t.comentario} disabled={!puedeEditar} onGuardar={(v) => ejecutar(onActualizarTarea(t.id, { comentario: v }))} />
+                <td className="plan-celda-comentario">
+                  <CampoTextoLargo valor={t.comentario} disabled={!puedeEditar} onGuardar={(v) => ejecutar(onActualizarTarea(t.id, { comentario: v }))} />
                 </td>
                 {puedeEditar && (
                   <td>
@@ -495,27 +537,50 @@ function EditorObra({ obra, tareas, datos, puedeEditar, onMoverObra, onCalcularF
       <datalist id="plan-responsables-editor">
         {datos.responsables.map((r) => <option key={r} value={r} />)}
       </datalist>
+      <datalist id="plan-categorias-editor">
+        {datos.categorias.map((c) => <option key={c} value={c} />)}
+      </datalist>
 
+      {/* La categoría de la tarea nueva se elige de la lista o se escribe
+          (a pedido de Álvaro, 2026-10-02); también se puede cambiar después
+          en la tabla. Un texto propio sale con el color de "Varios". */}
       {puedeEditar && (
         <div className="plan-agregar-tarea">
-          <select className="select-inline" value={categoriaNueva} onChange={(e) => setCategoriaNueva(e.target.value)}>
-            {datos.categorias.map((c) => <option key={c}>{c}</option>)}
-          </select>
-          <button type="button" className="btn-secundario" onClick={() => ejecutar(onAgregarTarea(obra.id, categoriaNueva))}>+ Agregar tarea</button>
-          <span className="dashboard-nota plan-nota-sin-margen">Para repetir una categoría (ej. un segundo Transporte o un Montaje de remates).</span>
+          <input type="text" className="input-filtro plan-categoria-nueva" list="plan-categorias-editor" placeholder="Categoría…"
+            value={categoriaNueva} onChange={(e) => setCategoriaNueva(e.target.value)}
+            onFocus={(e) => e.target.select()} />
+          <button type="button" className="btn-secundario" disabled={!categoriaNueva.trim()}
+            onClick={() => ejecutar(onAgregarTarea(obra.id, categoriaNueva.trim()))}>+ Agregar tarea</button>
+          <span className="dashboard-nota plan-nota-sin-margen">Elige una categoría o escribe otro nombre (ej. "Montaje remates").</span>
         </div>
       )}
     </div>
   )
 }
 
-function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, onCrear }) {
+// Columnas de la tabla de obras que se pueden ordenar con un clic en la
+// cabecera (a pedido de Álvaro, 2026-10-02); un segundo clic invierte.
+const COLUMNAS_OBRAS = [
+  { clave: 'obra', titulo: 'Obra' },
+  { clave: 'constructora', titulo: 'Constructora' },
+  { clave: 'situacion', titulo: 'Situación' },
+  { clave: 'proxima', titulo: 'Próxima tarea' },
+  { clave: 'montaje', titulo: 'Montaje' },
+  { clave: 'pendientes', titulo: 'Pendientes' },
+  { clave: 'panel', titulo: 'Panel', sinOrden: true },
+]
+
+function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, onCrear, onActualizarObra }) {
   const [buscar, setBuscar] = useState('')
   const [verTerminadas, setVerTerminadas] = useState(false)
   const [soloSinResponsable, setSoloSinResponsable] = useState(false)
   // Filtro por situación de la obra (a pedido de Álvaro, 2026-10-01).
   const [filtroSituacion, setFiltroSituacion] = useState('')
+  // Filtro por tareas pendientes (a pedido de Álvaro, 2026-10-02).
+  const [filtroPendientes, setFiltroPendientes] = useState('')
+  const [orden, setOrden] = useState(null) // { clave, desc }
   const [creando, setCreando] = useState(false)
+  const [error, setError] = useState('')
   const hoy = hoyIso()
 
   // Tareas pendientes sin responsable — a pedido de Álvaro (2026-09-29):
@@ -525,13 +590,55 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
   const activas = obras.filter((o) => o.estado !== 'Terminada')
   const cantidadSinResponsable = activas.filter((o) => sinResponsable(o) > 0).length
 
-  const filtradas = obras
-    .filter((o) => verTerminadas || o.estado !== 'Terminada')
-    .filter((o) => !buscar || normalizar(`${o.nombre} ${o.constructora} ${o.obra_panel}`).includes(normalizar(buscar)))
-    .filter((o) => !soloSinResponsable || sinResponsable(o) > 0)
-    .filter((o) => !filtroSituacion || (filtroSituacion === '__sin__' ? !o.situacion : o.situacion === filtroSituacion))
-  // Con el filtro activo, las más nuevas primero (las recién aceptadas).
-  if (soloSinResponsable) filtradas.sort((a, b) => String(b.creado_en).localeCompare(String(a.creado_en)))
+  // Datos de cada fila (también se usan para ordenar).
+  const filas = obras.map((o) => {
+    const tareas = tareasPorObra.get(o.id) || []
+    const pendientes = tareas.filter((t) => t.estado !== 'Terminado')
+    const proxima = pendientes
+      .filter((t) => t.fecha_inicio && (t.fecha_fin || t.fecha_inicio) >= hoy)
+      .sort((a, b) => a.fecha_inicio.localeCompare(b.fecha_inicio))[0]
+    const montaje = tareas.find((t) => t.categoria === 'Montaje' && t.estado !== 'Terminado') || tareas.find((t) => t.categoria === 'Montaje')
+    const vencidas = pendientes.filter((t) => t.fecha_inicio && (t.fecha_fin || t.fecha_inicio) < hoy).length
+    const faltanResponsable = pendientes.filter((t) => !t.responsable).length
+    return { o, pendientes, proxima, montaje, vencidas, faltanResponsable }
+  })
+
+  const filtradas = filas
+    .filter(({ o }) => verTerminadas || o.estado !== 'Terminada')
+    .filter(({ o }) => !buscar || normalizar(`${o.nombre} ${o.constructora} ${o.obra_panel}`).includes(normalizar(buscar)))
+    .filter(({ o }) => !soloSinResponsable || sinResponsable(o) > 0)
+    .filter(({ o }) => !filtroSituacion || (filtroSituacion === '__sin__' ? !o.situacion : o.situacion === filtroSituacion))
+    .filter((f) => !filtroPendientes
+      || (filtroPendientes === 'con' && f.pendientes.length > 0)
+      || (filtroPendientes === 'vencidas' && f.vencidas > 0)
+      || (filtroPendientes === 'sin' && f.pendientes.length === 0))
+
+  if (orden) {
+    // Vacíos siempre al final, en los dos sentidos.
+    const valor = {
+      obra: (f) => normalizar(f.o.nombre),
+      constructora: (f) => normalizar(f.o.constructora),
+      situacion: (f) => (f.o.situacion ? String(SITUACIONES.indexOf(f.o.situacion) + 10) : ''),
+      proxima: (f) => f.proxima?.fecha_inicio || '',
+      montaje: (f) => f.montaje?.fecha_inicio || '',
+      pendientes: (f) => String(f.pendientes.length).padStart(4, '0'),
+    }[orden.clave]
+    filtradas.sort((a, b) => {
+      const va = valor(a)
+      const vb = valor(b)
+      if (!va || !vb) return (!va) - (!vb)
+      return (orden.desc ? -1 : 1) * va.localeCompare(vb, 'es', { numeric: true }) || a.o.nombre.localeCompare(b.o.nombre)
+    })
+  } else if (soloSinResponsable) {
+    // Con el filtro activo, las más nuevas primero (las recién aceptadas).
+    filtradas.sort((a, b) => String(b.o.creado_en).localeCompare(String(a.o.creado_en)))
+  }
+
+  function ordenarPor(clave) {
+    setOrden((prev) => (prev?.clave === clave ? (prev.desc ? null : { clave, desc: true }) : { clave, desc: false }))
+  }
+
+  const hayFiltros = buscar || filtroSituacion || soloSinResponsable || filtroPendientes
 
   return (
     <div>
@@ -546,6 +653,15 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
             <option value="">Todas</option>
             {SITUACIONES.map((x) => <option key={x}>{x}</option>)}
             <option value="__sin__">Sin situación</option>
+          </select>
+        </div>
+        <div className="filtro-campo">
+          <label>Pendientes</label>
+          <select className="select-inline" value={filtroPendientes} onChange={(e) => setFiltroPendientes(e.target.value)}>
+            <option value="">Todas</option>
+            <option value="con">Con tareas pendientes</option>
+            <option value="vencidas">Con tareas vencidas</option>
+            <option value="sin">Sin pendientes</option>
           </select>
         </div>
         <label className="plan-check">
@@ -575,49 +691,56 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
         />
       )}
 
+      {error && <div className="auth-error plan-error">{error} <button type="button" className="btn-secundario" onClick={() => setError('')}>OK</button></div>}
+
       <div className="tabla-scroll">
         <table className="tabla-adicionales plan-tabla-obras">
           <thead>
             <tr>
-              <th>Obra</th>
-              <th>Constructora</th>
-              <th>Situación</th>
-              <th>Próxima tarea</th>
-              <th>Montaje</th>
-              <th>Pendientes</th>
-              <th>Panel</th>
+              {COLUMNAS_OBRAS.map((c) => (
+                <th key={c.clave}>
+                  {c.sinOrden ? c.titulo : (
+                    <button type="button" className={`plan-th-orden${orden?.clave === c.clave ? ' plan-th-orden-activo' : ''}`} onClick={() => ordenarPor(c.clave)}
+                      title="Ordenar por esta columna">
+                      {c.titulo}
+                      <span className="plan-th-flecha">{orden?.clave === c.clave ? (orden.desc ? '▼' : '▲') : '↕'}</span>
+                    </button>
+                  )}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {filtradas.map((o) => {
-              const tareas = tareasPorObra.get(o.id) || []
-              const pendientes = tareas.filter((t) => t.estado !== 'Terminado')
-              const proxima = pendientes
-                .filter((t) => t.fecha_inicio && (t.fecha_fin || t.fecha_inicio) >= hoy)
-                .sort((a, b) => a.fecha_inicio.localeCompare(b.fecha_inicio))[0]
-              const montaje = tareas.find((t) => t.categoria === 'Montaje' && t.estado !== 'Terminado') || tareas.find((t) => t.categoria === 'Montaje')
-              const vencidas = pendientes.filter((t) => t.fecha_inicio && (t.fecha_fin || t.fecha_inicio) < hoy).length
-              const faltanResponsable = pendientes.filter((t) => !t.responsable).length
-              return (
-                <tr key={o.id} className="plan-fila-obra" onClick={() => onAbrir(o.id)}>
-                  <td className="adicionales-obra-col-obra">{o.nombre}{o.estado === 'Terminada' && <span className="plan-etiqueta-terminada">Terminada</span>}</td>
-                  <td>{o.constructora || '—'}</td>
-                  <td>{o.situacion ? <span className="plan-chip" style={{ background: COLOR_SITUACION[o.situacion] || COLOR_CATEGORIA.Varios }}>{o.situacion}</span> : '—'}</td>
-                  <td>{proxima ? `${proxima.categoria} · ${textoFechas(proxima)}` : '—'}</td>
-                  <td>{montaje ? `${textoFechas(montaje)}${montaje.responsable ? ` · ${montaje.responsable}` : ''}` : '—'}</td>
-                  <td>
-                    {pendientes.length}
-                    {vencidas > 0 && <span className="plan-vencidas" title="Tareas pendientes con la fecha ya pasada">{vencidas} vencida{vencidas === 1 ? '' : 's'}</span>}
-                    {faltanResponsable > 0 && <span className="plan-sin-responsable" title="Tareas pendientes sin responsable asignado">{faltanResponsable} sin responsable</span>}
-                  </td>
-                  <td>{o.obra_panel ? '🔗' : ''}</td>
-                </tr>
-              )
-            })}
+            {filtradas.map(({ o, pendientes, proxima, montaje, vencidas, faltanResponsable }) => (
+              <tr key={o.id} className="plan-fila-obra" onClick={() => onAbrir(o.id)}>
+                <td className="adicionales-obra-col-obra">{o.nombre}{o.estado === 'Terminada' && <span className="plan-etiqueta-terminada">Terminada</span>}</td>
+                <td>{o.constructora || '—'}</td>
+                {/* La situación se cambia aquí mismo, sin entrar a la obra
+                    (a pedido de Álvaro, 2026-10-02). */}
+                <td onClick={(e) => { if (puedeEditar) e.stopPropagation() }}>
+                  {puedeEditar ? (
+                    <select className="select-inline plan-select-situacion" value={o.situacion || ''}
+                      style={{ background: COLOR_SITUACION[o.situacion] || 'white' }}
+                      onChange={(e) => onActualizarObra(o.id, { situacion: e.target.value }).catch((err) => setError(err.message))}>
+                      <option value="">Sin situación</option>
+                      {SITUACIONES.map((x) => <option key={x}>{x}</option>)}
+                    </select>
+                  ) : o.situacion ? <span className="plan-chip" style={{ background: COLOR_SITUACION[o.situacion] || colorCategoria('Varios') }}>{o.situacion}</span> : '—'}
+                </td>
+                <td>{proxima ? `${proxima.categoria} · ${textoFechas(proxima)}` : '—'}</td>
+                <td>{montaje ? `${textoFechas(montaje)}${montaje.responsable ? ` · ${montaje.responsable}` : ''}` : '—'}</td>
+                <td>
+                  {pendientes.length}
+                  {vencidas > 0 && <span className="plan-vencidas" title="Tareas pendientes con la fecha ya pasada">{vencidas} vencida{vencidas === 1 ? '' : 's'}</span>}
+                  {faltanResponsable > 0 && <span className="plan-sin-responsable" title="Tareas pendientes sin responsable asignado">{faltanResponsable} sin responsable</span>}
+                </td>
+                <td>{o.obra_panel ? '🔗' : ''}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
-      {filtradas.length === 0 && <p className="dashboard-nota">{soloSinResponsable && !filtroSituacion && !buscar ? 'Todas las obras activas tienen responsable asignado. 👍' : `No hay obras${buscar || filtroSituacion || soloSinResponsable ? ' que coincidan con los filtros' : ''}.`}</p>}
+      {filtradas.length === 0 && <p className="dashboard-nota">{soloSinResponsable && !filtroSituacion && !buscar && !filtroPendientes ? 'Todas las obras activas tienen responsable asignado. 👍' : `No hay obras${hayFiltros ? ' que coincidan con los filtros' : ''}.`}</p>}
     </div>
   )
 }
@@ -682,10 +805,67 @@ export default function PlanificacionPage() {
     setSearchParams(params)
   }
 
+  // --- Deshacer (Ctrl+Z) — a pedido de Álvaro, 2026-10-02. Cada acción
+  // guarda cómo volver atrás; Ctrl+Z (fuera de un campo de texto, donde
+  // sigue deshaciendo lo escrito) o el botón "↶ Deshacer" aplican la última.
+  // Se recuerda solo mientras la página está abierta. Crear o eliminar una
+  // obra entera no se deshace (eso ya pide confirmación).
+  const datosRef = useRef(datos)
+  useEffect(() => { datosRef.current = datos }, [datos])
+  const pilaDeshacer = useRef([])
+  const deshaciendo = useRef(false)
+  const [pasosDeshacer, setPasosDeshacer] = useState([])
+  const [avisoDeshacer, setAvisoDeshacer] = useState('')
+  // Una tarea eliminada y vuelta a crear con Deshacer cambia de id: los
+  // pasos más viejos que la nombran usan el id nuevo.
+  const idsRecreados = useRef(new Map())
+  const idActual = (id) => {
+    let x = id
+    while (idsRecreados.current.has(x)) x = idsRecreados.current.get(x)
+    return x
+  }
+  const nombreObra = (obraId) => datosRef.current?.obras.find((o) => o.id === obraId)?.nombre || 'obra'
+
+  function registrarDeshacer(descripcion, deshacerPaso) {
+    pilaDeshacer.current = [...pilaDeshacer.current.slice(-49), { descripcion, deshacer: deshacerPaso }]
+    setPasosDeshacer(pilaDeshacer.current)
+    setAvisoDeshacer('')
+  }
+
+  async function deshacer() {
+    if (deshaciendo.current) return
+    const paso = pilaDeshacer.current[pilaDeshacer.current.length - 1]
+    if (!paso) return
+    pilaDeshacer.current = pilaDeshacer.current.slice(0, -1)
+    setPasosDeshacer(pilaDeshacer.current)
+    deshaciendo.current = true
+    try {
+      await paso.deshacer()
+      setAvisoDeshacer(`Deshecho: ${paso.descripcion}`)
+    } catch (err) {
+      setError(`No se pudo deshacer "${paso.descripcion}": ${err.message}`)
+    } finally {
+      deshaciendo.current = false
+    }
+  }
+
+  const deshacerRef = useRef(deshacer)
+  useEffect(() => { deshacerRef.current = deshacer })
+  useEffect(() => {
+    function alPulsarTecla(e) {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'z') return
+      if (e.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
+      e.preventDefault()
+      deshacerRef.current()
+    }
+    window.addEventListener('keydown', alPulsarTecla)
+    return () => window.removeEventListener('keydown', alPulsarTecla)
+  }, [])
+
   // --- Acciones (optimistas donde tiene sentido: mover barras tiene que
   // sentirse instantáneo; si el servidor rechaza, se vuelve atrás).
-  async function actualizarTarea(id, cambios) {
-    const anteriores = datos.tareas
+  async function actualizarTarea(id, cambios, { registrar = true } = {}) {
+    const anterior = datosRef.current.tareas.find((t) => t.id === id)
     setDatos((prev) => ({ ...prev, tareas: prev.tareas.map((t) => (t.id === id ? { ...t, ...cambios } : t)) }))
     try {
       const tarea = tareaNum((await actualizarTareaPlanificacion(accessToken, id, cambios)).tarea)
@@ -694,15 +874,26 @@ export default function PlanificacionPage() {
         tareas: prev.tareas.map((t) => (t.id === id ? tarea : t)),
         responsables: [...new Set([...prev.responsables, ...responsablesDe(tarea)])].sort((a, b) => a.localeCompare(b)),
       }))
+      if (registrar && anterior) {
+        const previos = Object.fromEntries(Object.keys(cambios).map((k) => [k, anterior[k] ?? null]))
+        if (Object.keys(cambios).some((k) => (anterior[k] ?? '') !== (cambios[k] ?? ''))) {
+          registrarDeshacer(`cambio en ${anterior.categoria} (${nombreObra(anterior.obra_id)})`, () => actualizarTarea(idActual(id), previos, { registrar: false }))
+        }
+      }
     } catch (err) {
-      setDatos((prev) => ({ ...prev, tareas: anteriores }))
+      if (anterior) setDatos((prev) => ({ ...prev, tareas: prev.tareas.map((t) => (t.id === id ? anterior : t)) }))
       throw err
     }
   }
 
-  async function actualizarObra(id, cambios) {
+  async function actualizarObra(id, cambios, { registrar = true } = {}) {
+    const anterior = datosRef.current.obras.find((o) => o.id === id)
     const obra = obraNum((await actualizarObraPlanificacion(accessToken, id, cambios)).obra)
     setDatos((prev) => ({ ...prev, obras: prev.obras.map((o) => (o.id === id ? obra : o)) }))
+    if (registrar && anterior) {
+      const previos = Object.fromEntries(Object.keys(cambios).map((k) => [k, anterior[k] ?? null]))
+      registrarDeshacer(`cambio en la obra ${anterior.nombre}`, () => actualizarObra(id, previos, { registrar: false }))
+    }
   }
 
   async function crearObra(form) {
@@ -713,9 +904,24 @@ export default function PlanificacionPage() {
     irA('Obras', obra.id)
   }
 
+  // Guarda fechas (u otros campos) de varias tareas a la vez: pantalla
+  // primero y después cada tarea; si algo falla se recarga todo del servidor
+  // para no dejar la obra a medias. cambios: Map id → campos.
+  async function guardarVariasTareas(cambios) {
+    setDatos((prev) => ({ ...prev, tareas: prev.tareas.map((t) => (cambios.has(t.id) ? { ...t, ...cambios.get(t.id) } : t)) }))
+    try {
+      await Promise.all([...cambios].map(([id, c]) => actualizarTareaPlanificacion(accessToken, id, c)))
+    } catch (err) {
+      planificacion(accessToken).then((d) => setDatos(datosNum(d)))
+      throw err
+    }
+  }
+
   // Rellena las fechas de la obra con el cronograma tipo desde la fecha de
   // aceptación (lo calcula el servidor, ver backend/src/Planificacion.php).
   async function calcularFechas(obraId, fechaAceptacion) {
+    const obraAntes = datosRef.current.obras.find((o) => o.id === obraId)
+    const tareasAntes = datosRef.current.tareas.filter((t) => t.obra_id === obraId)
     const r = await calcularFechasPlanificacion(accessToken, obraId, fechaAceptacion)
     const obra = obraNum(r.obra)
     const tareas = r.tareas.map(tareaNum)
@@ -724,6 +930,16 @@ export default function PlanificacionPage() {
       obras: prev.obras.map((o) => (o.id === obraId ? obra : o)),
       tareas: [...prev.tareas.filter((t) => t.obra_id !== obraId), ...tareas],
     }))
+    // Deshacer: quita las tareas que se crearon y devuelve las fechas.
+    const idsAntes = new Set(tareasAntes.map((t) => t.id))
+    const creadas = tareas.filter((t) => !idsAntes.has(t.id)).map((t) => t.id)
+    registrarDeshacer(`calcular fechas de ${obra.nombre}`, async () => {
+      await Promise.all(creadas.map((id) => eliminarTarea(idActual(id), { registrar: false })))
+      await guardarVariasTareas(new Map(tareasAntes
+        .filter((t) => t.estado !== 'Terminado')
+        .map((t) => [idActual(t.id), { fecha_inicio: t.fecha_inicio ?? null, fecha_fin: t.fecha_fin ?? null }])))
+      await actualizarObra(obraId, { fecha_aceptacion: obraAntes?.fecha_aceptacion ?? null }, { registrar: false })
+    })
   }
 
   async function eliminarObra(id) {
@@ -732,34 +948,40 @@ export default function PlanificacionPage() {
     irA('Obras')
   }
 
-  async function agregarTarea(obraId, categoria) {
-    const tarea = tareaNum((await agregarTareaPlanificacion(accessToken, obraId, categoria)).tarea)
+  async function agregarTarea(obraId, categoria, { registrar = true, campos = {} } = {}) {
+    const tarea = tareaNum((await agregarTareaPlanificacion(accessToken, obraId, categoria, campos)).tarea)
     setDatos((prev) => ({ ...prev, tareas: [...prev.tareas, tarea] }))
+    if (registrar) {
+      registrarDeshacer(`agregar ${categoria} (${nombreObra(obraId)})`, () => eliminarTarea(idActual(tarea.id), { registrar: false }))
+    }
+    return tarea
   }
 
-  async function eliminarTarea(id) {
+  async function eliminarTarea(id, { registrar = true } = {}) {
+    const anterior = datosRef.current.tareas.find((t) => t.id === id)
     await eliminarTareaPlanificacion(accessToken, id)
     setDatos((prev) => ({ ...prev, tareas: prev.tareas.filter((t) => t.id !== id) }))
+    if (registrar && anterior) {
+      registrarDeshacer(`eliminar ${anterior.categoria} (${nombreObra(anterior.obra_id)})`, async () => {
+        const { fecha_inicio, fecha_fin, responsable, ayudante, estado, comentario } = anterior
+        const nueva = await agregarTarea(anterior.obra_id, anterior.categoria, {
+          registrar: false,
+          campos: { fecha_inicio, fecha_fin, responsable, ayudante, estado, comentario },
+        })
+        idsRecreados.current.set(id, nueva.id)
+      })
+    }
   }
 
   // Corre todas las tareas pendientes con fecha de una obra "delta" días.
-  // Se actualiza la pantalla de una vez y después se guarda cada tarea; si
-  // algo falla se recarga todo del servidor para no dejar la obra a medias.
   async function moverObra(obraId, delta) {
     if (!delta) return
     const correr = (iso) => (iso ? numeroADia(diaANumero(iso) + delta) : iso)
-    const cambios = new Map(
-      datos.tareas
-        .filter((t) => t.obra_id === obraId && t.estado !== 'Terminado' && t.fecha_inicio)
-        .map((t) => [t.id, { fecha_inicio: correr(t.fecha_inicio), fecha_fin: correr(t.fecha_fin) }]),
-    )
-    setDatos((prev) => ({ ...prev, tareas: prev.tareas.map((t) => (cambios.has(t.id) ? { ...t, ...cambios.get(t.id) } : t)) }))
-    try {
-      await Promise.all([...cambios].map(([id, c]) => actualizarTareaPlanificacion(accessToken, id, c)))
-    } catch (err) {
-      planificacion(accessToken).then((d) => setDatos(datosNum(d)))
-      throw err
-    }
+    const movidas = datosRef.current.tareas.filter((t) => t.obra_id === obraId && t.estado !== 'Terminado' && t.fecha_inicio)
+    await guardarVariasTareas(new Map(movidas.map((t) => [t.id, { fecha_inicio: correr(t.fecha_inicio), fecha_fin: correr(t.fecha_fin) }])))
+    registrarDeshacer(`mover la obra ${nombreObra(obraId)}`, () => guardarVariasTareas(
+      new Map(movidas.map((t) => [idActual(t.id), { fecha_inicio: t.fecha_inicio, fecha_fin: t.fecha_fin ?? null }])),
+    ))
   }
 
   function moverBarra(barra, inicio, fin) {
@@ -785,7 +1007,7 @@ export default function PlanificacionPage() {
         .filter((t) => categorias.size === 0 || categorias.has(t.categoria))
         .filter((t) => !responsable || responsablesDe(t).includes(responsable))
         .filter((t) => (obrasFijadas ? Boolean(t.fecha_inicio) : seCruzaConVentana(t, inicioVentana, finVentana)))
-        .sort((a, b) => datos.categorias.indexOf(a.categoria) - datos.categorias.indexOf(b.categoria) || a.fecha_inicio.localeCompare(b.fecha_inicio))
+        .sort((a, b) => posicionCategoria(datos.categorias, a.categoria) - posicionCategoria(datos.categorias, b.categoria) || a.fecha_inicio.localeCompare(b.fecha_inicio))
       if (tareas.length === 0) continue
       conFechaMasTemprana.push({ o, tareas, primera: Math.min(...tareas.map((t) => diaANumero(t.fecha_inicio))) })
     }
@@ -798,7 +1020,7 @@ export default function PlanificacionPage() {
         fin: t.fecha_fin,
         texto: textoBarraTarea(t),
         titulo: `${o.nombre} — ${t.categoria}${t.responsable ? ` (${t.responsable}${t.categoria === 'Montaje' && t.ayudante ? ` · ${t.ayudante}` : ''})` : ''}${t.comentario ? `\n${t.comentario}` : ''}`,
-        color: t.estado === 'Terminado' ? COLOR_TERMINADO : COLOR_CATEGORIA[t.categoria],
+        color: t.estado === 'Terminado' ? COLOR_TERMINADO : colorCategoria(t.categoria),
         atenuada: t.estado === 'Terminado',
         tarea: t,
       })
@@ -825,10 +1047,10 @@ export default function PlanificacionPage() {
       const o = obrasPorId.get(t.obra_id)
       return (!buscar || normalizar(`${o?.nombre} ${o?.constructora}`).includes(normalizar(buscar))) && coincideSituacion(o)
     })
-    return filasMontajePorMontador(tareas, obrasPorId, { incluirTerminadas: verTerminadas })
+    return filasMontajePorMontador(tareas, obrasPorId, { incluirTerminadas: verTerminadas, ordenCascadaDesde: desde })
       .filter((f) => !responsable || f.etiqueta === responsable)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datos, obrasPorId, buscar, responsable, situacion, verTerminadas])
+  }, [datos, obrasPorId, buscar, responsable, situacion, verTerminadas, desde])
 
   // Montajes pendientes cuya fecha ya pasó — lo mismo que en Notion se veía
   // como barras "vencidas" sin marcar Terminado.
@@ -851,6 +1073,9 @@ export default function PlanificacionPage() {
 
   const obraAbierta = obraAbiertaId ? obrasPorId.get(obraAbiertaId) : null
   const tareaSeleccionada = tareaAbierta ? datos.tareas.find((t) => t.id === tareaAbierta) : null
+  // Categorías de la lista + las escritas a mano en alguna tarea (para el filtro).
+  const categoriasTodas = [...datos.categorias, ...new Set(datos.tareas.map((t) => t.categoria).filter((c) => !datos.categorias.includes(c)))]
+  const ultimoPaso = pasosDeshacer[pasosDeshacer.length - 1]
 
   return (
     <div className="dashboard dashboard-ancho">
@@ -859,6 +1084,15 @@ export default function PlanificacionPage() {
           <h1>Planificación de Obras</h1>
           <p>Cronograma por categoría y Gantt de montaje{puedeEditar ? ' — arrastra las barras para mover o estirar las fechas' : ''}</p>
         </div>
+        {puedeEditar && (
+          <div className="plan-deshacer">
+            {avisoDeshacer && <span className="plan-deshacer-aviso">{avisoDeshacer}</span>}
+            <button type="button" className="btn-secundario" disabled={!ultimoPaso} onClick={deshacer}
+              title={ultimoPaso ? `Deshacer: ${ultimoPaso.descripcion} (Ctrl+Z)` : 'Nada que deshacer'}>
+              ↶ Deshacer
+            </button>
+          </div>
+        )}
       </header>
 
       <div className="seguimiento-pestanas">
@@ -906,7 +1140,7 @@ export default function PlanificacionPage() {
 
       {pestana === 'Cronograma' && (
         <>
-          <FiltroCategorias categorias={datos.categorias} seleccionadas={categorias} onCambiar={setCategorias} />
+          <FiltroCategorias categorias={categoriasTodas} seleccionadas={categorias} onCambiar={setCategorias} />
           {obrasFijadas && (
             <div className="plan-aviso-fijadas">
               Mostrando las mismas obras que antes de saltar de fecha.
@@ -1013,6 +1247,7 @@ export default function PlanificacionPage() {
             obrasPanel={datos.obras_panel}
             onAbrir={(id) => irA('Obras', id)}
             onCrear={crearObra}
+            onActualizarObra={actualizarObra}
           />
         )
       )}
@@ -1045,6 +1280,7 @@ export default function PlanificacionPage() {
           tarea={tareaSeleccionada}
           obra={obrasPorId.get(tareaSeleccionada.obra_id)}
           responsables={datos.responsables}
+          categorias={datos.categorias}
           personas={datos.personas || []}
           onCrearPersona={async (nombre, rol) => {
             const r = await agregarPersonaMontaje(accessToken, nombre, rol)

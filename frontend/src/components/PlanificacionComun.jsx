@@ -21,6 +21,12 @@ export const COLOR_CATEGORIA = {
   'Varios': '#e6e9eb',
 }
 
+// Una categoría escrita a mano (ver categoriaPlanificacion en
+// planificacion.php) sale con el color de "Varios".
+export function colorCategoria(categoria) {
+  return COLOR_CATEGORIA[categoria] || COLOR_CATEGORIA.Varios
+}
+
 // Barras/filas de tareas ya terminadas.
 export const COLOR_TERMINADO = '#eceff3'
 
@@ -62,7 +68,12 @@ export function responsablesDe(tarea) {
 // solo entre obras con situación "Obra" (a pedido de Álvaro, 2026-10-01):
 // un remate/repaso/aviso suele ser un par de horas, puede convivir con una
 // obra sin que sea un conflicto.
-export function filasMontajePorMontador(tareas, obrasPorId, { incluirTerminadas = false } = {}) {
+// ordenCascadaDesde (fecha ISO, opcional): ordena los montadores "en
+// cascada" (a pedido de Álvaro, 2026-10-02): primero el que tiene el montaje
+// que empieza antes (entre los que siguen en curso a partir de esa fecha) y,
+// a igual fecha, por orden alfabético. Sin ella, orden alfabético.
+// "Sin asignar" va siempre al final.
+export function filasMontajePorMontador(tareas, obrasPorId, { incluirTerminadas = false, ordenCascadaDesde = null } = {}) {
   const porResponsable = new Map()
   for (const t of tareas) {
     if (t.categoria !== 'Montaje' || !t.fecha_inicio) continue
@@ -85,8 +96,15 @@ export function filasMontajePorMontador(tareas, obrasPorId, { incluirTerminadas 
       })
     }
   }
+  // Primer inicio de cada montador entre las barras que terminan desde
+  // ordenCascadaDesde (las ya pasadas no cuentan); '~' = sin ninguna, al final.
+  const primerInicio = (barras) => barras
+    .filter((b) => (b.fin || b.inicio) >= ordenCascadaDesde)
+    .reduce((min, b) => (b.inicio < min ? b.inicio : min), '~')
   return [...porResponsable.entries()]
-    .sort(([a], [b]) => (a === 'Sin asignar') - (b === 'Sin asignar') || a.localeCompare(b))
+    .sort(([a, barrasA], [b, barrasB]) => (a === 'Sin asignar') - (b === 'Sin asignar')
+      || (ordenCascadaDesde ? primerInicio(barrasA).localeCompare(primerInicio(barrasB)) : 0)
+      || a.localeCompare(b))
     .map(([nombre, barras]) => ({
       id: `montador-${nombre}`,
       etiqueta: nombre,
@@ -216,9 +234,11 @@ function SelectorAyudantes({ valor, personas, onCambio, onCrear }) {
 // fechas, responsable, estado y comentario; sin permiso es solo lectura.
 // En las tareas de Montaje el responsable se elige como Montador + Ayudante
 // (a pedido de Álvaro, 2026-10-01) desde la lista de montaje_personas.
-export function VentanaTarea({ tarea, obra, responsables, personas = [], puedeEditar, onGuardar, onCerrar, onAbrirObra, onCrearPersona }) {
-  const esMontaje = tarea.categoria === 'Montaje'
+// La categoría también se cambia desde aquí (a pedido de Álvaro, 2026-10-02:
+// pasar una tarea de Montaje a Facturar u otra sin ir a la obra).
+export function VentanaTarea({ tarea, obra, responsables, categorias = [], personas = [], puedeEditar, onGuardar, onCerrar, onAbrirObra, onCrearPersona }) {
   const [form, setForm] = useState({
+    categoria: tarea.categoria,
     fecha_inicio: tarea.fecha_inicio || '',
     fecha_fin: tarea.fecha_fin || '',
     responsable: tarea.responsable || '',
@@ -228,13 +248,17 @@ export function VentanaTarea({ tarea, obra, responsables, personas = [], puedeEd
   })
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
+  const esMontaje = (puedeEditar ? form.categoria : tarea.categoria) === 'Montaje'
+  const opcionesCategoria = categorias.includes(tarea.categoria) ? categorias : [tarea.categoria, ...categorias]
 
   async function handleGuardar(e) {
     e.preventDefault()
     setGuardando(true)
     setError('')
     try {
-      await onGuardar(tarea.id, form)
+      // Solo los campos que cambiaron (así "Deshacer" vuelve atrás justo eso).
+      const cambios = Object.fromEntries(Object.entries(form).filter(([k, v]) => v !== (tarea[k] || (k === 'estado' ? 'Pendiente' : ''))))
+      if (Object.keys(cambios).length > 0) await onGuardar(tarea.id, cambios)
       onCerrar()
     } catch (err) {
       setError(err.message)
@@ -247,7 +271,7 @@ export function VentanaTarea({ tarea, obra, responsables, personas = [], puedeEd
     <div className="plan-ventana-fondo" onClick={onCerrar}>
       <div className="plan-ventana" onClick={(e) => e.stopPropagation()}>
         <div className="plan-ventana-encabezado">
-          <span className="plan-chip" style={{ background: COLOR_CATEGORIA[tarea.categoria] }}>{tarea.categoria}</span>
+          <span className="plan-chip" style={{ background: colorCategoria(tarea.categoria) }}>{tarea.categoria}</span>
           <h2>{obra?.nombre}</h2>
           <button type="button" className="plan-ventana-cerrar" onClick={onCerrar} title="Cerrar">✕</button>
         </div>
@@ -255,6 +279,12 @@ export function VentanaTarea({ tarea, obra, responsables, personas = [], puedeEd
 
         {puedeEditar ? (
           <form className="plan-ventana-form" onSubmit={handleGuardar}>
+            <label className="plan-ventana-ancho">
+              Categoría
+              <select className="select-inline" value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
+                {opcionesCategoria.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </label>
             <label>
               Inicio
               <input type="date" className="input-filtro" value={form.fecha_inicio} onChange={(e) => setForm({ ...form, fecha_inicio: e.target.value })} />
@@ -292,7 +322,7 @@ export function VentanaTarea({ tarea, obra, responsables, personas = [], puedeEd
             </label>
             <label className="plan-ventana-ancho">
               Comentario
-              <textarea className="input-filtro" rows={3} value={form.comentario} onChange={(e) => setForm({ ...form, comentario: e.target.value })} />
+              <textarea className="input-filtro" rows={5} value={form.comentario} onChange={(e) => setForm({ ...form, comentario: e.target.value })} />
             </label>
             <datalist id="plan-responsables">
               {responsables.map((r) => <option key={r} value={r} />)}

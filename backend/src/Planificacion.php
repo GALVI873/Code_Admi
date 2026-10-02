@@ -6,19 +6,21 @@ declare(strict_types=1);
 // automática al pasar un presupuesto a "Aceptado").
 //
 // Cronograma tipo a partir de la fecha de aceptación (a pedido de Álvaro,
-// 2026-09-29). "+N" son días corridos desde la aceptación; la duración son
-// días HÁBILES (lunes a viernes). Si un inicio cae en fin de semana se
-// adelanta al viernes anterior.
+// 2026-09-29; encadenado desde Material el 2026-10-02). "+N" son días
+// corridos desde la aceptación; la duración son días HÁBILES (lunes a
+// viernes). Si Medición o Material caen en fin de semana se adelantan al
+// viernes anterior; lo que va "al terminar" algo empieza el siguiente día
+// hábil después de ese fin.
 //   Medición     aceptación + 7,  3 días
 //   Material     aceptación + 21, 2 días
-//   Fabricación  aceptación + 23, 5 días
-//   Chapas       aceptación + 23, 5 días
-//   Composite    aceptación + 23, 5 días
-//   Transporte   3 viajes de 1 día: fin de Fabricación + 2, y dos más cada
-//                3 días (+5 y +8)
+//   Fabricación  al terminar Material, 5 días
+//   Chapas       al terminar Material, 5 días
+//   Composite    al terminar Material, 5 días (igual que Fabricación)
+//   Montaje      al terminar Fabricación, 5 días
+//   Transporte   3 viajes de 1 día: el primer día de Montaje y dos más cada
+//                3 días (+3 y +6)
 //   Grúa         primer día de Montaje, 1 día
-//   Montaje      mismo día que el primer Transporte, 5 días
-//   Facturar     día siguiente al fin de Montaje, 5 días
+//   Facturar     al terminar Montaje, 5 días
 final class Planificacion
 {
     public const CATEGORIAS = ['Medición', 'Material', 'Fabricación', 'Chapas', 'Composite', 'Transporte', 'Grúa', 'Montaje', 'Facturar', 'Varios'];
@@ -112,26 +114,35 @@ final class Planificacion
         ];
     }
 
+    // Primer día hábil DESPUÉS del fin de un tramo (para lo que va "al
+    // terminar" otra tarea).
+    private static function alTerminar(array $tramo): DateTimeImmutable
+    {
+        $d = (new DateTimeImmutable($tramo['fecha_fin'] ?? $tramo['fecha_inicio']))->modify('+1 day');
+        while (self::esFinde($d)) {
+            $d = $d->modify('+1 day');
+        }
+        return $d;
+    }
+
     // Lista ordenada de tareas con fechas (Transporte aparece 3 veces).
     public static function cronogramaDesdeAceptacion(string $fechaAceptacion): array
     {
         $a = new DateTimeImmutable($fechaAceptacion);
         $medicion = self::tramo('Medición', $a->modify('+7 days'), 3);
         $material = self::tramo('Material', $a->modify('+21 days'), 2);
-        $fabricacion = self::tramo('Fabricación', $a->modify('+23 days'), 5);
-        $chapas = self::tramo('Chapas', $a->modify('+23 days'), 5);
-        $composite = self::tramo('Composite', $a->modify('+23 days'), 5);
+        $fabricacion = self::tramo('Fabricación', self::alTerminar($material), 5);
+        $chapas = self::tramo('Chapas', self::alTerminar($material), 5);
+        $composite = self::tramo('Composite', self::alTerminar($material), 5);
 
-        $finFabricacion = new DateTimeImmutable($fabricacion['fecha_fin'] ?? $fabricacion['fecha_inicio']);
+        $montaje = self::tramo('Montaje', self::alTerminar($fabricacion), 5);
+        $inicioMontaje = new DateTimeImmutable($montaje['fecha_inicio']);
         $transportes = [];
-        foreach ([2, 5, 8] as $dias) {
-            $transportes[] = self::tramo('Transporte', $finFabricacion->modify("+$dias days"), 1);
+        foreach ([0, 3, 6] as $dias) {
+            $transportes[] = self::tramo('Transporte', $inicioMontaje->modify("+$dias days"), 1);
         }
-        $primerTransporte = new DateTimeImmutable($transportes[0]['fecha_inicio']);
-        $montaje = self::tramo('Montaje', $primerTransporte, 5);
-        $grua = self::tramo('Grúa', $primerTransporte, 1);
-        $finMontaje = new DateTimeImmutable($montaje['fecha_fin'] ?? $montaje['fecha_inicio']);
-        $facturar = self::tramo('Facturar', $finMontaje->modify('+1 day'), 5);
+        $grua = self::tramo('Grúa', $inicioMontaje, 1);
+        $facturar = self::tramo('Facturar', self::alTerminar($montaje), 5);
 
         return array_merge([$medicion, $material, $fabricacion, $chapas, $composite], $transportes, [$grua, $montaje, $facturar]);
     }
@@ -139,14 +150,15 @@ final class Planificacion
     public static function insertarTarea(PDO $db, int $obraId, array $t, ?string $autor): int
     {
         $db->prepare("
-            INSERT INTO planificacion_tareas (obra_id, categoria, fecha_inicio, fecha_fin, responsable, estado, comentario, notion_id, actualizado_por)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO planificacion_tareas (obra_id, categoria, fecha_inicio, fecha_fin, responsable, ayudante, estado, comentario, notion_id, actualizado_por)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ")->execute([
             $obraId,
             $t['categoria'],
             $t['fecha_inicio'] ?? null,
             $t['fecha_fin'] ?? null,
             $t['responsable'] ?? null,
+            $t['ayudante'] ?? null,
             $t['estado'] ?? 'Pendiente',
             $t['comentario'] ?? null,
             $t['notion_id'] ?? null,

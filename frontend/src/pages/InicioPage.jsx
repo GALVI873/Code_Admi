@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { planificacion, actualizarTareaPlanificacion, agregarPersonaMontaje } from '../api/client.js'
 import DiagramaGantt, { diaANumero, numeroADia, hoyIso, lunesDe, formatoCorto } from '../components/DiagramaGantt.jsx'
-import { COLOR_CATEGORIA, COLOR_SITUACION, LeyendaColores, VentanaTarea, filasMontajePorMontador, datosNum, tareaNum } from '../components/PlanificacionComun.jsx'
+import { colorCategoria, COLOR_SITUACION, LeyendaColores, VentanaTarea, filasMontajePorMontador, datosNum, tareaNum } from '../components/PlanificacionComun.jsx'
 
 // Página de Inicio para TODOS los usuarios — a pedido de Álvaro,
 // 2026-09-29: el Gantt semanal de montaje (qué montador está en qué obra
@@ -60,7 +60,7 @@ export default function InicioPage() {
         fin: t.fecha_fin,
         texto: t.responsable ? `${obra.nombre} · ${t.responsable}` : obra.nombre,
         titulo: `${obra.nombre} — ${t.categoria}${t.responsable ? ` (${t.responsable})` : ''}`,
-        color: COLOR_CATEGORIA[t.categoria],
+        color: colorCategoria(t.categoria),
         tarea: t,
       })
     }
@@ -148,6 +148,7 @@ export default function InicioPage() {
           tarea={tareaSeleccionada}
           obra={obrasPorId.get(tareaSeleccionada.obra_id)}
           responsables={datos.responsables}
+          categorias={datos.categorias}
           personas={datos.personas || []}
           onCrearPersona={async (nombre, rol) => {
             const r = await agregarPersonaMontaje(accessToken, nombre, rol)
