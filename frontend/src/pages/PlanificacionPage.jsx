@@ -209,6 +209,67 @@ function FiltroCategorias({ categorias, seleccionadas, onCambiar }) {
   )
 }
 
+// Clientes/constructoras ya usados en Planificación, sin repetir variantes
+// que solo cambian en tildes/mayúsculas/espacios (se queda la forma más
+// usada) — para el desplegable de cliente (a pedido de Álvaro, 2026-10-02:
+// que no se escriba mal o distinto cada vez).
+function listaConstructoras(obras) {
+  const grupos = new Map()
+  for (const o of obras) {
+    const nombre = String(o.constructora || '').trim()
+    if (!nombre) continue
+    const clave = normalizar(nombre)
+    if (!grupos.has(clave)) grupos.set(clave, new Map())
+    const formas = grupos.get(clave)
+    formas.set(nombre, (formas.get(nombre) || 0) + 1)
+  }
+  return [...grupos.values()]
+    .map((formas) => [...formas.entries()].sort((a, b) => b[1] - a[1])[0][0])
+    .sort((a, b) => a.localeCompare(b, 'es'))
+}
+
+// Desplegable de cliente/constructora con "+ Nuevo cliente…" al final para
+// escribir uno que todavía no está. Si el valor actual no está en la lista
+// (ej. una variante vieja), se muestra igual como opción.
+const NUEVO_CLIENTE = '__nuevo__'
+function SelectConstructora({ valor, opciones, onCambio, disabled }) {
+  const [creando, setCreando] = useState(false)
+  const [texto, setTexto] = useState('')
+  const lista = valor && !opciones.includes(valor) ? [valor, ...opciones] : opciones
+
+  function confirmar() {
+    const nombre = texto.trim()
+    if (!nombre) return
+    // Si ya existe escrito de otra forma, se usa el de la lista.
+    onCambio(opciones.find((o) => normalizar(o) === normalizar(nombre)) || nombre)
+    setCreando(false)
+    setTexto('')
+  }
+
+  if (creando) {
+    return (
+      <span className="prio-nueva-inline">
+        <input autoFocus type="text" className="input-filtro" placeholder="Nombre del cliente / constructora" value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); confirmar() }
+            if (e.key === 'Escape') { e.preventDefault(); setCreando(false) }
+          }} />
+        <button type="button" className="btn-secundario plan-boton-principal" disabled={!texto.trim()} onClick={confirmar}>OK</button>
+        <button type="button" className="btn-secundario" title="Cancelar" onClick={() => setCreando(false)}>✕</button>
+      </span>
+    )
+  }
+  return (
+    <select className="select-inline" value={valor || ''} disabled={disabled}
+      onChange={(e) => (e.target.value === NUEVO_CLIENTE ? setCreando(true) : onCambio(e.target.value))}>
+      <option value="">— Sin cliente —</option>
+      {lista.map((c) => <option key={c} value={c}>{c}</option>)}
+      <option value={NUEVO_CLIENTE}>+ Nuevo cliente…</option>
+    </select>
+  )
+}
+
 // Alta desde el botón "+ Nuevo" (a pedido de Álvaro, 2026-10-02): una obra
 // completa, o un remate / repaso / aviso. Estos últimos no son obras: como
 // mucho llevan Montaje y Facturación (se elige cuál) y no tienen por qué
@@ -220,7 +281,7 @@ const TIPOS_ALTA = [
   { situacion: 'Avisos', etiqueta: 'Aviso' },
 ]
 
-function VentanaNuevo({ tipoInicial = 'Obra', obrasPanel, personas, onCrear, onCerrar }) {
+function VentanaNuevo({ tipoInicial = 'Obra', obrasPanel, personas, constructoras, onCrear, onCerrar }) {
   const [situacion, setSituacion] = useState(tipoInicial)
   const [form, setForm] = useState({ nombre: '', constructora: '', obra_panel: '', fecha_aceptacion: hoyIso(), fecha_montaje: '', dias_montaje: '1', montador: '' })
   const [conMontaje, setConMontaje] = useState(true)
@@ -287,7 +348,7 @@ function VentanaNuevo({ tipoInicial = 'Obra', obrasPanel, personas, onCrear, onC
           </label>
           <label>
             Constructora / cliente
-            <input type="text" className="input-filtro" value={form.constructora} onChange={(e) => setForm({ ...form, constructora: e.target.value })} />
+            <SelectConstructora valor={form.constructora} opciones={constructoras} onCambio={(v) => setForm((f) => ({ ...f, constructora: v }))} />
           </label>
           <label className="plan-form-ancho">
             {esObra ? 'Obra aceptada del panel' : 'De una obra aceptada (opcional)'}
@@ -495,7 +556,8 @@ function EditorObra({ obra, tareas, datos, puedeEditar, onMoverObra, onCalcularF
         </label>
         <label>
           Constructora / cliente
-          <CampoTexto valor={obra.constructora} disabled={!puedeEditar} onGuardar={(v) => ejecutar(onActualizarObra(obra.id, { constructora: v }))} />
+          <SelectConstructora valor={obra.constructora} opciones={listaConstructoras(datos.obras)} disabled={!puedeEditar}
+            onCambio={(v) => ejecutar(onActualizarObra(obra.id, { constructora: v }))} />
         </label>
         <label>
           Situación
@@ -1464,6 +1526,7 @@ export default function PlanificacionPage() {
           tipoInicial={nuevoTipo}
           obrasPanel={datos.obras_panel}
           personas={datos.personas || []}
+          constructoras={listaConstructoras(datos.obras)}
           onCrear={crearObra}
           onCerrar={() => setNuevoTipo(null)}
         />
