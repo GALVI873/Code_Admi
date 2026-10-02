@@ -22,7 +22,7 @@ declare(strict_types=1);
 //   el informe: Álvaro no quiere las fotos sueltas en Drive.
 //
 // GET ?obra=...[&fotos_completas=1] : sesión + obras.ver_aceptadas.
-// POST {accion:"agregar_nota", obra, pagina, x_pct, y_pct, texto}
+// POST {accion:"agregar_nota", obra, pagina, x_pct, y_pct, texto, numero?}
 // PATCH {accion:"actualizar_nota", id, texto?, pagina?, x_pct?, y_pct?}
 // DELETE {accion:"eliminar_nota", id}: borra la nota y sus fotos.
 // POST {accion:"agregar_foto", obra, ref_tipo, ref, archivo_base64,
@@ -157,8 +157,18 @@ try {
         }
         $stmtNum = $db->prepare('SELECT COALESCE(MAX(numero), 0) + 1 FROM medicion_notas WHERE obra = ?');
         $stmtNum->execute([$obra]);
+        $numero = (int) $stmtNum->fetchColumn();
+        // "numero" opcional: Deshacer (Ctrl+Z) vuelve a crear una nota
+        // borrada con su número de antes, si sigue libre.
+        if (is_numeric($body['numero'] ?? null) && (int) $body['numero'] > 0) {
+            $stmtLibre = $db->prepare('SELECT COUNT(*) FROM medicion_notas WHERE obra = ? AND numero = ?');
+            $stmtLibre->execute([$obra, (int) $body['numero']]);
+            if ((int) $stmtLibre->fetchColumn() === 0) {
+                $numero = (int) $body['numero'];
+            }
+        }
         $db->prepare('INSERT INTO medicion_notas (obra, numero, pagina, x_pct, y_pct, texto, creado_por) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            ->execute([$obra, (int) $stmtNum->fetchColumn(), (int) $body['pagina'], (float) $body['x_pct'], (float) $body['y_pct'], trim((string) ($body['texto'] ?? '')), $autor]);
+            ->execute([$obra, $numero, (int) $body['pagina'], (float) $body['x_pct'], (float) $body['y_pct'], trim((string) ($body['texto'] ?? '')), $autor]);
         Response::json(['nota' => filaMedicion($db, 'medicion_notas', (int) $db->lastInsertId())]);
     }
 

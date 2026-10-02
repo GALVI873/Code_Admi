@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useDeshacer, idVigente, marcarRecreado } from '../context/DeshacerContext.jsx'
 import {
   obrasAceptadas,
   seguimientoMateriales,
@@ -1051,6 +1052,17 @@ function DetalleMedicionPosicion({ posicionBase, tipo, dibujoBase64, dibujoPosic
 
 function PlanosObra({ obra, materiales, cliente }) {
   const { accessToken, usuario } = useAuth()
+  // Deshacer (Ctrl+Z, común a todo el panel — ver context/DeshacerContext.jsx):
+  // medidas, dibujos, nombres de página, marcas del plano, notas y fotos.
+  // "Enviar medidas" y "Subir informe a Drive" no se deshacen (ya salen del
+  // panel). Al deshacer se toca la pantalla solo si sigue abierta la misma
+  // obra (obraRef); el servidor se corrige siempre.
+  const { registrar } = useDeshacer()
+  const obraRef = useRef(obra)
+  useEffect(() => { obraRef.current = obra }, [obra])
+  const enPantalla = (fn) => { if (obraRef.current === obra) fn() }
+  const registrarPlano = (descripcion, fn) => registrar(`${obra}: ${descripcion}`, fn)
+  const notaNum = (n) => ({ ...n, id: Number(n.id), pagina: Number(n.pagina), numero: Number(n.numero), x_pct: Number(n.x_pct), y_pct: Number(n.y_pct) })
   const puedeConfirmarMedida = usuario?.roles?.includes('admin')
   const [medidas, setMedidas] = useState([])
   const [dibujosPorTipo, setDibujosPorTipo] = useState({})
@@ -1199,9 +1211,14 @@ function PlanosObra({ obra, materiales, cliente }) {
       comentario: comentarioStr === '' ? null : comentarioStr,
       confirmado_por: usuario?.nombre,
     }
+    const previa = medidas.find((m) => m.posicion === posicionBase) || null
     setMedidas((ms) => [...ms.filter((m) => m.posicion !== posicionBase), nuevaMedida])
     try {
       await confirmarMedidaObra(accessToken, obra, posicionBase, nuevaMedida.ancho_real, nuevaMedida.alto_real, nuevaMedida.comentario)
+      registrarPlano(`medida de la posición ${posicionBase}`, async () => {
+        await confirmarMedidaObra(accessToken, obra, posicionBase, previa?.ancho_real ?? null, previa?.alto_real ?? null, previa?.comentario ?? null)
+        enPantalla(() => setMedidas((ms) => [...ms.filter((m) => m.posicion !== posicionBase), ...(previa ? [previa] : [])]))
+      })
     } catch (err) {
       setMedidas(anteriores)
       setError(err.message)
@@ -1220,8 +1237,16 @@ function PlanosObra({ obra, materiales, cliente }) {
       }
       return { ...ds, [posicionBase]: imagenBase64 }
     })
+    const previo = dibujosPorPosicion[posicionBase] || null
     try {
       await guardarDibujoPosicion(accessToken, obra, posicionBase, imagenBase64)
+      registrarPlano(`dibujo de la posición ${posicionBase}`, async () => {
+        await guardarDibujoPosicion(accessToken, obra, posicionBase, previo)
+        enPantalla(() => setDibujosPorPosicion((ds) => {
+          const { [posicionBase]: _quitado, ...resto } = ds
+          return previo ? { ...resto, [posicionBase]: previo } : resto
+        }))
+      })
     } catch (err) {
       setDibujosPorPosicion(anteriores)
       setError(err.message)
@@ -1256,8 +1281,18 @@ function PlanosObra({ obra, materiales, cliente }) {
       else n.delete(pagina)
       return n
     })
+    const previo = nombresPaginas.get(pagina) || ''
     try {
       await renombrarPaginaPlano(accessToken, obra, pagina, nombre)
+      registrarPlano(`nombre de la página ${pagina}`, async () => {
+        await renombrarPaginaPlano(accessToken, obra, pagina, previo)
+        enPantalla(() => setNombresPaginas((prev) => {
+          const n = new Map(prev)
+          if (previo) n.set(pagina, previo)
+          else n.delete(pagina)
+          return n
+        }))
+      })
     } catch (err) {
       setNombresPaginas(anteriores)
       setError(err.message)
@@ -1273,13 +1308,34 @@ function PlanosObra({ obra, materiales, cliente }) {
     const foto = { ...r.foto, id: Number(r.foto.id) }
     fotosCompletasRef.current.set(foto.id, reducida.archivo)
     setFotos((prev) => [...prev, foto])
+    registrarPlano('agregar foto', async () => {
+      const idFoto = idVigente('med-foto', foto.id)
+      await accionMedicion(accessToken, 'DELETE', 'eliminar_foto', { id: idFoto })
+      enPantalla(() => setFotos((prev) => prev.filter((f) => f.id !== idFoto)))
+    })
+  }
+
+  // Vuelve a subir una foto borrada (con la imagen grande y la miniatura).
+  async function restaurarFoto(foto, archivo, refNueva = foto.ref) {
+    const r = await accionMedicion(accessToken, 'POST', 'agregar_foto', {
+      obra, ref_tipo: foto.ref_tipo, ref: String(refNueva), archivo_base64: archivo, miniatura_base64: foto.miniatura_base64, tipo_mime: foto.tipo_mime || 'image/jpeg', nombre: foto.nombre,
+    })
+    const nueva = { ...r.foto, id: Number(r.foto.id) }
+    marcarRecreado('med-foto', foto.id, nueva.id)
+    fotosCompletasRef.current.set(nueva.id, archivo)
+    enPantalla(() => setFotos((prev) => [...prev, nueva]))
+    return nueva
   }
 
   async function eliminarFoto(id) {
     const anteriores = fotos
+    const foto = fotos.find((f) => f.id === id)
+    // Para poder deshacer hace falta la imagen grande (el listado solo trae miniaturas).
+    const archivo = foto ? await cargarFotosCompletas().then((m) => m.get(id)).catch(() => null) : null
     setFotos((prev) => prev.filter((f) => f.id !== id))
     try {
       await accionMedicion(accessToken, 'DELETE', 'eliminar_foto', { id })
+      if (foto && archivo) registrarPlano('eliminar foto', () => restaurarFoto(foto, archivo))
     } catch (err) {
       setFotos(anteriores)
       setError(err.message)
@@ -1309,17 +1365,37 @@ function PlanosObra({ obra, materiales, cliente }) {
   }
 
   // --- Notas ---
-  async function actualizarNota(id, cambios) {
+  async function actualizarNota(id, cambios, { registrar: registrarPaso = true } = {}) {
+    const previa = notas.find((x) => x.id === id)
     const r = await accionMedicion(accessToken, 'PATCH', 'actualizar_nota', { id, ...cambios })
-    const n = r.nota
-    setNotas((prev) => prev.map((x) => (x.id === id ? { ...n, id: Number(n.id), pagina: Number(n.pagina), numero: Number(n.numero), x_pct: Number(n.x_pct), y_pct: Number(n.y_pct) } : x)))
+    const n = notaNum(r.nota)
+    enPantalla(() => setNotas((prev) => prev.map((x) => (x.id === id ? n : x))))
+    if (registrarPaso && previa) {
+      const previos = Object.fromEntries(Object.keys(cambios).map((k) => [k, previa[k]]))
+      registrarPlano(`${'texto' in cambios ? 'texto' : 'posición'} de la nota N${previa.numero}`, () => actualizarNota(idVigente('med-nota', id), previos, { registrar: false }))
+    }
   }
 
   async function eliminarNota(id) {
+    const nota = notas.find((x) => x.id === id)
+    const fotosNota = fotos.filter((f) => f.ref_tipo === 'nota' && String(f.ref) === String(id))
+    const archivos = fotosNota.length ? await cargarFotosCompletas().catch(() => new Map()) : new Map()
     await accionMedicion(accessToken, 'DELETE', 'eliminar_nota', { id })
     setNotas((prev) => prev.filter((x) => x.id !== id))
     setFotos((prev) => prev.filter((f) => !(f.ref_tipo === 'nota' && String(f.ref) === String(id))))
     setNotaAbierta(null)
+    if (nota) {
+      registrarPlano(`eliminar la nota N${nota.numero}`, async () => {
+        const r = await accionMedicion(accessToken, 'POST', 'agregar_nota', { obra, pagina: nota.pagina, x_pct: nota.x_pct, y_pct: nota.y_pct, texto: nota.texto || '', numero: nota.numero })
+        const nueva = notaNum(r.nota)
+        marcarRecreado('med-nota', nota.id, nueva.id)
+        enPantalla(() => setNotas((prev) => [...prev, nueva]))
+        for (const f of fotosNota) {
+          const archivo = archivos.get(f.id)
+          if (archivo) await restaurarFoto(f, archivo, nueva.id)
+        }
+      })
+    }
   }
 
   // --- Informe de medición (PDF) ---
@@ -1403,10 +1479,19 @@ function PlanosObra({ obra, materiales, cliente }) {
     if (modoNota) {
       try {
         const r = await accionMedicion(accessToken, 'POST', 'agregar_nota', { obra, pagina: paginaActiva, x_pct: xPct, y_pct: yPct, texto: '' })
-        const n = { ...r.nota, id: Number(r.nota.id), pagina: Number(r.nota.pagina), numero: Number(r.nota.numero), x_pct: Number(r.nota.x_pct), y_pct: Number(r.nota.y_pct) }
+        const n = notaNum(r.nota)
         setNotas((prev) => [...prev, n])
         setModoNota(false)
         setNotaAbierta(n.id)
+        registrarPlano(`agregar la nota N${n.numero}`, async () => {
+          const idNota = idVigente('med-nota', n.id)
+          await accionMedicion(accessToken, 'DELETE', 'eliminar_nota', { id: idNota })
+          enPantalla(() => {
+            setNotas((prev) => prev.filter((x) => x.id !== idNota))
+            setFotos((prev) => prev.filter((f) => !(f.ref_tipo === 'nota' && String(f.ref) === String(idNota))))
+            setNotaAbierta((abierta) => (abierta === idNota ? null : abierta))
+          })
+        })
       } catch (err) {
         setError(err.message)
       }
@@ -1414,6 +1499,7 @@ function PlanosObra({ obra, materiales, cliente }) {
     }
     if (!modoCalibrar || !posicionArmada) return
     const posicionGuardada = posicionArmada
+    const previa = posiciones.find((p) => p.posicion_base === posicionGuardada) || null
     try {
       await guardarPosicionPlano(accessToken, obra, posicionGuardada, paginaActiva, xPct, yPct)
       setPosiciones((ps) => [
@@ -1421,15 +1507,25 @@ function PlanosObra({ obra, materiales, cliente }) {
         { posicion_base: posicionGuardada, pagina: paginaActiva, x_pct: xPct, y_pct: yPct },
       ])
       setPosicionArmada('')
+      registrarPlano(`marca de la posición ${posicionGuardada}`, () => restaurarMarca(posicionGuardada, previa))
     } catch (err) {
       setError(err.message)
     }
   }
 
+  // Deja la marca de una posición como estaba (previa null = sin marca).
+  async function restaurarMarca(posicionBase, previa) {
+    if (previa) await guardarPosicionPlano(accessToken, obra, posicionBase, previa.pagina, previa.x_pct, previa.y_pct)
+    else await quitarPosicionPlano(accessToken, obra, posicionBase)
+    enPantalla(() => setPosiciones((ps) => [...ps.filter((p) => p.posicion_base !== posicionBase), ...(previa ? [previa] : [])]))
+  }
+
   async function handleQuitarMarca(posicionBase) {
+    const previa = posiciones.find((p) => p.posicion_base === posicionBase) || null
     try {
       await quitarPosicionPlano(accessToken, obra, posicionBase)
       setPosiciones((ps) => ps.filter((p) => p.posicion_base !== posicionBase))
+      registrarPlano(`quitar la marca de la posición ${posicionBase}`, () => restaurarMarca(posicionBase, previa))
     } catch (err) {
       setError(err.message)
     }
@@ -2024,6 +2120,9 @@ function DetalleObraAceptada({ presupuesto, materiales, confirmaciones, direccio
 
 export default function ObrasAceptadasPage() {
   const { accessToken } = useAuth()
+  // Deshacer (Ctrl+Z, común a todo el panel): dirección, confirmaciones de
+  // la ficha, estatus de la obra y campos de materiales.
+  const { registrar } = useDeshacer()
   const { id: obraSeleccionadaId } = useParams()
   const navigate = useNavigate()
   const [filas, setFilas] = useState([])
@@ -2084,10 +2183,15 @@ export default function ObrasAceptadasPage() {
 
   const direccionesPorObra = useMemo(() => new Map(direcciones.map((d) => [d.obra, d])), [direcciones])
 
-  async function handleGuardarDireccion(obra, datos) {
+  async function handleGuardarDireccion(obra, datos, { registrar: registrarPaso = true } = {}) {
+    const previa = direcciones.find((d) => d.obra === obra) || {}
     setDirecciones((ds) => [...ds.filter((d) => d.obra !== obra), { obra, ...datos }])
     try {
       await guardarDireccionObra(accessToken, obra, datos)
+      if (registrarPaso) {
+        const previos = Object.fromEntries(Object.keys(datos).map((k) => [k, previa[k] ?? '']))
+        registrar(`${obra}: dirección y contacto`, () => handleGuardarDireccion(obra, previos, { registrar: false }))
+      }
     } catch (err) {
       setError(err.message)
     }
@@ -2180,19 +2284,30 @@ export default function ObrasAceptadasPage() {
       const sinEsteCampo = c.filter((x) => !(x.obra === obra && x.campo === campo))
       return [...sinEsteCampo, { obra, campo, valor, confirmado_en: ahora }]
     })
+    const previa = confirmaciones.find((x) => x.obra === obra && x.campo === campo) || null
     try {
       await confirmarCampoObraAceptada(accessToken, obra, campo, valor)
+      registrar(`${obra}: confirmar ${campo}`, () => restaurarConfirmacion(obra, campo, previa))
     } catch (err) {
       setConfirmaciones(anteriores)
       setError(err.message)
     }
   }
 
+  // Deja la confirmación de un campo como estaba (previa null = sin confirmar).
+  async function restaurarConfirmacion(obra, campo, previa) {
+    if (previa) await confirmarCampoObraAceptada(accessToken, obra, campo, previa.valor)
+    else await quitarConfirmacionObraAceptada(accessToken, obra, campo)
+    setConfirmaciones((c) => [...c.filter((x) => !(x.obra === obra && x.campo === campo)), ...(previa ? [previa] : [])])
+  }
+
   async function handleQuitarConfirmacion(obra, campo) {
     const anteriores = confirmaciones
+    const previa = confirmaciones.find((x) => x.obra === obra && x.campo === campo) || null
     setConfirmaciones((c) => c.filter((x) => !(x.obra === obra && x.campo === campo)))
     try {
       await quitarConfirmacionObraAceptada(accessToken, obra, campo)
+      registrar(`${obra}: quitar confirmación de ${campo}`, () => restaurarConfirmacion(obra, campo, previa))
     } catch (err) {
       setConfirmaciones(anteriores)
       setError(err.message)
@@ -2201,9 +2316,14 @@ export default function ObrasAceptadasPage() {
 
   async function handleCambiarEstatusObra(obra, estatus) {
     const anteriores = filas
+    const previo = filas.find((f) => f.obra === obra)?.estatus || 'Activo'
     setFilas((fs) => fs.map((f) => (f.obra === obra ? { ...f, estatus } : f)))
     try {
       await cambiarEstatusObraAceptada(accessToken, obra, estatus)
+      registrar(`${obra}: estatus ${estatus}`, async () => {
+        await cambiarEstatusObraAceptada(accessToken, obra, previo)
+        setFilas((fs) => fs.map((f) => (f.obra === obra ? { ...f, estatus: previo } : f)))
+      })
     } catch (err) {
       setFilas(anteriores)
       setError(err.message)
@@ -2219,9 +2339,14 @@ export default function ObrasAceptadasPage() {
   // así que un duplicado exacto comparte el mismo valor guardado ahí.
   async function handleCambiarMaterial(obra, m, campo, valor) {
     const anteriores = materiales
-    setMateriales((ms) => ms.map((x) => (x === m ? { ...x, [campo]: valor } : x)))
+    const nuevo = { ...m, [campo]: valor }
+    setMateriales((ms) => ms.map((x) => (x === m ? nuevo : x)))
     try {
       await actualizarMaterialObraAceptada(accessToken, obra, m, campo, valor)
+      registrar(`${obra}: material ${m.posicion || ''} (${campo})`.replace('  ', ' '), async () => {
+        await actualizarMaterialObraAceptada(accessToken, obra, nuevo, campo, m[campo] ?? null)
+        setMateriales((ms) => ms.map((x) => (x === nuevo ? { ...x, [campo]: m[campo] } : x)))
+      })
     } catch (err) {
       setMateriales(anteriores)
       setError(err.message)

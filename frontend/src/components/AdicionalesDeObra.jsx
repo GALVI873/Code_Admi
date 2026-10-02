@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useDeshacer, idVigente } from '../context/DeshacerContext.jsx'
 import {
   adicionalesObra,
   agregarAdicionalObra,
@@ -241,6 +242,13 @@ export default function AdicionalesDeObra() {
   const [detalle, setDetalle] = useState('')
   const [solicitadoPor, setSolicitadoPor] = useState('')
 
+  // Deshacer (Ctrl+Z, común a todo el panel): alta, estatus y prioridad.
+  // Pasar a "Aceptado" no se deshace: en ese momento ya se le crea la nota a
+  // Alfredo y se reabre la obra (ver adicionales_obra.php). Tampoco borrar un
+  // adicional ni subir su PDF (ya piden confirmación / se suben a Drive).
+  const { registrar } = useDeshacer()
+  const ponerAdicional = (id, cambios) => setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, ...cambios } : a)))
+
   useEffect(() => {
     adicionalesObra(accessToken)
       .then((data) => {
@@ -269,6 +277,11 @@ export default function AdicionalesDeObra() {
         solicitado_por: solicitadoPor.trim(),
       })
       setAdicionales((prev) => [adicional, ...prev])
+      registrar(`Adicionales: agregar "${adicional.detalle}"`, async () => {
+        const id = idVigente('adicional', adicional.id)
+        await eliminarAdicionalObra(accessToken, id)
+        setAdicionales((prev) => prev.filter((a) => a.id !== id))
+      })
       setObra('')
       setFechaSolicitud('')
       setDetalle('')
@@ -283,6 +296,7 @@ export default function AdicionalesDeObra() {
   async function handleCambiarEstatus(id, estatus) {
     if (!puedeCambiarEstatus && !(puedeMarcarAlvarada && estatus === 'Alvarada')) return
     const anteriores = adicionales
+    const previo = adicionales.find((a) => a.id === id)
     setAdicionales((prev) => prev.map((a) => {
       if (a.id !== id) return a
       // Mismo criterio que el backend: al ENTRAR a "Alvarada" guarda el
@@ -293,6 +307,12 @@ export default function AdicionalesDeObra() {
     }))
     try {
       await cambiarEstatusAdicionalObra(accessToken, id, estatus)
+      if (previo && estatus !== 'Aceptado' && previo.estatus !== estatus) {
+        registrar(`Adicionales: estatus ${estatus} (${previo.obra})`, async () => {
+          await cambiarEstatusAdicionalObra(accessToken, id, previo.estatus)
+          ponerAdicional(id, { estatus: previo.estatus, estatus_antes_de_alvarada: previo.estatus_antes_de_alvarada })
+        })
+      }
     } catch (err) {
       setAdicionales(anteriores)
       setError(err.message)
@@ -305,6 +325,10 @@ export default function AdicionalesDeObra() {
     setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, estatus: estatusPrevio, estatus_antes_de_alvarada: null } : a)))
     try {
       await cambiarEstatusAdicionalObra(accessToken, id, estatusPrevio)
+      registrar('Adicionales: quitar "Alvarada"', async () => {
+        await cambiarEstatusAdicionalObra(accessToken, id, 'Alvarada')
+        ponerAdicional(id, { estatus: 'Alvarada', estatus_antes_de_alvarada: estatusPrevio })
+      })
     } catch (err) {
       setAdicionales(anteriores)
       setError(err.message)
@@ -314,9 +338,14 @@ export default function AdicionalesDeObra() {
   async function handleCambiarPrioridad(id, prioridad) {
     if (!puedeCambiarPrioridad) return
     const anteriores = adicionales
+    const previa = adicionales.find((a) => a.id === id)?.prioridad || 'Normal'
     setAdicionales((prev) => prev.map((a) => (a.id === id ? { ...a, prioridad } : a)))
     try {
       await cambiarPrioridadAdicionalObra(accessToken, id, prioridad)
+      registrar('Adicionales: prioridad', async () => {
+        await cambiarPrioridadAdicionalObra(accessToken, id, previa)
+        ponerAdicional(id, { prioridad: previa })
+      })
     } catch (err) {
       setAdicionales(anteriores)
       setError(err.message)

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useDeshacer, idVigente, marcarRecreado } from '../context/DeshacerContext.jsx'
 import { bitacoraObra, agregarBitacoraObra, eliminarBitacoraObra } from '../api/client.js'
 
 // Bitácora de obra — a pedido de Álvaro: diario cronológico de lo que hace
@@ -33,6 +34,13 @@ export default function BitacoraObra({ obra, accessToken, usuario }) {
   const [texto, setTexto] = useState('')
   const [enviarComoNota, setEnviarComoNota] = useState(false)
   const [enviando, setEnviando] = useState(false)
+  // Deshacer (Ctrl+Z, común a todo el panel): agregar y borrar entradas. Una
+  // entrada enviada también como nota a Alfredo no se deshace (la nota ya
+  // le llegó).
+  const { registrar } = useDeshacer()
+  const obraRef = useRef(obra)
+  useEffect(() => { obraRef.current = obra }, [obra])
+  const enPantalla = (fn) => { if (obraRef.current === obra) fn() }
 
   useEffect(() => {
     let activo = true
@@ -60,6 +68,13 @@ export default function BitacoraObra({ obra, accessToken, usuario }) {
     try {
       const data = await agregarBitacoraObra(accessToken, obra, fecha, texto.trim(), enviarComoNota)
       setEntradas((prev) => [data.entrada, ...prev])
+      if (!enviarComoNota) {
+        registrar(`${obra}: agregar entrada de bitácora`, async () => {
+          const id = idVigente('bitacora', data.entrada.id)
+          await eliminarBitacoraObra(accessToken, id)
+          enPantalla(() => setEntradas((prev) => prev.filter((en) => en.id !== id)))
+        })
+      }
       setTexto('')
       setEnviarComoNota(false)
     } catch (err) {
@@ -70,11 +85,19 @@ export default function BitacoraObra({ obra, accessToken, usuario }) {
   }
 
   async function handleEliminar(id) {
-    if (!window.confirm('¿Borrar esta entrada de la bitácora? No se puede deshacer.')) return
+    if (!window.confirm('¿Borrar esta entrada de la bitácora?')) return
     const anteriores = entradas
+    const entrada = entradas.find((en) => en.id === id)
     setEntradas((prev) => prev.filter((en) => en.id !== id))
     try {
       await eliminarBitacoraObra(accessToken, id)
+      if (entrada) {
+        registrar(`${obra}: borrar entrada de bitácora`, async () => {
+          const data = await agregarBitacoraObra(accessToken, obra, entrada.fecha, entrada.texto, false)
+          marcarRecreado('bitacora', entrada.id, data.entrada.id)
+          enPantalla(() => setEntradas((prev) => [data.entrada, ...prev].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))))
+        })
+      }
     } catch (err) {
       setEntradas(anteriores)
       setError(err.message)

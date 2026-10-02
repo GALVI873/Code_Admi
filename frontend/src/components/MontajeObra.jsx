@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useDeshacer, idVigente, marcarRecreado } from '../context/DeshacerContext.jsx'
 import {
   montajeObra,
   actualizarDetalleMontaje,
@@ -130,7 +131,15 @@ function AgregarPersona({ rol, accessToken, onAgregada }) {
   )
 }
 
-function DetalleDeObra({ obra, accessToken, detalle, materiales, personas, onCambiado }) {
+const NOMBRES_CAMPO_DETALLE = {
+  montador: 'montador',
+  ayudante: 'ayudante',
+  fecha_inicio_estimada: 'inicio estimado',
+  fecha_fin_estimada: 'fin estimado',
+  carpinteria_acristalada: 'carpintería acristalada',
+}
+
+function DetalleDeObra({ obra, accessToken, detalle, materiales, personas, onCambiado, onRegistrar, cambiarDatos }) {
   const [error, setError] = useState('')
 
   // Cada handler manda solo lo que cambió (nunca el "detalle"/"materiales"
@@ -142,9 +151,14 @@ function DetalleDeObra({ obra, accessToken, detalle, materiales, personas, onCam
   // momento del click.
   async function guardarDetalle(campos) {
     setError('')
+    const previos = Object.fromEntries(Object.keys(campos).map((k) => [k, detalle?.[k] ?? (k === 'carpinteria_acristalada' ? false : '')]))
     try {
       await actualizarDetalleMontaje(accessToken, obra, campos)
       onCambiado({ campos })
+      onRegistrar(NOMBRES_CAMPO_DETALLE[Object.keys(campos)[0]] || 'detalle', async () => {
+        await actualizarDetalleMontaje(accessToken, obra, previos)
+        cambiarDatos((d) => ({ ...d, detalle: { ...d.detalle, ...previos } }))
+      })
     } catch (err) {
       setError(err.message)
     }
@@ -152,9 +166,14 @@ function DetalleDeObra({ obra, accessToken, detalle, materiales, personas, onCam
 
   async function handleCambiarMaterial(material, fechaEstimada) {
     setError('')
+    const previa = materiales.find((m) => m.material === material)?.fecha_estimada || ''
     try {
       await actualizarMaterialMontaje(accessToken, obra, material, fechaEstimada)
       onCambiado({ material: { material, fecha_estimada: fechaEstimada || null } })
+      onRegistrar(`fecha de ${material}`, async () => {
+        await actualizarMaterialMontaje(accessToken, obra, material, previa)
+        cambiarDatos((d) => ({ ...d, materiales: d.materiales.map((m) => (m.material === material ? { ...m, fecha_estimada: previa || null } : m)) }))
+      })
     } catch (err) {
       setError(err.message)
     }
@@ -239,6 +258,25 @@ function DetalleDeObra({ obra, accessToken, detalle, materiales, personas, onCam
   )
 }
 
+
+// Deshacer de documentos de montaje (compartido por las dos secciones que
+// suben/borran archivos).
+function registrarDocSubido(nuevo, { accessToken, onRegistrar, cambiarDatos }) {
+  onRegistrar(`subir ${nuevo.nombre_original || 'archivo'}`, async () => {
+    const id = idVigente('mon-doc', nuevo.id)
+    await eliminarDocumentoMontaje(accessToken, id)
+    cambiarDatos((d) => ({ ...d, documentos: d.documentos.filter((x) => x.id !== id) }))
+  })
+}
+function registrarDocEliminado(doc, { accessToken, obra, onRegistrar, cambiarDatos }) {
+  if (!doc || doc.enviado_en) return
+  onRegistrar(`eliminar ${doc.nombre_original || 'archivo'}`, async () => {
+    const data = await agregarDocumentoMontaje(accessToken, obra, doc.categoria, doc.archivo_base64, doc.nombre_original, doc.tipo_mime)
+    marcarRecreado('mon-doc', doc.id, data.documento.id)
+    cambiarDatos((d) => ({ ...d, documentos: [data.documento, ...d.documentos] }))
+  })
+}
+
 function ListaDocumentos({ documentos, onEliminar }) {
   if (documentos.length === 0) {
     return <p className="dashboard-nota montaje-doc-vacio">Sin archivos todavía.</p>
@@ -300,17 +338,20 @@ function SeccionDocumentos({ categoria, titulo, accept, documentos, accessToken,
   )
 }
 
-function DocumentacionDeMontaje({ obra, accessToken, documentos, onCambiarDocumentos }) {
+function DocumentacionDeMontaje({ obra, accessToken, documentos, onCambiarDocumentos, onRegistrar, cambiarDatos }) {
   function handleSubido(nuevo) {
     onCambiarDocumentos([nuevo, ...documentos])
+    registrarDocSubido(nuevo, { accessToken, onRegistrar, cambiarDatos })
   }
 
   async function handleEliminar(id) {
-    if (!window.confirm('¿Eliminar este archivo? No se puede deshacer.')) return
+    const doc = documentos.find((d) => d.id === id)
+    if (!window.confirm(doc?.enviado_en ? '¿Eliminar este archivo? Ya está en Drive: no se podrá deshacer.' : '¿Eliminar este archivo?')) return
     const anteriores = documentos
     onCambiarDocumentos(documentos.filter((d) => d.id !== id))
     try {
       await eliminarDocumentoMontaje(accessToken, id)
+      registrarDocEliminado(doc, { accessToken, obra, onRegistrar, cambiarDatos })
     } catch (err) {
       onCambiarDocumentos(anteriores)
     }
@@ -353,7 +394,7 @@ function TareaItem({ tarea, onMarcar, onEliminar }) {
   )
 }
 
-function TareasPendientes({ obra, accessToken, tareas, onCambiarTareas, documentos, onCambiarDocumentos }) {
+function TareasPendientes({ obra, accessToken, tareas, onCambiarTareas, documentos, onCambiarDocumentos, onRegistrar, cambiarDatos }) {
   const [texto, setTexto] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
@@ -368,6 +409,11 @@ function TareasPendientes({ obra, accessToken, tareas, onCambiarTareas, document
       const data = await agregarTareaMontaje(accessToken, obra, t)
       onCambiarTareas([...tareas, data.tarea])
       setTexto('')
+      onRegistrar(`agregar tarea "${t}"`, async () => {
+        const id = idVigente('mon-tarea', data.tarea.id)
+        await eliminarTareaMontaje(accessToken, id)
+        cambiarDatos((d) => ({ ...d, tareas: d.tareas.filter((x) => x.id !== id) }))
+      })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -381,6 +427,11 @@ function TareasPendientes({ obra, accessToken, tareas, onCambiarTareas, document
     onCambiarTareas(tareas.map((t) => (t.id === tarea.id ? { ...t, hecho: nuevoHecho } : t)))
     try {
       await marcarTareaMontaje(accessToken, tarea.id, nuevoHecho)
+      onRegistrar(`${nuevoHecho ? 'marcar hecha' : 'desmarcar'} "${tarea.texto}"`, async () => {
+        const id = idVigente('mon-tarea', tarea.id)
+        await marcarTareaMontaje(accessToken, id, tarea.hecho ? 1 : 0)
+        cambiarDatos((d) => ({ ...d, tareas: d.tareas.map((x) => (x.id === id ? { ...x, hecho: tarea.hecho ? 1 : 0 } : x)) }))
+      })
     } catch (err) {
       onCambiarTareas(anteriores)
       setError(err.message)
@@ -389,9 +440,20 @@ function TareasPendientes({ obra, accessToken, tareas, onCambiarTareas, document
 
   async function handleEliminar(id) {
     const anteriores = tareas
+    const tarea = tareas.find((t) => t.id === id)
     onCambiarTareas(tareas.filter((t) => t.id !== id))
     try {
       await eliminarTareaMontaje(accessToken, id)
+      if (tarea) onRegistrar(`eliminar tarea "${tarea.texto}"`, async () => {
+        const data = await agregarTareaMontaje(accessToken, obra, tarea.texto)
+        let nueva = data.tarea
+        if (tarea.hecho) {
+          await marcarTareaMontaje(accessToken, nueva.id, 1)
+          nueva = { ...nueva, hecho: 1 }
+        }
+        marcarRecreado('mon-tarea', tarea.id, nueva.id)
+        cambiarDatos((d) => ({ ...d, tareas: [...d.tareas, nueva] }))
+      })
     } catch (err) {
       onCambiarTareas(anteriores)
       setError(err.message)
@@ -400,14 +462,17 @@ function TareasPendientes({ obra, accessToken, tareas, onCambiarTareas, document
 
   function handleSubidoDoc(nuevo) {
     onCambiarDocumentos([nuevo, ...documentos])
+    registrarDocSubido(nuevo, { accessToken, onRegistrar, cambiarDatos })
   }
 
   async function handleEliminarDoc(id) {
-    if (!window.confirm('¿Eliminar este archivo? No se puede deshacer.')) return
+    const doc = documentos.find((d) => d.id === id)
+    if (!window.confirm(doc?.enviado_en ? '¿Eliminar este archivo? Ya está en Drive: no se podrá deshacer.' : '¿Eliminar este archivo?')) return
     const anteriores = documentos
     onCambiarDocumentos(documentos.filter((d) => d.id !== id))
     try {
       await eliminarDocumentoMontaje(accessToken, id)
+      registrarDocEliminado(doc, { accessToken, obra, onRegistrar, cambiarDatos })
     } catch (err) {
       onCambiarDocumentos(anteriores)
     }
@@ -572,6 +637,14 @@ function ResumenMontador({ obra, detalle, materiales, documentos, tareas, pagina
 }
 
 export default function MontajeObra({ obra, accessToken }) {
+  // Deshacer (Ctrl+Z, común a todo el panel): detalle, fechas de material,
+  // tareas y documentos. La pantalla se toca solo si sigue abierta la misma
+  // obra; el servidor se corrige siempre.
+  const { registrar } = useDeshacer()
+  const obraRef = useRef(obra)
+  useEffect(() => { obraRef.current = obra }, [obra])
+  const onRegistrar = (descripcion, fn) => registrar(`${obra}: Montaje — ${descripcion}`, fn)
+  const cambiarDatos = (fn) => { if (obraRef.current === obra) setDatos((prev) => (prev ? fn(prev) : prev)) }
   const [subpestana, setSubpestana] = useState('Detalle de obra')
   const [datos, setDatos] = useState(null)
   const [cargando, setCargando] = useState(true)
@@ -702,6 +775,8 @@ export default function MontajeObra({ obra, accessToken }) {
           materiales={datos.materiales}
           personas={datos.personas}
           onCambiado={handleCambiarDetalle}
+          onRegistrar={onRegistrar}
+          cambiarDatos={cambiarDatos}
         />
       )}
       {subpestana === 'Documentación de montaje' && (
@@ -710,6 +785,8 @@ export default function MontajeObra({ obra, accessToken }) {
           accessToken={accessToken}
           documentos={datos.documentos}
           onCambiarDocumentos={(documentos) => setDatos((prev) => ({ ...prev, documentos }))}
+          onRegistrar={onRegistrar}
+          cambiarDatos={cambiarDatos}
         />
       )}
       {subpestana === 'Tareas pendientes' && (
@@ -720,6 +797,8 @@ export default function MontajeObra({ obra, accessToken }) {
           onCambiarTareas={(tareas) => setDatos((prev) => ({ ...prev, tareas }))}
           documentos={datos.documentos}
           onCambiarDocumentos={(documentos) => setDatos((prev) => ({ ...prev, documentos }))}
+          onRegistrar={onRegistrar}
+          cambiarDatos={cambiarDatos}
         />
       )}
       </div>
