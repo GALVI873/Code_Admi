@@ -209,19 +209,47 @@ function FiltroCategorias({ categorias, seleccionadas, onCambiar }) {
   )
 }
 
-function NuevaObra({ obrasPanel, onCrear, onCancelar }) {
-  const [form, setForm] = useState({ nombre: '', constructora: '', situacion: 'Obra', obra_panel: '', fecha_aceptacion: hoyIso() })
+// Alta desde el botón "+ Nuevo" (a pedido de Álvaro, 2026-10-02): una obra
+// completa, o un remate / repaso / aviso. Estos últimos no son obras: como
+// mucho llevan Montaje y Facturación (se elige cuál) y no tienen por qué
+// estar vinculados a una obra aceptada. El tipo queda como situación.
+const TIPOS_ALTA = [
+  { situacion: 'Obra', etiqueta: 'Obra' },
+  { situacion: 'Remates', etiqueta: 'Remate' },
+  { situacion: 'Repasos', etiqueta: 'Repaso' },
+  { situacion: 'Avisos', etiqueta: 'Aviso' },
+]
+
+function VentanaNuevo({ tipoInicial = 'Obra', obrasPanel, personas, onCrear, onCerrar }) {
+  const [situacion, setSituacion] = useState(tipoInicial)
+  const [form, setForm] = useState({ nombre: '', constructora: '', obra_panel: '', fecha_aceptacion: hoyIso(), fecha_montaje: '', dias_montaje: '1', montador: '' })
+  const [conMontaje, setConMontaje] = useState(true)
+  const [conFacturacion, setConFacturacion] = useState(true)
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
   const sugeridas = useMemo(() => sugerirObrasPanel(form.nombre, obrasPanel), [form.nombre, obrasPanel])
+  const esObra = situacion === 'Obra'
+  const etiqueta = TIPOS_ALTA.find((t) => t.situacion === situacion)?.etiqueta || 'Obra'
+  const montadores = personas.filter((p) => p.rol === 'montador').map((p) => p.nombre)
+  const puedeCrear = form.nombre.trim() && (esObra || conMontaje || conFacturacion)
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!form.nombre.trim() || enviando) return
+    if (!puedeCrear || enviando) return
     setEnviando(true)
     setError('')
+    const base = { nombre: form.nombre.trim(), constructora: form.constructora, obra_panel: form.obra_panel, situacion }
+    const datos = esObra
+      ? { ...base, fecha_aceptacion: form.fecha_aceptacion }
+      : {
+          ...base,
+          categorias: [conMontaje && 'Montaje', conFacturacion && 'Facturar'].filter(Boolean),
+          fecha_montaje: conMontaje ? form.fecha_montaje : '',
+          dias_montaje: Number(form.dias_montaje) || 1,
+          montador: conMontaje ? form.montador : '',
+        }
     try {
-      await onCrear(form)
+      await onCrear(datos)
     } catch (err) {
       setError(err.message)
       setEnviando(false)
@@ -229,39 +257,90 @@ function NuevaObra({ obrasPanel, onCrear, onCancelar }) {
   }
 
   return (
-    <form className="plan-nueva-obra" onSubmit={handleSubmit}>
-      <h3 className="montaje-subtitulo">Nueva obra</h3>
-      <p className="dashboard-nota plan-nota-sin-margen">Se crea con todas las categorías (Medición, Material, Fabricación, Chapas, Composite, Transporte, Grúa, Montaje y Facturar). Con fecha de aceptación, las fechas se calculan solas con el cronograma tipo; sin ella, quedan vacías.</p>
-      <div className="plan-form-grilla">
-        <label>
-          Nombre *
-          <input autoFocus type="text" className="input-filtro" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
-        </label>
-        <label>
-          Constructora / cliente
-          <input type="text" className="input-filtro" value={form.constructora} onChange={(e) => setForm({ ...form, constructora: e.target.value })} />
-        </label>
-        <label>
-          Situación
-          <select className="select-inline" value={form.situacion} onChange={(e) => setForm({ ...form, situacion: e.target.value })}>
-            {SITUACIONES.map((s) => <option key={s}>{s}</option>)}
-          </select>
-        </label>
-        <label>
-          Fecha de aceptación
-          <input type="date" className="input-filtro" value={form.fecha_aceptacion} onChange={(e) => setForm({ ...form, fecha_aceptacion: e.target.value })} />
-        </label>
-        <label>
-          Obra aceptada del panel
-          <SelectObraPanel valor={form.obra_panel} sugeridas={sugeridas} obrasPanel={obrasPanel} onCambio={(v) => setForm({ ...form, obra_panel: v, nombre: v || form.nombre })} />
-        </label>
-      </div>
-      {error && <div className="auth-error">{error}</div>}
-      <div className="plan-ventana-acciones">
-        <button type="button" className="btn-secundario" onClick={onCancelar}>Cancelar</button>
-        <button type="submit" className="btn-secundario plan-boton-principal" disabled={enviando || !form.nombre.trim()}>{enviando ? 'Creando…' : 'Crear obra'}</button>
-      </div>
-    </form>
+    <div className="plan-ventana-fondo" onClick={onCerrar}>
+      <form className="plan-ventana plan-ventana-nuevo" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+        <div className="plan-ventana-encabezado">
+          <h2>Nuevo</h2>
+          <button type="button" className="plan-ventana-cerrar" onClick={onCerrar} title="Cerrar">✕</button>
+        </div>
+
+        <div className="plan-tipos-alta">
+          {TIPOS_ALTA.map((t) => (
+            <button key={t.situacion} type="button"
+              className={`plan-tipo-alta${situacion === t.situacion ? ' plan-tipo-alta-activo' : ''}`}
+              style={situacion === t.situacion ? { background: COLOR_SITUACION[t.situacion] } : undefined}
+              onClick={() => setSituacion(t.situacion)}>
+              {t.etiqueta}
+            </button>
+          ))}
+        </div>
+        <p className="dashboard-nota plan-nota-sin-margen">
+          {esObra
+            ? 'Se crea con todas las categorías (Medición, Material, Fabricación, Chapas, Composite, Transporte, Grúa, Montaje y Facturar). Con fecha de aceptación, las fechas se calculan solas con el cronograma tipo.'
+            : `Un ${etiqueta.toLowerCase()} lleva como mucho Montaje y Facturación: elige cuáles. No hace falta que sea de una obra aceptada.`}
+        </p>
+
+        <div className="plan-form-grilla">
+          <label>
+            Nombre *
+            <input autoFocus type="text" className="input-filtro" placeholder={esObra ? '' : `Ej. ${etiqueta} ventana cocina`} value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
+          </label>
+          <label>
+            Constructora / cliente
+            <input type="text" className="input-filtro" value={form.constructora} onChange={(e) => setForm({ ...form, constructora: e.target.value })} />
+          </label>
+          <label className="plan-form-ancho">
+            {esObra ? 'Obra aceptada del panel' : 'De una obra aceptada (opcional)'}
+            <SelectObraPanel valor={form.obra_panel} sugeridas={sugeridas} obrasPanel={obrasPanel}
+              onCambio={(v) => setForm({ ...form, obra_panel: v, nombre: esObra ? v || form.nombre : form.nombre || (v ? `${etiqueta} ${v}` : '') })} />
+          </label>
+
+          {esObra ? (
+            <label>
+              Fecha de aceptación
+              <input type="date" className="input-filtro" value={form.fecha_aceptacion} onChange={(e) => setForm({ ...form, fecha_aceptacion: e.target.value })} />
+            </label>
+          ) : (
+            <>
+              <div className="plan-form-ancho plan-alta-lineas">
+                <label className="plan-check"><input type="checkbox" checked={conMontaje} onChange={(e) => setConMontaje(e.target.checked)} /> Montaje</label>
+                <label className="plan-check"><input type="checkbox" checked={conFacturacion} onChange={(e) => setConFacturacion(e.target.checked)} /> Facturación</label>
+              </div>
+              {conMontaje && (
+                <>
+                  <label>
+                    Fecha de montaje
+                    <input type="date" className="input-filtro" value={form.fecha_montaje} onChange={(e) => setForm({ ...form, fecha_montaje: e.target.value })} />
+                  </label>
+                  <label>
+                    Días de montaje
+                    <input type="number" min="1" max="60" className="input-filtro" value={form.dias_montaje} onChange={(e) => setForm({ ...form, dias_montaje: e.target.value })} />
+                  </label>
+                  <label>
+                    Montador
+                    <select className="select-inline" value={form.montador} onChange={(e) => setForm({ ...form, montador: e.target.value })}>
+                      <option value="">Sin asignar</option>
+                      {montadores.map((m) => <option key={m}>{m}</option>)}
+                    </select>
+                  </label>
+                </>
+              )}
+              {conFacturacion && conMontaje && form.fecha_montaje && (
+                <p className="dashboard-nota plan-nota-sin-margen plan-form-ancho">La facturación queda para el día hábil siguiente al montaje.</p>
+              )}
+            </>
+          )}
+        </div>
+
+        {error && <div className="auth-error">{error}</div>}
+        <div className="plan-ventana-acciones">
+          <button type="button" className="btn-secundario" onClick={onCerrar}>Cancelar</button>
+          <button type="submit" className="btn-secundario plan-boton-principal" disabled={enviando || !puedeCrear}>
+            {enviando ? 'Creando…' : `Crear ${etiqueta.toLowerCase()}`}
+          </button>
+        </div>
+      </form>
+    </div>
   )
 }
 
@@ -593,7 +672,7 @@ const COLUMNAS_OBRAS = [
   { clave: 'panel', titulo: 'Panel', sinOrden: true },
 ]
 
-function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, onCrear, onActualizarObra }) {
+function ListaObras({ obras, tareasPorObra, puedeEditar, onAbrir, onNuevo, onActualizarObra }) {
   const [buscar, setBuscar] = useState('')
   const [verTerminadas, setVerTerminadas] = useState(false)
   const [soloSinResponsable, setSoloSinResponsable] = useState(false)
@@ -602,7 +681,6 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
   // Filtro por tareas pendientes (a pedido de Álvaro, 2026-10-02).
   const [filtroPendientes, setFiltroPendientes] = useState('')
   const [orden, setOrden] = useState(null) // { clave, desc }
-  const [creando, setCreando] = useState(false)
   const [error, setError] = useState('')
   const hoy = hoyIso()
 
@@ -699,21 +777,11 @@ function ListaObras({ obras, tareasPorObra, puedeEditar, obrasPanel, onAbrir, on
         >
           👤 Sin responsable <span className="plan-filtro-contador">{cantidadSinResponsable}</span>
         </button>
-        {puedeEditar && !creando && (
-          <button type="button" className="btn-secundario plan-boton-principal" onClick={() => setCreando(true)}>+ Nueva obra</button>
+        {puedeEditar && (
+          <button type="button" className="btn-secundario plan-boton-principal" onClick={() => onNuevo('Obra')}>+ Nueva obra</button>
         )}
       </div>
 
-      {creando && (
-        <NuevaObra
-          obrasPanel={obrasPanel}
-          onCancelar={() => setCreando(false)}
-          onCrear={async (form) => {
-            await onCrear(form)
-            setCreando(false)
-          }}
-        />
-      )}
 
       {error && <div className="auth-error plan-error">{error} <button type="button" className="btn-secundario" onClick={() => setError('')}>OK</button></div>}
 
@@ -905,6 +973,8 @@ export default function PlanificacionPage() {
     setObrasFijadas(null)
   }, [buscar, categorias, responsable, situacion, verTerminadas, compacto, escala])
   const [tareaAbierta, setTareaAbierta] = useState(null)
+  // Ventana "+ Nuevo" abierta con ese tipo (situación), o null.
+  const [nuevoTipo, setNuevoTipo] = useState(null)
 
   const pestana = PESTANAS.includes(searchParams.get('pestana')) ? searchParams.get('pestana') : 'Cronograma'
   const obraAbiertaId = Number(searchParams.get('obra')) || null
@@ -981,12 +1051,26 @@ export default function PlanificacionPage() {
     }
   }
 
+  // Una obra completa se abre en su ficha; un remate/repaso/aviso se queda
+  // en la pestaña actual, con la vista llevada a la semana de su montaje.
   async function crearObra(form) {
     const creada = await crearObraPlanificacion(accessToken, form)
     const obra = obraNum(creada.obra)
     const tareas = creada.tareas.map(tareaNum)
     setDatos((prev) => ({ ...prev, obras: [...prev.obras, obra], tareas: [...prev.tareas, ...tareas] }))
-    irA('Obras', obra.id)
+    setNuevoTipo(null)
+    registrarDeshacer(`crear ${obra.nombre}`, async () => {
+      await eliminarObraPlanificacion(accessToken, obra.id)
+      setDatos((prev) => ({ ...prev, obras: prev.obras.filter((o) => o.id !== obra.id), tareas: prev.tareas.filter((t) => t.obra_id !== obra.id) }))
+    })
+    if (form.categorias) {
+      if (form.fecha_montaje) {
+        setObrasFijadas(null)
+        setDesde(lunesDe(form.fecha_montaje))
+      }
+    } else {
+      irA('Obras', obra.id)
+    }
   }
 
   // Guarda fechas (u otros campos) de varias tareas a la vez: pantalla
@@ -1177,6 +1261,12 @@ export default function PlanificacionPage() {
           <h1>Planificación de Obras</h1>
           <p>Cronograma por categoría y Gantt de montaje{puedeEditar ? ' — arrastra las barras para mover o estirar las fechas' : ''}</p>
         </div>
+        {puedeEditar && (
+          <button type="button" className="btn-secundario plan-boton-principal plan-boton-nuevo" onClick={() => setNuevoTipo('Obra')}
+            title="Crear una obra, un remate, un repaso o un aviso">
+            + Nuevo
+          </button>
+        )}
       </header>
 
       <div className="seguimiento-pestanas">
@@ -1339,9 +1429,8 @@ export default function PlanificacionPage() {
             obras={datos.obras}
             tareasPorObra={tareasPorObra}
             puedeEditar={puedeEditar}
-            obrasPanel={datos.obras_panel}
             onAbrir={(id) => irA('Obras', id)}
-            onCrear={crearObra}
+            onNuevo={setNuevoTipo}
             onActualizarObra={actualizarObra}
           />
         )
@@ -1368,6 +1457,16 @@ export default function PlanificacionPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {nuevoTipo && (
+        <VentanaNuevo
+          tipoInicial={nuevoTipo}
+          obrasPanel={datos.obras_panel}
+          personas={datos.personas || []}
+          onCrear={crearObra}
+          onCerrar={() => setNuevoTipo(null)}
+        />
       )}
 
       {tareaSeleccionada && (

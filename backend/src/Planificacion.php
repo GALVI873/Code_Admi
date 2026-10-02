@@ -147,6 +147,32 @@ final class Planificacion
         return array_merge([$medicion, $material, $fabricacion, $chapas, $composite], $transportes, [$grua, $montaje, $facturar]);
     }
 
+    // Alta corta — remates, repasos y avisos (a pedido de Álvaro,
+    // 2026-10-02): no son obras completas; como mucho llevan Montaje y
+    // Facturar. El montaje va en la fecha elegida tal cual (sin moverla del
+    // fin de semana: si Álvaro la eligió, es esa) y Facturar el siguiente día
+    // hábil después del montaje, 1 día. Sin fecha, las tareas quedan vacías.
+    public static function tareasAltaCorta(array $categorias, ?string $fechaMontaje, int $diasMontaje, ?string $montador): array
+    {
+        $tareas = [];
+        $montaje = null;
+        if (in_array('Montaje', $categorias, true)) {
+            $montaje = ['categoria' => 'Montaje', 'responsable' => $montador];
+            if ($fechaMontaje) {
+                $inicio = new DateTimeImmutable($fechaMontaje);
+                $montaje['fecha_inicio'] = $inicio->format('Y-m-d');
+                $montaje['fecha_fin'] = $diasMontaje > 1 ? self::finHabil($inicio, $diasMontaje)->format('Y-m-d') : null;
+            }
+            $tareas[] = $montaje;
+        }
+        if (in_array('Facturar', $categorias, true)) {
+            $tareas[] = !empty($montaje['fecha_inicio'])
+                ? ['categoria' => 'Facturar', 'fecha_inicio' => self::alTerminar($montaje)->format('Y-m-d'), 'fecha_fin' => null]
+                : ['categoria' => 'Facturar'];
+        }
+        return $tareas;
+    }
+
     public static function insertarTarea(PDO $db, int $obraId, array $t, ?string $autor): int
     {
         $db->prepare("
@@ -187,9 +213,10 @@ final class Planificacion
             $autor,
         ]);
         $obraId = (int) $db->lastInsertId();
-        $tareas = $fechaAceptacion
+        // $datos['tareas']: alta corta ya armada (ver tareasAltaCorta).
+        $tareas = $datos['tareas'] ?? ($fechaAceptacion
             ? self::cronogramaDesdeAceptacion($fechaAceptacion)
-            : array_map(fn ($c) => ['categoria' => $c], self::CATEGORIAS_ALTA);
+            : array_map(fn ($c) => ['categoria' => $c], self::CATEGORIAS_ALTA));
         foreach ($tareas as $t) {
             self::insertarTarea($db, $obraId, $t, $autor);
         }

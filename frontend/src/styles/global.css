@@ -5627,3 +5627,20 @@ select.celda-editable-material {
 @media (pointer: coarse) {
   .gantt-barra-borde { flex-basis: 14px; }
 }
+
+/* Planificación: ventana "+ Nuevo" (obra, remate, repaso o aviso). */
+.plan-ventana-nuevo { max-width: 620px; }
+.plan-tipos-alta { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
+.plan-tipo-alta {
+  border: 1px solid #dfe6e9;
+  border-radius: 16px;
+  padding: 6px 14px;
+  background: white;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--texto);
+  cursor: pointer;
+}
+.plan-tipo-alta-activo { border-color: rgba(44, 62, 80, .35); box-shadow: inset 0 0 0 1px rgba(44, 62, 80, .2); }
+.plan-alta-lineas { display: flex; gap: 18px; align-items: center; }
+.plan-boton-nuevo { font-size: 14px; padding: 8px 16px; }

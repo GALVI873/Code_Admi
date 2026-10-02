@@ -24,6 +24,9 @@ declare(strict_types=1);
 //     situacion?, silicona?, comentario?, fecha_aceptacion?}: crea la obra.
 //     Con fecha de aceptación las tareas salen con el cronograma tipo (ver
 //     backend/src/Planificacion.php); sin ella, una tarea vacía por categoría.
+//     Alta corta (remate/repaso/aviso): + categorias ["Montaje","Facturar"]
+//     (una o las dos), fecha_montaje?, dias_montaje?, montador? — solo se
+//     crean esas tareas (ver Planificacion::tareasAltaCorta).
 //   POST {accion:"calcular_fechas", id, fecha_aceptacion}: rellena las
 //     fechas de las tareas pendientes de la obra con el cronograma tipo.
 //   PATCH {accion:"actualizar_obra", id, ...campos}
@@ -221,8 +224,24 @@ try {
         if ($nombre === null) {
             Response::error('Falta el nombre de la obra', 422);
         }
+        // Alta corta (remate/repaso/aviso): "categorias" con Montaje y/o
+        // Facturar, más fecha y días de montaje y montador opcionales.
+        $tareasCortas = null;
+        if (isset($body['categorias']) && is_array($body['categorias'])) {
+            $categorias = array_values(array_intersect(['Montaje', 'Facturar'], $body['categorias']));
+            if (!$categorias) {
+                Response::error('Elige al menos Montaje o Facturación', 422);
+            }
+            $tareasCortas = Planificacion::tareasAltaCorta(
+                $categorias,
+                fechaValidaPlanificacion($body['fecha_montaje'] ?? null, 'fecha_montaje'),
+                max(1, min(60, (int) ($body['dias_montaje'] ?? 1))),
+                textoONull($body['montador'] ?? null),
+            );
+        }
         $db->beginTransaction();
         $obraId = Planificacion::crearObra($db, [
+            'tareas' => $tareasCortas,
             'nombre' => $nombre,
             'constructora' => textoONull($body['constructora'] ?? null),
             'obra_panel' => textoONull($body['obra_panel'] ?? null),
