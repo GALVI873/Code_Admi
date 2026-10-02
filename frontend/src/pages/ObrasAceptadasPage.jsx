@@ -23,7 +23,7 @@ import {
 } from '../api/client.js'
 import NotasObraAceptada from '../components/NotasObraAceptada.jsx'
 import { GaleriaFotos, VentanaNota, VisorFoto, reducirImagen } from '../components/MedicionExtras.jsx'
-import { descargarPdfMedicion } from '../components/PdfMedicion.js'
+import { descargarPdfMedicion, pdfMedicionBase64 } from '../components/PdfMedicion.js'
 import DireccionContactoObra from '../components/DireccionContactoObra.jsx'
 import BitacoraObra from '../components/BitacoraObra.jsx'
 import MontajeObra from '../components/MontajeObra.jsx'
@@ -1082,6 +1082,8 @@ function PlanosObra({ obra, materiales, cliente }) {
   const [visor, setVisor] = useState(null)
   const fotosCompletasRef = useRef(new Map())
   const [generandoInforme, setGenerandoInforme] = useState(false)
+  const [subiendoInforme, setSubiendoInforme] = useState(false)
+  const [informeDrive, setInformeDrive] = useState(null)
 
   useEffect(() => {
     let cancelado = false
@@ -1114,9 +1116,11 @@ function PlanosObra({ obra, materiales, cliente }) {
         if (cancelado) return
         setNotas((data.notas || []).map((n) => ({ ...n, id: Number(n.id), pagina: Number(n.pagina), numero: Number(n.numero), x_pct: Number(n.x_pct), y_pct: Number(n.y_pct) })))
         setFotos((data.fotos || []).map((f) => ({ ...f, id: Number(f.id) })))
+        setInformeDrive(data.informe_drive || null)
       })
       .catch(() => {}) // opcional, igual que las medidas
     fotosCompletasRef.current = new Map()
+    setInformeDrive(null)
     return () => {
       cancelado = true
     }
@@ -1337,25 +1341,29 @@ function PlanosObra({ obra, materiales, cliente }) {
     return mapa
   }, [materiales])
 
+  async function datosInforme() {
+    const completas = await cargarFotosCompletas()
+    return {
+      obra,
+      cliente,
+      paginas,
+      nombresPaginas,
+      posiciones,
+      posicionesBase,
+      tipoPorPosicion: tipoPorPosicionBase,
+      proyecto: proyectoPorPosicion,
+      medidas: medidasPorPosicion,
+      dibujoDe: (pos) => dibujosPorPosicion[pos] || dibujosPorTipo[normalizarTipoDibujo(tipoPorPosicionBase.get(pos))] || null,
+      notas,
+      fotos: fotos.map((f) => ({ ...f, archivo_base64: completas.get(f.id) })),
+    }
+  }
+
   async function generarInforme() {
     setGenerandoInforme(true)
     setError('')
     try {
-      const completas = await cargarFotosCompletas()
-      await descargarPdfMedicion({
-        obra,
-        cliente,
-        paginas,
-        nombresPaginas,
-        posiciones,
-        posicionesBase,
-        tipoPorPosicion: tipoPorPosicionBase,
-        proyecto: proyectoPorPosicion,
-        medidas: medidasPorPosicion,
-        dibujoDe: (pos) => dibujosPorPosicion[pos] || dibujosPorTipo[normalizarTipoDibujo(tipoPorPosicionBase.get(pos))] || null,
-        notas,
-        fotos: fotos.map((f) => ({ ...f, archivo_base64: completas.get(f.id) })),
-      })
+      await descargarPdfMedicion(await datosInforme())
     } catch (err) {
       setError(`No se pudo generar el informe: ${err.message}`)
     } finally {
@@ -1363,15 +1371,20 @@ function PlanosObra({ obra, materiales, cliente }) {
     }
   }
 
-  // --- Subir fotos a Drive (opcional): marca las pendientes; las sube la
-  // próxima sincronización. ---
-  const fotosSinSubir = fotos.filter((f) => f.drive_estado !== 'subida')
-  async function solicitarDrive() {
+  // --- Subir informe a Drive (opcional): se genera el PDF aquí y queda
+  // pendiente; lo sube la próxima sincronización a "1.Mediciones de
+  // obras/Panel" (solo el informe, no las fotos sueltas). ---
+  async function subirInformeDrive() {
+    setSubiendoInforme(true)
+    setError('')
     try {
-      await accionMedicion(accessToken, 'PATCH', 'solicitar_drive', { obra })
-      setFotos((prev) => prev.map((f) => (f.drive_estado === 'subida' ? f : { ...f, drive_estado: 'pendiente' })))
+      const pdfBase64 = await pdfMedicionBase64(await datosInforme())
+      const r = await accionMedicion(accessToken, 'POST', 'subir_informe_drive', { obra, pdf_base64: pdfBase64 })
+      setInformeDrive(r.informe_drive)
     } catch (err) {
-      setError(err.message)
+      setError(`No se pudo subir el informe: ${err.message}`)
+    } finally {
+      setSubiendoInforme(false)
     }
   }
 
@@ -1506,21 +1519,19 @@ function PlanosObra({ obra, materiales, cliente }) {
         <button type="button" className="btn-secundario" disabled={generandoInforme} onClick={generarInforme}>
           {generandoInforme ? 'Generando…' : '📄 Informe de medición'}
         </button>
-        {fotos.length > 0 && (
-          <span className="planos-drive">
-            <button type="button" className="btn-secundario" onClick={solicitarDrive} disabled={fotosSinSubir.every((f) => f.drive_estado === 'pendiente')}
-              title="Opcional: sube las fotos de medición a Drive en la próxima sincronización">
-              ☁ Subir fotos a Drive
-            </button>
+        <span className="planos-drive">
+          <button type="button" className="btn-secundario" onClick={subirInformeDrive} disabled={subiendoInforme || generandoInforme}
+            title="Opcional: sube el informe de medición en PDF a Drive (1.Mediciones de obras/Panel) en la próxima sincronización">
+            {subiendoInforme ? 'Preparando…' : '☁ Subir informe a Drive'}
+          </button>
+          {informeDrive && (
             <span className="planos-enviar-taller-estado">
-              {fotosSinSubir.length === 0
-                ? 'Todas las fotos están en Drive'
-                : fotosSinSubir.some((f) => f.drive_estado === 'pendiente')
-                  ? `${fotosSinSubir.filter((f) => f.drive_estado === 'pendiente').length} pendiente(s) — se suben en la próxima sincronización`
-                  : `${fotosSinSubir.length} sin subir`}
+              {informeDrive.drive_estado === 'subido'
+                ? `En Drive desde el ${new Date(`${informeDrive.drive_subido_en.replace(' ', 'T')}Z`).toLocaleDateString('es-ES')}`
+                : 'Pendiente: se sube en la próxima sincronización'}
             </span>
-          </span>
-        )}
+          )}
+        </span>
         <div className="planos-enviar-taller">
           <span className="planos-medidas-contador">
             📐 Medidas: {posicionesMedidas.size}/{posicionesBase.length}

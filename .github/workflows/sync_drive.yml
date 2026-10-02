@@ -123,3 +123,9 @@ jobs:
       - name: Enviar documentos de Montaje
         run: node enviar_documentos_montaje.js
         continue-on-error: true
+      # Informes de medición (PDF) pedidos con "Subir informe a Drive" en
+      # Planos → "1.Mediciones de obras/Panel" (ver
+      # subir_informes_medicion.js y medicion_obra.php).
+      - name: Subir informes de medición a Drive
+        run: node subir_informes_medicion.js
+        continue-on-error: true

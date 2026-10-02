@@ -9,7 +9,7 @@
 //   4. Ficha de cada posición con algo que contar: dibujo, medidas,
 //      comentario y fotos.
 //   5. Notas de obra con su texto y fotos.
-import { TEAL, TEAL_SUAVE, TEAL_OSCURO, GRIS, TEXTO, EMPRESA, PROPORCION_LOGO, prepararMarca, pieCorporativo } from './PdfMarca.js'
+import { TEAL, TEAL_SUAVE, TEAL_OSCURO, GRIS, TEXTO, EMPRESA, PROPORCION_LOGO, arrayBufferABase64, prepararMarca, pieCorporativo } from './PdfMarca.js'
 
 const MARGEN = 12
 const UMBRAL_DIFERENCIA = 10 // mm
@@ -105,7 +105,7 @@ function grillaFotos(doc, fotos, y, nuevaPagina) {
   return col === 0 ? y : y + h + sep
 }
 
-export async function descargarPdfMedicion(d) {
+async function construirPdfMedicion(d) {
   const { jsPDF } = await import('jspdf')
   const { default: autoTable } = await import('jspdf-autotable')
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' })
@@ -336,6 +336,18 @@ export async function descargarPdfMedicion(d) {
   }
 
   pieCorporativo(doc, MARGEN)
+  return doc
+}
+
+export async function descargarPdfMedicion(d) {
+  const doc = await construirPdfMedicion(d)
   const nombreArchivo = d.obra.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, '_')
   doc.save(`Informe_medicion_${nombreArchivo}_${hoyLargo().split('/').reverse().join('-')}.pdf`)
+}
+
+// El mismo informe en base64 (sin prefijo data:), para "Subir informe a
+// Drive" (ver medicion_obra.php y backend/drive_sync/subir_informes_medicion.js).
+export async function pdfMedicionBase64(d) {
+  const doc = await construirPdfMedicion(d)
+  return arrayBufferABase64(doc.output('arraybuffer'))
 }
