@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth, MOCK_AUTH } from '../context/AuthContext.jsx'
+import { DeshacerProvider } from '../context/DeshacerContext.jsx'
 
 // Menú organizado por departamento a pedido de Álvaro — un ítem plano
 // sigue siendo un ítem plano ({to, label, icono, permiso}), pero un
@@ -165,7 +166,9 @@ export default function AppLayout() {
             🧪 Modo desarrollo — sesión simulada, no hay login real todavía
           </div>
         )}
-        <Outlet />
+        <DeshacerProvider>
+          <Outlet />
+        </DeshacerProvider>
       </main>
     </div>
   )

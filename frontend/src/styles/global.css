@@ -5495,5 +5495,52 @@ select.celda-editable-material {
   font-weight: 600;
 }
 .plan-categoria-nueva { flex: none; width: 200px; height: 34px; }
-.plan-deshacer { display: flex; align-items: center; gap: 10px; }
-.plan-deshacer-aviso { font-size: 12.5px; color: #5a6b7d; }
+
+/* Deshacer común (ver context/DeshacerContext.jsx). */
+.deshacer-flotante {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: min(460px, calc(100vw - 40px));
+}
+.deshacer-boton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 9px 14px;
+  border: none;
+  border-radius: 20px;
+  background: var(--azul);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .2);
+}
+.deshacer-boton:hover { background: var(--azul-med); }
+.deshacer-que {
+  font-weight: 400;
+  opacity: .8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deshacer-aviso {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: white;
+  color: var(--texto);
+  font-size: 12.5px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .15);
+}
+.deshacer-aviso-error { color: var(--rojo); border-left: 3px solid var(--rojo); }
+.deshacer-cerrar { border: none; background: none; cursor: pointer; color: inherit; }

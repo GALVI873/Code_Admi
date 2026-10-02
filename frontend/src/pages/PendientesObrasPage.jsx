@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useDeshacer } from '../context/DeshacerContext.jsx'
 import {
   pendientesObrasAceptadas,
   marcarComentarioHecho,
@@ -277,6 +278,9 @@ export default function PendientesObrasPage() {
   const esperandoAlvaro = (p) => esAlfredo && !p.hecho && ultimoMensaje(p).autor_email === usuario?.email
 
   const [pendientes, setPendientes] = useState([])
+  // Deshacer (Ctrl+Z, común a todo el panel): hecho, categoría y archivar.
+  // Responder no se deshace (el otro ya lo leyó).
+  const { registrar } = useDeshacer()
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [obrasFiltradas, setObrasFiltradas] = useState([])
@@ -344,6 +348,10 @@ export default function PendientesObrasPage() {
     setPendientes((prev) => prev.map((n) => (n.id === nota.id ? { ...n, hecho: nuevoHecho } : n)))
     try {
       await marcarComentarioHecho(accessToken, nota.id, nuevoHecho)
+      registrar(`Notas: ${nuevoHecho ? 'marcar hecha' : 'volver a pendiente'} (${nota.obra})`, async () => {
+        await marcarComentarioHecho(accessToken, nota.id, nota.hecho ? 1 : 0)
+        setPendientes((prev) => prev.map((n) => (n.id === nota.id ? { ...n, hecho: nota.hecho ? 1 : 0 } : n)))
+      })
     } catch (err) {
       setPendientes(anteriores)
       setError(err.message)
@@ -358,6 +366,11 @@ export default function PendientesObrasPage() {
     setPendientes((prev) => prev.map((n) => (n.id === id ? { ...n, categoria } : n)))
     try {
       await categorizarComentarioObra(accessToken, id, categoria)
+      const previa = nota.categoria || 'tarea'
+      registrar(`Notas: pasar a ${categoria === 'recordatorio' ? 'Recordatorios' : 'Tareas'} (${nota.obra})`, async () => {
+        await categorizarComentarioObra(accessToken, id, previa)
+        setPendientes((prev) => prev.map((n) => (n.id === id ? { ...n, categoria: previa } : n)))
+      })
     } catch (err) {
       setPendientes(anteriores)
       setError(err.message)
@@ -370,6 +383,10 @@ export default function PendientesObrasPage() {
     setPendientes((prev) => prev.filter((n) => n.id !== nota.id))
     try {
       await archivarComentarioObra(accessToken, nota.id, true)
+      registrar(`Notas: archivar (${nota.obra})`, async () => {
+        await archivarComentarioObra(accessToken, nota.id, false)
+        setPendientes((prev) => (prev.some((n) => n.id === nota.id) ? prev : [...prev, nota]))
+      })
     } catch (err) {
       setPendientes(anteriores)
       setError(err.message)

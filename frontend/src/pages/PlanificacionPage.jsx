@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useDeshacer, idVigente, marcarRecreado } from '../context/DeshacerContext.jsx'
 import {
   planificacion,
   crearObraPlanificacion,
@@ -805,62 +806,16 @@ export default function PlanificacionPage() {
     setSearchParams(params)
   }
 
-  // --- Deshacer (Ctrl+Z) — a pedido de Álvaro, 2026-10-02. Cada acción
-  // guarda cómo volver atrás; Ctrl+Z (fuera de un campo de texto, donde
-  // sigue deshaciendo lo escrito) o el botón "↶ Deshacer" aplican la última.
-  // Se recuerda solo mientras la página está abierta. Crear o eliminar una
-  // obra entera no se deshace (eso ya pide confirmación).
+  // --- Deshacer (Ctrl+Z) — a pedido de Álvaro, 2026-10-02, común a todo el
+  // panel (ver context/DeshacerContext.jsx). Cada acción registra cómo
+  // volver atrás. Crear o eliminar una obra entera no se deshace (eso ya
+  // pide confirmación).
+  const { registrar } = useDeshacer()
   const datosRef = useRef(datos)
   useEffect(() => { datosRef.current = datos }, [datos])
-  const pilaDeshacer = useRef([])
-  const deshaciendo = useRef(false)
-  const [pasosDeshacer, setPasosDeshacer] = useState([])
-  const [avisoDeshacer, setAvisoDeshacer] = useState('')
-  // Una tarea eliminada y vuelta a crear con Deshacer cambia de id: los
-  // pasos más viejos que la nombran usan el id nuevo.
-  const idsRecreados = useRef(new Map())
-  const idActual = (id) => {
-    let x = id
-    while (idsRecreados.current.has(x)) x = idsRecreados.current.get(x)
-    return x
-  }
+  const idActual = (id) => idVigente('plan-tarea', id)
   const nombreObra = (obraId) => datosRef.current?.obras.find((o) => o.id === obraId)?.nombre || 'obra'
-
-  function registrarDeshacer(descripcion, deshacerPaso) {
-    pilaDeshacer.current = [...pilaDeshacer.current.slice(-49), { descripcion, deshacer: deshacerPaso }]
-    setPasosDeshacer(pilaDeshacer.current)
-    setAvisoDeshacer('')
-  }
-
-  async function deshacer() {
-    if (deshaciendo.current) return
-    const paso = pilaDeshacer.current[pilaDeshacer.current.length - 1]
-    if (!paso) return
-    pilaDeshacer.current = pilaDeshacer.current.slice(0, -1)
-    setPasosDeshacer(pilaDeshacer.current)
-    deshaciendo.current = true
-    try {
-      await paso.deshacer()
-      setAvisoDeshacer(`Deshecho: ${paso.descripcion}`)
-    } catch (err) {
-      setError(`No se pudo deshacer "${paso.descripcion}": ${err.message}`)
-    } finally {
-      deshaciendo.current = false
-    }
-  }
-
-  const deshacerRef = useRef(deshacer)
-  useEffect(() => { deshacerRef.current = deshacer })
-  useEffect(() => {
-    function alPulsarTecla(e) {
-      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'z') return
-      if (e.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
-      e.preventDefault()
-      deshacerRef.current()
-    }
-    window.addEventListener('keydown', alPulsarTecla)
-    return () => window.removeEventListener('keydown', alPulsarTecla)
-  }, [])
+  const registrarDeshacer = (descripcion, fn) => registrar(`Planificación: ${descripcion}`, fn)
 
   // --- Acciones (optimistas donde tiene sentido: mover barras tiene que
   // sentirse instantáneo; si el servidor rechaza, se vuelve atrás).
@@ -968,7 +923,7 @@ export default function PlanificacionPage() {
           registrar: false,
           campos: { fecha_inicio, fecha_fin, responsable, ayudante, estado, comentario },
         })
-        idsRecreados.current.set(id, nueva.id)
+        marcarRecreado('plan-tarea', id, nueva.id)
       })
     }
   }
@@ -1075,7 +1030,6 @@ export default function PlanificacionPage() {
   const tareaSeleccionada = tareaAbierta ? datos.tareas.find((t) => t.id === tareaAbierta) : null
   // Categorías de la lista + las escritas a mano en alguna tarea (para el filtro).
   const categoriasTodas = [...datos.categorias, ...new Set(datos.tareas.map((t) => t.categoria).filter((c) => !datos.categorias.includes(c)))]
-  const ultimoPaso = pasosDeshacer[pasosDeshacer.length - 1]
 
   return (
     <div className="dashboard dashboard-ancho">
@@ -1084,15 +1038,6 @@ export default function PlanificacionPage() {
           <h1>Planificación de Obras</h1>
           <p>Cronograma por categoría y Gantt de montaje{puedeEditar ? ' — arrastra las barras para mover o estirar las fechas' : ''}</p>
         </div>
-        {puedeEditar && (
-          <div className="plan-deshacer">
-            {avisoDeshacer && <span className="plan-deshacer-aviso">{avisoDeshacer}</span>}
-            <button type="button" className="btn-secundario" disabled={!ultimoPaso} onClick={deshacer}
-              title={ultimoPaso ? `Deshacer: ${ultimoPaso.descripcion} (Ctrl+Z)` : 'Nada que deshacer'}>
-              ↶ Deshacer
-            </button>
-          </div>
-        )}
       </header>
 
       <div className="seguimiento-pestanas">

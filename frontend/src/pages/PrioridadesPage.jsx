@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useDeshacer, idVigente, marcarRecreado } from '../context/DeshacerContext.jsx'
 import { prioridades, accionPrioridades } from '../api/client.js'
 import DiagramaGantt, { diaANumero, numeroADia, hoyIso, lunesDe, formatoCorto } from '../components/DiagramaGantt.jsx'
 import { COLOR_TERMINADO } from '../components/PlanificacionComun.jsx'
@@ -493,13 +494,111 @@ export default function PrioridadesPage() {
     })
   }
 
+  // --- Deshacer (Ctrl+Z, común a todo el panel — ver
+  // context/DeshacerContext.jsx). Cada escritura registra su paso inverso;
+  // después de deshacer se vuelve a leer todo. Quitar una obra entera y
+  // "Enviar a Alfredo" no se deshacen (lo primero pide confirmación, lo
+  // segundo ya le llegó a Alfredo).
+  const { registrar } = useDeshacer()
+  const datosRef = useRef(datos)
+  useEffect(() => { datosRef.current = datos }, [datos])
+  const api = (metodo, nombre, cuerpo) => accionPrioridades(accessToken, metodo, nombre, cuerpo)
+  const nombreObraPrio = (d, obraId) => {
+    const o = d.obras.find((x) => x.id === obraId)
+    return o ? o.alias || o.obra : 'obra'
+  }
+  function registrarDeshacer(descripcion, fn) {
+    registrar(`Prioridades: ${descripcion}`, async () => {
+      try {
+        await fn()
+      } finally {
+        await recargar().catch(() => {})
+      }
+    })
+  }
+  const LISTAS = {
+    categoria: { lista: 'categorias', campo: 'categoria_id', texto: 'categoría' },
+    accion: { lista: 'acciones', campo: 'accion_id', texto: 'acción' },
+    zona: { lista: 'zonas', campo: 'zona_id', texto: 'fachada' },
+  }
+  const CAMPOS_TAREA = ['descripcion', 'responsable', 'categoria_id', 'zona_id', 'accion_id', 'fecha_inicio', 'fecha_fin', 'estado', 'falta_material', 'pendiente_ppto', 'destacada']
+  const normalizarCampo = (v) => (typeof v === 'boolean' ? Number(v) : v ?? '')
+
+  // Vuelve a crear una tarea borrada tal como estaba (dos llamadas: alta y
+  // resto de campos) y anota su id nuevo.
+  async function recrearTarea(t) {
+    const r = await api('POST', 'agregar_tarea', {
+      obra_id: t.obra_id,
+      categoria_id: t.categoria_id ? idVigente('prio-categoria', t.categoria_id) : null,
+      zona_id: t.zona_id ? idVigente('prio-zona', t.zona_id) : null,
+      descripcion: t.descripcion,
+    })
+    const nuevoId = Number(r.tarea.id)
+    await api('PATCH', 'actualizar_tarea', {
+      id: nuevoId,
+      responsable: t.responsable,
+      accion_id: t.accion_id ? idVigente('prio-accion', t.accion_id) : null,
+      fecha_inicio: t.fecha_inicio || '',
+      fecha_fin: t.fecha_fin || '',
+      estado: t.estado,
+      falta_material: t.falta_material,
+      pendiente_ppto: t.pendiente_ppto,
+      destacada: t.destacada,
+    })
+    marcarRecreado('prio-tarea', t.id, nuevoId)
+  }
+
+  // Paso inverso de una escritura de accion(): d = datos de ANTES, r = respuesta.
+  function registrarInverso(nombre, cuerpo, r, d) {
+    const [verbo, tipo] = nombre.split('_')
+    if (nombre === 'agregar_obra' && r?.obra) {
+      const id = Number(r.obra.id)
+      registrarDeshacer(`agregar ${cuerpo.obra}`, () => api('DELETE', 'eliminar_obra', { id }))
+    } else if (nombre === 'actualizar_obra') {
+      const o = d.obras.find((x) => x.id === cuerpo.id)
+      if (!o) return
+      const previos = Object.fromEntries(Object.keys(cuerpo).filter((k) => k !== 'id').map((k) => [k, o[k] ?? '']))
+      registrarDeshacer(`cambio en ${nombreObraPrio(d, o.id)}`, () => api('PATCH', 'actualizar_obra', { id: o.id, ...previos }))
+    } else if (LISTAS[tipo]) {
+      const { lista, campo, texto } = LISTAS[tipo]
+      const espacio = `prio-${tipo}`
+      if (verbo === 'agregar' && r?.[tipo]) {
+        const id = Number(r[tipo].id)
+        registrarDeshacer(`agregar ${texto} "${cuerpo.nombre}"`, () => api('DELETE', `eliminar_${tipo}`, { id: idVigente(espacio, id) }))
+      } else if (verbo === 'actualizar') {
+        const previo = d[lista].find((x) => x.id === cuerpo.id)
+        if (!previo) return
+        const previos = Object.fromEntries(Object.keys(cuerpo).filter((k) => k !== 'id').map((k) => [k, previo[k]]))
+        registrarDeshacer(`cambiar ${texto} "${previo.nombre}"`, () => api('PATCH', `actualizar_${tipo}`, { id: idVigente(espacio, previo.id), ...previos }))
+      } else if (verbo === 'eliminar') {
+        const previo = d[lista].find((x) => x.id === cuerpo.id)
+        if (!previo) return
+        const tareas = d.tareas.filter((t) => t[campo] === previo.id).map((t) => t.id)
+        registrarDeshacer(`eliminar ${texto} "${previo.nombre}"`, async () => {
+          const rr = await api('POST', `agregar_${tipo}`, { obra_id: previo.obra_id, nombre: previo.nombre, ...(previo.color ? { color: previo.color } : {}) })
+          const nuevoId = Number(rr[tipo].id)
+          marcarRecreado(espacio, previo.id, nuevoId)
+          await Promise.all(tareas.map((id) => api('PATCH', 'actualizar_tarea', { id: idVigente('prio-tarea', id), [campo]: nuevoId })))
+        })
+      }
+    } else if (nombre === 'agregar_tarea' && r?.tarea) {
+      const id = Number(r.tarea.id)
+      registrarDeshacer(`agregar tarea en ${nombreObraPrio(d, cuerpo.obra_id)}`, () => api('DELETE', 'eliminar_tarea', { id: idVigente('prio-tarea', id) }))
+    } else if (nombre === 'eliminar_tarea') {
+      const t = d.tareas.find((x) => x.id === cuerpo.id)
+      if (t) registrarDeshacer(`eliminar tarea "${t.descripcion || 'sin descripción'}"`, () => recrearTarea(t))
+    }
+  }
+
   // Todas las escrituras de estructura pasan por acá y después se vuelve a
   // leer todo: son pocas obras y pocas tareas, así nunca queda desfasado.
   async function accion(metodo, nombre, cuerpo) {
     setError('')
+    const antes = datosRef.current
     try {
       const r = await accionPrioridades(accessToken, metodo, nombre, cuerpo)
       await recargar()
+      if (antes) registrarInverso(nombre, cuerpo, r, antes)
       return r
     } catch (err) {
       setError(err.message)
@@ -521,9 +620,15 @@ export default function PrioridadesPage() {
   }
 
   async function guardarTarea(id, cambios) {
+    const anterior = datosRef.current?.tareas.find((t) => t.id === id)
     const r = await accionPrioridades(accessToken, 'PATCH', 'actualizar_tarea', { id, ...cambios })
     setDatos((prev) => ({ ...prev, tareas: prev.tareas.map((t) => (t.id === id ? tareaConIds(r.tarea) : t)) }))
     if (cambios.responsable) recargar()
+    const claves = Object.keys(cambios).filter((k) => CAMPOS_TAREA.includes(k))
+    if (anterior && claves.some((k) => normalizarCampo(anterior[k]) !== normalizarCampo(cambios[k]))) {
+      const previos = Object.fromEntries(claves.map((k) => [k, k.startsWith('fecha') ? anterior[k] || '' : anterior[k]]))
+      registrarDeshacer(`cambio en "${anterior.descripcion || 'tarea'}"`, () => api('PATCH', 'actualizar_tarea', { id: idVigente('prio-tarea', id), ...previos }))
+    }
   }
 
   // Corre un conjunto de tareas "delta" días (barra de una tarea, de una
@@ -531,17 +636,27 @@ export default function PrioridadesPage() {
   // falla, se recarga todo.
   function moverTareas(ids, delta, estirar = null) {
     const correr = (iso) => (iso ? numeroADia(diaANumero(iso) + delta) : iso)
+    const movidas = datos.tareas.filter((t) => ids.includes(t.id) && t.fecha_inicio)
     const cambios = new Map(
-      datos.tareas.filter((t) => ids.includes(t.id) && t.fecha_inicio).map((t) => [
+      movidas.map((t) => [
         t.id,
         estirar && estirar.id === t.id ? { fecha_inicio: estirar.inicio, fecha_fin: estirar.fin } : { fecha_inicio: correr(t.fecha_inicio), fecha_fin: correr(t.fecha_fin) },
       ]),
     )
     setDatos((prev) => ({ ...prev, tareas: prev.tareas.map((t) => (cambios.has(t.id) ? { ...t, ...cambios.get(t.id) } : t)) }))
-    Promise.all([...cambios].map(([id, c]) => accionPrioridades(accessToken, 'PATCH', 'actualizar_tarea', { id, ...c }))).catch((err) => {
-      setError(err.message)
-      recargar()
-    })
+    Promise.all([...cambios].map(([id, c]) => accionPrioridades(accessToken, 'PATCH', 'actualizar_tarea', { id, ...c })))
+      .then(() => {
+        const descripcion = movidas.length === 1 ? `mover "${movidas[0].descripcion || 'tarea'}"` : `mover ${movidas.length} tareas`
+        registrarDeshacer(descripcion, () => Promise.all(movidas.map((t) => api('PATCH', 'actualizar_tarea', {
+          id: idVigente('prio-tarea', t.id),
+          fecha_inicio: t.fecha_inicio || '',
+          fecha_fin: t.fecha_fin || '',
+        }))))
+      })
+      .catch((err) => {
+        setError(err.message)
+        recargar()
+      })
   }
 
   function handleMoverBarra(b, inicio, fin) {

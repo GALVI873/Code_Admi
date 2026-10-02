@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useDeshacer } from '../context/DeshacerContext.jsx'
 import {
   comentariosObra,
   agregarComentarioObra,
@@ -175,6 +176,8 @@ export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido 
   const puedeEliminar = usuario?.roles?.includes('admin')
 
   const [notas, setNotas] = useState([])
+  // Deshacer (Ctrl+Z, común a todo el panel): hecho, archivar y categoría.
+  const { registrar } = useDeshacer()
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [mensaje, setMensaje] = useState('')
@@ -248,6 +251,10 @@ export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido 
     setNotas((prev) => prev.map((n) => (n.id === nota.id ? { ...n, hecho } : n)))
     try {
       await marcarComentarioHecho(accessToken, nota.id, hecho)
+      registrar(`Notas: ${hecho ? 'marcar hecha' : 'volver a pendiente'} (${obraBase})`, async () => {
+        await marcarComentarioHecho(accessToken, nota.id, nota.hecho ? 1 : 0)
+        setNotas((prev) => prev.map((n) => (n.id === nota.id ? { ...n, hecho: nota.hecho ? 1 : 0 } : n)))
+      })
     } catch (err) {
       setNotas(anteriores)
       setError(err.message)
@@ -260,6 +267,10 @@ export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido 
     setNotas((prev) => prev.map((n) => (n.id === nota.id ? { ...n, archivado: archivado ? 1 : 0 } : n)))
     try {
       await archivarComentarioObra(accessToken, nota.id, archivado)
+      registrar(`Notas: ${archivado ? 'archivar' : 'desarchivar'} (${obraBase})`, async () => {
+        await archivarComentarioObra(accessToken, nota.id, !archivado)
+        setNotas((prev) => prev.map((n) => (n.id === nota.id ? { ...n, archivado: archivado ? 0 : 1 } : n)))
+      })
     } catch (err) {
       setNotas(anteriores)
       setError(err.message)
@@ -274,6 +285,11 @@ export default function NotasObraAceptada({ obra, accessToken, usuario, onLeido 
     setNotas((prev) => prev.map((n) => (n.id === id ? { ...n, categoria } : n)))
     try {
       await categorizarComentarioObra(accessToken, id, categoria)
+      const previa = nota.categoria || 'tarea'
+      registrar(`Notas: pasar a ${categoria === 'recordatorio' ? 'Recordatorios' : 'Tareas'} (${obraBase})`, async () => {
+        await categorizarComentarioObra(accessToken, id, previa)
+        setNotas((prev) => prev.map((n) => (n.id === id ? { ...n, categoria: previa } : n)))
+      })
     } catch (err) {
       setNotas(anteriores)
       setError(err.message)
