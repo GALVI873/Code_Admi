@@ -117,8 +117,8 @@ export function filasMontajePorMontador(tareas, obrasPorId, { incluirTerminadas 
 
 // Vista detallada de Montaje (a pedido de Álvaro, 2026-10-02): en lugar de
 // una fila por montador con todas sus obras juntas, el montador queda como
-// encabezado y debajo va cada obra en su propia línea, con sus fechas de
-// montaje. Los solapes entre obras del mismo montador se siguen marcando en
+// encabezado y debajo va cada obra en su propia línea (las fechas se ven en
+// la barra). Los solapes entre obras del mismo montador se siguen marcando en
 // rojo (mismo criterio que marcarSolapes: los remates/repasos no cuentan).
 export function detallarFilasMontaje(filas) {
   const resultado = []
@@ -140,11 +140,12 @@ export function detallarFilasMontaje(filas) {
     }
     resultado.push({ id: fila.id, etiqueta: fila.etiqueta, esGrupo: true, barras: [] })
     for (const b of barras) {
-      const fechas = b.fin && b.fin !== b.inicio ? `${formatoCorto(b.inicio)} → ${formatoCorto(b.fin)}` : formatoCorto(b.inicio)
       resultado.push({
         id: `${fila.id}-${b.id}`,
         etiqueta: b.obraNombre,
-        subetiqueta: `${fechas}${b.tarea.ayudante ? ` · ${b.tarea.ayudante}` : ''}`,
+        // Sin las fechas en la columna (a pedido de Álvaro, 2026-10-02: se
+        // confundían con las de la barra); solo el ayudante, si lo hay.
+        subetiqueta: b.tarea.ayudante || '',
         barras: [{ ...b, texto: b.tarea.ayudante || b.obraNombre, clase: solapadas.has(b.id) ? 'gantt-barra-solape' : b.clase }],
       })
     }
