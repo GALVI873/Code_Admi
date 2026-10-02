@@ -102,6 +102,12 @@ try {
     if (!in_array('comentario', $columnasMedidas, true)) {
         $db->exec('ALTER TABLE medidas_confirmadas_obra ADD COLUMN comentario TEXT');
     }
+    // Hasta 2026-10-02, guardar solo un comentario (ancho/alto vacíos, que el
+    // panel manda como null) dejaba 0 en ancho/alto — (float) null es 0 — y
+    // la posición salía como medida. Un 0 nunca es una medida real: se limpia
+    // (no hace nada si ya no hay).
+    $db->exec('UPDATE medidas_confirmadas_obra SET ancho_real = NULL WHERE ancho_real <= 0');
+    $db->exec('UPDATE medidas_confirmadas_obra SET alto_real = NULL WHERE alto_real <= 0');
     $db->exec("
         CREATE TABLE IF NOT EXISTS plano_dibujo_tipo (
           obra TEXT NOT NULL,
@@ -229,8 +235,17 @@ try {
         if ($obra === '' || $posicion === '') {
             Response::error('Faltan "obra" y/o "posicion"', 422);
         }
-        $anchoReal = array_key_exists('ancho_real', $body) && $body['ancho_real'] !== '' ? (float) $body['ancho_real'] : null;
-        $altoReal = array_key_exists('alto_real', $body) && $body['alto_real'] !== '' ? (float) $body['alto_real'] : null;
+        // Vacío, null o 0 = sin medida (no un 0 guardado — ver la limpieza
+        // de más arriba).
+        $medidaONull = function ($valor): ?float {
+            if ($valor === null || $valor === '' || !is_numeric($valor)) {
+                return null;
+            }
+            $numero = (float) $valor;
+            return $numero > 0 ? $numero : null;
+        };
+        $anchoReal = $medidaONull($body['ancho_real'] ?? null);
+        $altoReal = $medidaONull($body['alto_real'] ?? null);
         $comentario = trim((string) ($body['comentario'] ?? ''));
         $comentarioGuardado = $comentario === '' ? null : $comentario;
 

@@ -1135,13 +1135,13 @@ function PlanosObra({ obra, materiales }) {
   )
   const medidasPorPosicion = useMemo(() => new Map(medidas.map((m) => [m.posicion, m])), [medidas])
   // Una posición cuenta como "medida" cuando tiene ancho y alto real
-  // cargados (igual criterio que habilita el botón "Enviar medidas") — un
-  // comentario solo, sin números, no alcanza.
+  // cargados y mayores que 0 (igual criterio que habilita el botón "Enviar
+  // medidas") — un comentario solo, sin números, o un 0, no alcanza.
   const posicionesMedidas = useMemo(() => {
     const set = new Set()
     posicionesBase.forEach((p) => {
       const m = medidasPorPosicion.get(p)
-      if (m && m.ancho_real != null && m.alto_real != null) set.add(p)
+      if (m && Number(m.ancho_real) > 0 && Number(m.alto_real) > 0) set.add(p)
     })
     return set
   }, [posicionesBase, medidasPorPosicion])
@@ -1161,8 +1161,8 @@ function PlanosObra({ obra, materiales }) {
     const anteriores = medidas
     const nuevaMedida = {
       posicion: posicionBase,
-      ancho_real: anchoStr === '' ? null : Number(anchoStr),
-      alto_real: altoStr === '' ? null : Number(altoStr),
+      ancho_real: anchoStr === '' || !(Number(anchoStr) > 0) ? null : Number(anchoStr),
+      alto_real: altoStr === '' || !(Number(altoStr) > 0) ? null : Number(altoStr),
       comentario: comentarioStr === '' ? null : comentarioStr,
       confirmado_por: usuario?.nombre,
     }
