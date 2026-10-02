@@ -5550,3 +5550,80 @@ select.celda-editable-material {
 .plan-sub-bloque { display: block; }
 .plan-montaje-terminado { color: var(--verde); font-weight: 600; }
 .plan-tabla-facturacion td { vertical-align: top; }
+
+/* --- Tablet y teléfono (a pedido de Álvaro, 2026-10-02): que el panel y
+   sus diagramas se ajusten a la pantalla. El menú lateral pasa a abrirse
+   con ☰; los márgenes se reducen; en los diagramas la columna de nombres
+   se achica (ver DiagramaGantt.jsx) y Prioridades muestra menos columnas. */
+.app-barra-movil { display: none; }
+.app-menu-fondo { display: none; }
+
+@media (max-width: 900px) {
+  .app-shell { flex-direction: column; }
+  .app-barra-movil {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 70;
+    padding: 8px 14px;
+    background: var(--azul);
+    color: white;
+  }
+  .app-boton-menu {
+    border: none;
+    background: rgba(255, 255, 255, .12);
+    color: white;
+    font-size: 20px;
+    width: 40px;
+    height: 36px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .app-barra-movil-titulo { font-size: 15px; font-weight: 700; }
+  .app-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 90;
+    width: 260px;
+    overflow-y: auto;
+    transform: translateX(-100%);
+    transition: transform .2s ease;
+  }
+  .app-menu-abierto .app-sidebar { transform: translateX(0); box-shadow: 4px 0 18px rgba(0, 0, 0, .25); }
+  .app-menu-fondo { display: block; position: fixed; inset: 0; z-index: 85; background: rgba(0, 0, 0, .35); }
+  .app-content { overflow-y: visible; }
+  .dashboard, .dashboard-ancho { padding: 16px 12px; }
+  .dashboard-header { flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+  .dashboard-header h1 { font-size: 22px; }
+  .filtro-tabla { gap: 10px; padding: 8px 10px; }
+  .gantt-scroll { max-height: calc(100vh - 110px); }
+  .tabla-scroll { max-height: calc(100vh - 90px); }
+}
+
+@media (max-width: 700px) {
+  .gantt-etiqueta { padding: 0 8px; }
+  .gantt-etiqueta-texto { font-size: 13px; }
+  .gantt-etiqueta-sub { font-size: 11px; }
+  .gantt-barra-texto { padding: 0 4px; font-size: 12px; }
+  .plan-fila-cronograma { grid-template-columns: 1fr; gap: 2px; }
+  .plan-fila-cronograma .plan-chip { font-size: 10.5px; padding: 0 6px; }
+  .plan-navegacion { flex-wrap: wrap; }
+  /* Prioridades: solo categoría y tarea en la columna izquierda. */
+  .prio-fila.prio-nivel-1,
+  .prio-fila.prio-nivel-2,
+  .prio-fila { grid-template-columns: 74px 1fr; gap: 4px; font-size: 12px; }
+  .prio-col-accion, .prio-col-estado, .prio-col-fechas { display: none; }
+  .prio-nivel-1 { padding-left: 6px; }
+  .prio-nivel-2 { padding-left: 14px; }
+  .prio-acciones-obra { flex-wrap: wrap; gap: 4px; }
+}
+
+/* Pantallas táctiles: bordes de las barras más anchos para poder estirarlas
+   con el dedo. */
+@media (pointer: coarse) {
+  .gantt-barra-borde { flex-basis: 14px; }
+}

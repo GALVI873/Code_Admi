@@ -880,7 +880,8 @@ export default function PlanificacionPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [datos, setDatos] = useState(null)
   const [error, setError] = useState('')
-  const [escala, setEscala] = useState('Mes')
+  // En teléfono arranca en vista Semana (entra mejor en la pantalla).
+  const [escala, setEscala] = useState(() => (window.innerWidth < 700 ? 'Semana' : 'Mes'))
   const [desde, setDesde] = useState(() => numeroADia(diaANumero(lunesDe(hoyIso())) - 7))
   const [categorias, setCategorias] = useState(() => new Set())
   const [responsable, setResponsable] = useState('')

@@ -98,11 +98,20 @@ function asignarCarriles(barras) {
 // anchoEtiqueta / encabezadoEtiqueta / fila.etiquetaNode: para vistas que
 // necesitan más que un nombre en la columna izquierda (ej. Prioridades:
 // categoría, tarea, responsable y fechas, como su planilla de Excel).
-// llenarAncho: en vez de un ancho fijo por día, reparte todo el ancho
-// disponible entre los días visibles (nunca menos que anchoDia) — a pedido
-// de Álvaro (2026-10-01) para el Gantt semanal de Inicio, que dejaba
-// espacio vacío a la derecha. Se recalcula si cambia el tamaño de ventana.
-export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPedido, editable = false, onMoverBarra, onClickBarra, vacio, anchoEtiqueta = 230, encabezadoEtiqueta = null, llenarAncho = false, cambiarFila = false, onIrAFecha = null, onDesplazar = null }) {
+// Se ajusta a la pantalla (a pedido de Álvaro, 2026-10-02: ordenador,
+// tablet o teléfono): el ancho de cada día reparte todo el ancho disponible
+// entre los días visibles (nunca menos que anchoDia; en tablet o teléfono
+// el mínimo baja a 18 px y, si aun así no entra, queda el scroll lateral), y
+// en esas pantallas la columna de nombres se achica. Se recalcula si
+// cambia el tamaño (girar la tablet, abrir el menú...). llenarAncho queda
+// por compatibilidad: ahora es siempre así.
+// En pantallas táctiles una barra se arrastra MANTENIENDO el dedo pulsado
+// un instante (como en el móvil); un toque corto la abre y deslizar sin
+// esperar desplaza el diagrama.
+const ANCHO_ESTRECHO = 1100
+const ESPERA_TACTIL_MS = 350
+
+export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPedido, editable = false, onMoverBarra, onClickBarra, vacio, anchoEtiqueta: anchoEtiquetaPedido = 230, encabezadoEtiqueta = null, cambiarFila = false, onIrAFecha = null, onDesplazar = null }) {
   const [arrastre, setArrastre] = useState(null)
   const contenedorRef = useRef(null)
   const scrollRef = useRef(null)
@@ -111,16 +120,30 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
   const [anchoContenedor, setAnchoContenedor] = useState(0)
 
   useEffect(() => {
-    if (!llenarAncho || !contenedorRef.current || typeof ResizeObserver === 'undefined') return undefined
+    if (!contenedorRef.current || typeof ResizeObserver === 'undefined') return undefined
     const observador = new ResizeObserver(([entrada]) => setAnchoContenedor(entrada.contentRect.width))
     observador.observe(contenedorRef.current)
     return () => observador.disconnect()
-  }, [llenarAncho])
+  }, [])
 
-  const anchoDia = llenarAncho && anchoContenedor
-    ? Math.max(anchoDiaPedido, Math.floor((anchoContenedor - anchoEtiqueta - 2) / dias))
+  const estrecho = anchoContenedor > 0 && anchoContenedor < ANCHO_ESTRECHO
+  const anchoEtiqueta = estrecho ? Math.min(anchoEtiquetaPedido, Math.max(110, Math.round(anchoContenedor * 0.34))) : anchoEtiquetaPedido
+  const minimoDia = estrecho ? Math.min(anchoDiaPedido, 18) : anchoDiaPedido
+  const anchoDia = anchoContenedor
+    ? Math.max(minimoDia, Math.floor((anchoContenedor - anchoEtiqueta - 2) / dias))
     : anchoDiaPedido
   anchoDiaRef.current = anchoDia
+
+  // Táctil: mientras hay un arrastre en curso, el dedo no desplaza la página
+  // (touchmove con preventDefault, que solo funciona con passive: false).
+  const esperaTactilRef = useRef(null)
+  useEffect(() => {
+    const zona = scrollRef.current
+    if (!zona) return undefined
+    const bloquear = (e) => { if (arrastreRef.current?.activo) e.preventDefault() }
+    zona.addEventListener('touchmove', bloquear, { passive: false })
+    return () => zona.removeEventListener('touchmove', bloquear)
+  }, [])
 
   useEffect(() => () => clearInterval(autoRef.current), [])
   const arrastreRef = useRef(null)
@@ -159,10 +182,25 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
   function handlePointerDown(e, barra, modo, filaId) {
     if (e.button !== 0) return
     e.stopPropagation()
-    const estado = { id: barra.id, modo, x0: e.clientX, y0: e.clientY, xActual: e.clientX, delta: 0, movio: false, barra, filaOrigen: filaId, filaDestino: null, scrollPx: 0, diasCorridos: 0, dirAuto: 0 }
+    const tactil = e.pointerType === 'touch'
+    const estado = { id: barra.id, modo, x0: e.clientX, y0: e.clientY, xActual: e.clientX, delta: 0, movio: false, barra, filaOrigen: filaId, filaDestino: null, scrollPx: 0, diasCorridos: 0, dirAuto: 0, tactil, activo: !tactil }
     arrastreRef.current = estado
     if (!editable) return
-    e.currentTarget.setPointerCapture?.(e.pointerId)
+    const elemento = e.currentTarget
+    const idPuntero = e.pointerId
+    if (tactil) {
+      // Recién al mantener pulsado empieza el arrastre (ver cabecera).
+      clearTimeout(esperaTactilRef.current)
+      esperaTactilRef.current = setTimeout(() => {
+        if (arrastreRef.current !== estado || estado.cancelado) return
+        estado.activo = true
+        try { elemento.setPointerCapture?.(idPuntero) } catch { /* el dedo ya se levantó */ }
+        navigator.vibrate?.(15)
+        setArrastre({ ...estado })
+      }, ESPERA_TACTIL_MS)
+      return
+    }
+    elemento.setPointerCapture?.(idPuntero)
     setArrastre(estado)
   }
 
@@ -208,6 +246,16 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
   function handlePointerMove(e) {
     const estado = arrastreRef.current
     if (!estado || !editable) return
+    if (!estado.activo) {
+      // Táctil antes de la espera: si el dedo se desliza, es para desplazar
+      // el diagrama, no para arrastrar la barra.
+      if (Math.abs(e.clientX - estado.x0) > 8 || Math.abs(e.clientY - estado.y0) > 8) {
+        estado.cancelado = true
+        estado.movio = true
+        clearTimeout(esperaTactilRef.current)
+      }
+      return
+    }
     estado.xActual = e.clientX
     const delta = calcularDelta(estado)
     if (Math.abs(e.clientX - estado.x0) > 3 || Math.abs(e.clientY - estado.y0) > 3) estado.movio = true
@@ -226,10 +274,13 @@ export default function DiagramaGantt({ filas, desde, dias, anchoDia: anchoDiaPe
 
   function handlePointerUp(e) {
     pararAuto()
+    clearTimeout(esperaTactilRef.current)
     const estado = arrastreRef.current
     arrastreRef.current = null
     setArrastre(null)
     if (!estado) return
+    // Táctil: el navegador cancela el puntero al empezar a desplazar.
+    if (e?.type === 'pointercancel' && !estado.activo) return
     const { barra, delta, modo, movio, filaDestino } = estado
     if (editable && movio && (delta !== 0 || filaDestino)) {
       let ini = barra._ini

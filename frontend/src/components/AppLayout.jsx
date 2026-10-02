@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth, MOCK_AUTH } from '../context/AuthContext.jsx'
 import { DeshacerProvider } from '../context/DeshacerContext.jsx'
@@ -87,6 +87,11 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [grupoAbierto, setGrupoAbierto] = useState(null)
+  // Tablet/teléfono (a pedido de Álvaro, 2026-10-02): el menú lateral se
+  // esconde y se abre con ☰ (ver .app-barra-movil en global.css); se cierra
+  // solo al navegar a otra página.
+  const [menuAbierto, setMenuAbierto] = useState(false)
+  useEffect(() => { setMenuAbierto(false) }, [location.pathname])
 
   async function handleLogout() {
     await logout()
@@ -103,7 +108,12 @@ export default function AppLayout() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${menuAbierto ? ' app-menu-abierto' : ''}`}>
+      <div className="app-barra-movil">
+        <button type="button" className="app-boton-menu" onClick={() => setMenuAbierto(true)} aria-label="Abrir menú">☰</button>
+        <span className="app-barra-movil-titulo">🏗️ Panel Galvi</span>
+      </div>
+      {menuAbierto && <div className="app-menu-fondo" onClick={() => setMenuAbierto(false)} />}
       <aside className="app-sidebar">
         <div className="app-logo">🏗️ Panel Galvi</div>
         <nav className="app-nav">
